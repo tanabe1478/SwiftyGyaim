@@ -36,8 +36,10 @@ class CandidateWindow: NSPanel {
     private var candidateLabels: [NSTextField] = []
 
     // MARK: - Classic mode views
-    private var classicImageView: NSImageView?
-    private var classicTextField: NSTextField?
+    private var classicBackgroundView: ClassicBackgroundView?
+    private var classicContentView: NSView?
+    private var classicScrollView: NSScrollView?
+    private var classicTextView: NSTextView?
 
     // MARK: - Constraint groups (toggled per mode)
     private var listConstraints: [NSLayoutConstraint] = []
@@ -48,8 +50,7 @@ class CandidateWindow: NSPanel {
     private let rowHeight: CGFloat = 22
     private let padding: CGFloat = 6
     private let windowWidth: CGFloat = 260
-    private let classicBubbleWidth: CGFloat = 300
-    private let classicMinHeight: CGFloat = 90
+    private let classicMetrics = ClassicBubbleMetrics()
 
     init() {
         let frame = NSRect(x: 0, y: 0, width: 260, height: 30)
@@ -96,52 +97,60 @@ class CandidateWindow: NSPanel {
     }
 
     private func setupClassicMode() {
-        // Background bubble image — fills entire container
-        let imageView = NSImageView()
-        imageView.imageScaling = .scaleAxesIndependently
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        if let img = NSImage(named: "candwin") {
-            imageView.image = img
-        } else if let url = Bundle.main.url(forResource: "candwin", withExtension: "png"),
-                  let img = NSImage(contentsOf: url) {
-            imageView.image = img
-        }
-        imageView.isHidden = true
-        containerView.addSubview(imageView)
-        classicImageView = imageView
+        // Draw the original bubble art without stretching its corners or tail.
+        let bgView = ClassicBackgroundView(metrics: classicMetrics)
+        bgView.translatesAutoresizingMaskIntoConstraints = false
+        bgView.isHidden = true
+        containerView.addSubview(bgView)
+        classicBackgroundView = bgView
 
-        // Wrapping text field — its intrinsic height drives the window size
-        let textField = NSTextField(wrappingLabelWithString: "")
-        textField.tag = 1001
-        textField.font = NSFont.systemFont(ofSize: 14)
-        textField.textColor = NSColor(white: 0.15, alpha: 1.0)
-        textField.drawsBackground = false
-        textField.isBezeled = false
-        textField.isEditable = false
-        textField.lineBreakMode = .byWordWrapping
-        textField.usesSingleLineMode = false
-        textField.maximumNumberOfLines = 0
-        textField.preferredMaxLayoutWidth = classicBubbleWidth - 36
-        textField.translatesAutoresizingMaskIntoConstraints = false
-        textField.isHidden = true
-        containerView.addSubview(textField)
-        classicTextField = textField
+        let contentView = NSView()
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.isHidden = true
+        containerView.addSubview(contentView)
+        classicContentView = contentView
 
-        // Text field defines the content area; image stretches to fill.
-        // Bubble tail is at bottom-left, so bottom inset is larger.
+        // NSScrollView + NSTextView replicating original XIB structure
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = .white
+        scrollView.isHidden = true
+        contentView.addSubview(scrollView)
+        classicScrollView = scrollView
+
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isSelectable = false
+        textView.drawsBackground = true
+        textView.backgroundColor = .white
+        textView.font = NSFont.systemFont(ofSize: 14)
+        textView.textColor = NSColor(white: 0.15, alpha: 1.0)
+        textView.textContainerInset = NSSize(width: 2, height: 2)
+        textView.textContainer?.widthTracksTextView = true
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        scrollView.documentView = textView
+        classicTextView = textView
+
         classicConstraints = [
-            // Image fills the entire container
-            imageView.topAnchor.constraint(equalTo: containerView.topAnchor),
-            imageView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            imageView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
-            // Text inset inside the bubble
-            textField.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 14),
-            textField.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 18),
-            textField.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -18),
-            textField.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -24),
-            // Fixed width for the bubble
-            containerView.widthAnchor.constraint(equalToConstant: classicBubbleWidth),
+            // Background fills the entire container
+            bgView.topAnchor.constraint(equalTo: containerView.topAnchor),
+            bgView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            bgView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            bgView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+            // Match the white content area from the original XIB: {{20, 20}, {200, 79}} in a 241x126 bubble.
+            contentView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: classicMetrics.contentInsets.top),
+            contentView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: classicMetrics.contentInsets.left),
+            contentView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -classicMetrics.contentInsets.right),
+            contentView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -classicMetrics.contentInsets.bottom),
+            scrollView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
         ]
     }
 
@@ -155,8 +164,9 @@ class CandidateWindow: NSPanel {
         NSLayoutConstraint.deactivate(classicConstraints)
 
         stackView.isHidden = !isList
-        classicImageView?.isHidden = isList
-        classicTextField?.isHidden = isList
+        classicBackgroundView?.isHidden = isList
+        classicContentView?.isHidden = isList
+        classicScrollView?.isHidden = isList
 
         if isList {
             NSLayoutConstraint.activate(listConstraints)
@@ -164,11 +174,14 @@ class CandidateWindow: NSPanel {
             containerView.layer?.cornerRadius = 6
             containerView.layer?.borderColor = NSColor(white: 0.8, alpha: 1.0).cgColor
             containerView.layer?.borderWidth = 0.5
+            hasShadow = true
         } else {
             NSLayoutConstraint.activate(classicConstraints)
             containerView.layer?.backgroundColor = NSColor.clear.cgColor
             containerView.layer?.cornerRadius = 0
             containerView.layer?.borderWidth = 0
+            // candwin.png has its own drop shadow; disable window shadow to avoid doubling
+            hasShadow = false
         }
     }
 
@@ -208,12 +221,9 @@ class CandidateWindow: NSPanel {
     }
 
     private func updateClassicMode(_ words: [String], selectedIndex: Int) {
-        candidateLabels.forEach { $0.removeFromSuperview() }
-        candidateLabels.removeAll()
-
         guard !words.isEmpty else {
-            classicTextField?.stringValue = ""
-            resizeToFitClassic()
+            classicTextView?.string = ""
+            resizeClassicToFit()
             return
         }
 
@@ -221,18 +231,35 @@ class CandidateWindow: NSPanel {
         let maxVisible = CandidateDisplayMode.classic.maxVisible
         let count = min(words.count, maxVisible)
         let visibleWords = Array(words.prefix(count))
-        classicTextField?.stringValue = visibleWords.joined(separator: "  ")
-        resizeToFitClassic()
+        classicTextView?.string = visibleWords.joined(separator: " ")
+        resizeClassicToFit()
     }
 
-    /// Let AutoLayout calculate the natural size of the classic view, then resize the window.
-    /// Only updates the content size — position is determined by showWindow() in GyaimController.
-    private func resizeToFitClassic() {
-        containerView.layoutSubtreeIfNeeded()
-        let fitting = containerView.fittingSize
-        let newSize = NSSize(width: max(fitting.width, classicBubbleWidth),
-                             height: max(fitting.height, classicMinHeight))
-        setContentSize(newSize)
+    /// Calculate the text height and resize the classic window to fit.
+    /// Window frame drives container size; 4-edge constraints keep scrollView inside.
+    private func resizeClassicToFit() {
+        guard let textView = classicTextView,
+              let textContainer = textView.textContainer,
+              let layoutManager = textView.layoutManager else { return }
+
+        let textWidth = classicMetrics.bubbleSize.width
+            - classicMetrics.contentInsets.left
+            - classicMetrics.contentInsets.right
+            - textView.textContainerInset.width * 2
+        textContainer.size = NSSize(width: textWidth, height: .greatestFiniteMagnitude)
+        layoutManager.ensureLayout(for: textContainer)
+        let textHeight = layoutManager.usedRect(for: textContainer).height
+            + textView.textContainerInset.height * 2
+
+        let scrollHeight = max(textHeight, classicMetrics.minimumContentHeight)
+        let windowHeight = scrollHeight
+            + classicMetrics.contentInsets.top
+            + classicMetrics.contentInsets.bottom
+
+        let origin = frame.origin
+        setFrame(NSRect(x: origin.x, y: origin.y,
+                        width: classicMetrics.bubbleSize.width, height: windowHeight),
+                 display: true)
     }
 
     private func makeLabel(index: Int, word: String, isSelected: Bool) -> NSTextField {
@@ -280,6 +307,91 @@ class CandidateWindow: NSPanel {
         }
 
         setFrameOrigin(newOrigin)
+    }
+}
+
+// MARK: - Classic Background View
+
+private struct ClassicBubbleMetrics {
+    let bubbleSize = NSSize(width: 241, height: 126)
+    let contentInsets = NSEdgeInsets(top: 27, left: 20, bottom: 20, right: 20)
+    let topCapHeight: CGFloat = 27
+    let bottomCapHeight: CGFloat = 20
+
+    var topSliceHeight: CGFloat { topCapHeight }
+    var bottomSliceHeight: CGFloat { bottomCapHeight }
+    var centerSliceHeight: CGFloat {
+        bubbleSize.height - topSliceHeight - bottomSliceHeight
+    }
+    var minimumContentHeight: CGFloat {
+        bubbleSize.height - contentInsets.top - contentInsets.bottom
+    }
+}
+
+/// Draws the original bubble art with a stretchable middle section only.
+private class ClassicBackgroundView: NSView {
+    private let metrics: ClassicBubbleMetrics
+    private let bubbleImage: NSImage? = {
+        if let img = NSImage(named: "candwin") { return img }
+        if let url = Bundle.main.url(forResource: "candwin", withExtension: "png"),
+           let img = NSImage(contentsOf: url) { return img }
+        return nil
+    }()
+
+    init(metrics: ClassicBubbleMetrics) {
+        self.metrics = metrics
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let image = bubbleImage else { return }
+        let stretchedCenterHeight = max(bounds.height - metrics.topSliceHeight - metrics.bottomSliceHeight, 0)
+
+        let sourceTop = NSRect(
+            x: 0,
+            y: metrics.bubbleSize.height - metrics.topSliceHeight,
+            width: metrics.bubbleSize.width,
+            height: metrics.topSliceHeight
+        )
+        let sourceCenter = NSRect(
+            x: 0,
+            y: metrics.bottomSliceHeight,
+            width: metrics.bubbleSize.width,
+            height: metrics.centerSliceHeight
+        )
+        let sourceBottom = NSRect(
+            x: 0,
+            y: 0,
+            width: metrics.bubbleSize.width,
+            height: metrics.bottomSliceHeight
+        )
+
+        let destinationTop = NSRect(
+            x: 0,
+            y: bounds.height - metrics.topSliceHeight,
+            width: bounds.width,
+            height: metrics.topSliceHeight
+        )
+        let destinationCenter = NSRect(
+            x: 0,
+            y: metrics.bottomSliceHeight,
+            width: bounds.width,
+            height: stretchedCenterHeight
+        )
+        let destinationBottom = NSRect(
+            x: 0,
+            y: 0,
+            width: bounds.width,
+            height: metrics.bottomSliceHeight
+        )
+
+        image.draw(in: destinationBottom, from: sourceBottom, operation: .sourceOver, fraction: 1.0)
+        image.draw(in: destinationCenter, from: sourceCenter, operation: .sourceOver, fraction: 1.0)
+        image.draw(in: destinationTop, from: sourceTop, operation: .sourceOver, fraction: 1.0)
     }
 }
 

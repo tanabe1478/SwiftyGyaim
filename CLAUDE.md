@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL: PR作成ルール
+
+PRは必ず `--repo tanabe1478/SwiftyGyaim` を指定して作成すること。`--repo` を省略すると `gh` がフォーク元（masui/GyaimMotion）に向けてPRを作成してしまう。
+
+```bash
+# 正しい
+gh pr create --repo tanabe1478/SwiftyGyaim --base master --head <branch> ...
+
+# 禁止（--repo省略）
+gh pr create --title ... --body ...
+```
+
 ## Project Overview
 
 Gyaim is a Japanese Input Method Editor (IME) for macOS. Originally created by Toshiyuki Masui (2011) in RubyMotion, migrated to Swift (GyaimSwift/).

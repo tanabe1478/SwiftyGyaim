@@ -37,15 +37,15 @@ final class CandidateWindowTests: XCTestCase {
         let window = CandidateWindow()
         window.updateCandidates(["候補1", "候補2", "候補3"], selectedIndex: 0)
 
-        // Classic mode should have classicTextField with space-separated text
-        let textField = findClassicTextField(in: window)
-        XCTAssertNotNil(textField, "クラシックモードにはテキストフィールドが必要")
-        XCTAssertTrue(textField?.stringValue.contains("候補1") ?? false)
-        XCTAssertTrue(textField?.stringValue.contains("候補2") ?? false)
+        // Classic mode should have NSTextView with space-separated text
+        let textView = findClassicTextView(in: window)
+        XCTAssertNotNil(textView, "クラシックモードにはテキストビューが必要")
+        XCTAssertTrue(textView?.string.contains("候補1") ?? false)
+        XCTAssertTrue(textView?.string.contains("候補2") ?? false)
 
-        // Classic mode should have background image view
-        let imageView = findClassicImageView(in: window)
-        XCTAssertNotNil(imageView, "クラシックモードには背景画像が必要")
+        // Classic mode should have background view
+        let scrollView = findView(in: window.contentView!) { (sv: NSScrollView) in true }
+        XCTAssertNotNil(scrollView, "クラシックモードにはスクロールビューが必要")
 
         CandidateWindow.shared = nil
     }
@@ -56,11 +56,22 @@ final class CandidateWindowTests: XCTestCase {
         let words = (0..<15).map { "候補\($0)" }
         window.updateCandidates(words, selectedIndex: 0)
 
-        let textField = findClassicTextField(in: window)
-        XCTAssertNotNil(textField)
-        // Classic mode shows at most 11 candidates (double-space separated)
-        let parts = textField!.stringValue.components(separatedBy: "  ").filter { !$0.isEmpty }
+        let textView = findClassicTextView(in: window)
+        XCTAssertNotNil(textView)
+        // Classic mode shows at most 11 candidates (space separated)
+        let parts = textView!.string.components(separatedBy: " ").filter { !$0.isEmpty }
         XCTAssertLessThanOrEqual(parts.count, 11, "クラシックモードは最大11候補")
+
+        CandidateWindow.shared = nil
+    }
+
+    func testClassicModeKeepsOriginalMinimumHeight() {
+        CandidateDisplayMode.setCurrent(.classic)
+        let window = CandidateWindow()
+        window.updateCandidates(["短い候補"], selectedIndex: 0)
+
+        XCTAssertEqual(window.frame.width, 241, accuracy: 0.5)
+        XCTAssertEqual(window.frame.height, 126, accuracy: 0.5)
 
         CandidateWindow.shared = nil
     }
@@ -79,8 +90,8 @@ final class CandidateWindowTests: XCTestCase {
         window.applyDisplayMode()
         window.updateCandidates(["A", "B", "C"], selectedIndex: 0)
 
-        let textField = findClassicTextField(in: window)
-        XCTAssertNotNil(textField, "クラシックモード切り替え後にテキストフィールドがあるべき")
+        let textView = findClassicTextView(in: window)
+        XCTAssertNotNil(textView, "クラシックモード切り替え後にテキストビューがあるべき")
 
         // Switch back to list
         CandidateDisplayMode.setCurrent(.list)
@@ -186,18 +197,97 @@ final class CandidateWindowTests: XCTestCase {
                                   "ウィンドウが画面右端からはみ出さない")
     }
 
-    // MARK: - Helpers
+    // MARK: - Classic layout containment
 
-    private func findClassicTextField(in window: CandidateWindow) -> NSTextField? {
-        guard let contentView = window.contentView else { return nil }
-        return findView(in: contentView) { (tf: NSTextField) in
-            tf.tag == 1001 // classicTextField tag
+    func testClassicScrollViewIsContainedInBackground() {
+        CandidateDisplayMode.setCurrent(.classic)
+        let window = CandidateWindow()
+        window.updateCandidates(
+            ["あてているのに", "あと", "合わせて", "会わせて",
+             "あいうえおいそいだふぉう", "ありますか", "ある",
+             "あんまり", "あまり", "あったみたい"],
+            selectedIndex: 0)
+
+        // Force layout
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        guard let contentView = window.contentView else {
+            XCTFail("contentView is nil"); return
         }
+        guard let scrollView = findView(in: contentView, matching: { (sv: NSScrollView) in !sv.isHidden }) else {
+            XCTFail("visible NSScrollView not found"); return
+        }
+        let containerFrame = contentView.bounds
+        let scrollFrame = scrollView.superview?.convert(scrollView.frame, to: contentView) ?? scrollView.frame
+
+        // scrollView must be fully inside container (i.e., inside the green bubble)
+        XCTAssertGreaterThanOrEqual(scrollFrame.minX, 0,
+            "scrollView左端がコンテナからはみ出している (scrollFrame=\(scrollFrame), container=\(containerFrame))")
+        XCTAssertGreaterThanOrEqual(scrollFrame.minY, 0,
+            "scrollView下端がコンテナからはみ出している (scrollFrame=\(scrollFrame), container=\(containerFrame))")
+        XCTAssertLessThanOrEqual(scrollFrame.maxX, containerFrame.maxX,
+            "scrollView右端がコンテナからはみ出している (scrollFrame=\(scrollFrame), container=\(containerFrame))")
+        XCTAssertLessThanOrEqual(scrollFrame.maxY, containerFrame.maxY,
+            "scrollView上端がコンテナからはみ出している (scrollFrame=\(scrollFrame), container=\(containerFrame))")
+
+        // Verify minimum insets (at least 10pt on each side)
+        XCTAssertGreaterThanOrEqual(scrollFrame.minX, 10,
+            "左マージンが不足 (scrollFrame=\(scrollFrame))")
+        XCTAssertGreaterThanOrEqual(scrollFrame.minY, 10,
+            "下マージンが不足 (scrollFrame=\(scrollFrame))")
+        XCTAssertGreaterThanOrEqual(containerFrame.maxX - scrollFrame.maxX, 10,
+            "右マージンが不足 (scrollFrame=\(scrollFrame), container=\(containerFrame))")
+        XCTAssertGreaterThanOrEqual(containerFrame.maxY - scrollFrame.maxY, 10,
+            "上マージンが不足 (scrollFrame=\(scrollFrame), container=\(containerFrame))")
+
+        CandidateWindow.shared = nil
     }
 
-    private func findClassicImageView(in window: CandidateWindow) -> NSImageView? {
+    func testClassicScrollViewInsetsMatchConstants() {
+        CandidateDisplayMode.setCurrent(.classic)
+        let window = CandidateWindow()
+        window.updateCandidates(["テスト", "候補"], selectedIndex: 0)
+
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        guard let contentView = window.contentView else {
+            XCTFail("contentView is nil"); return
+        }
+        guard let scrollView = findView(in: contentView, matching: { (sv: NSScrollView) in !sv.isHidden }) else {
+            XCTFail("visible NSScrollView not found"); return
+        }
+        let containerFrame = contentView.bounds
+        let scrollFrame = scrollView.superview?.convert(scrollView.frame, to: contentView) ?? scrollView.frame
+
+        // Verify insets match exactly (within 1pt tolerance for rounding)
+        let leftInset = scrollFrame.minX
+        let bottomInset = scrollFrame.minY
+        let rightInset = containerFrame.maxX - scrollFrame.maxX
+        let topInset = containerFrame.maxY - scrollFrame.maxY
+
+        // Print actual values for debugging
+        print("Classic layout: container=\(containerFrame), scroll=\(scrollFrame)")
+        print("Insets: top=\(topInset), left=\(leftInset), bottom=\(bottomInset), right=\(rightInset)")
+
+        // Match the current classic bubble content insets.
+        XCTAssertEqual(leftInset, 20, accuracy: 1, "左インセットが期待値と異なる")
+        XCTAssertEqual(rightInset, 20, accuracy: 1, "右インセットが期待値と異なる")
+        XCTAssertEqual(topInset, 27, accuracy: 1, "上インセットが期待値と異なる")
+        XCTAssertEqual(bottomInset, 20, accuracy: 1, "下インセットが期待値と異なる")
+
+        CandidateWindow.shared = nil
+    }
+
+    // MARK: - Helpers
+
+    private func findClassicTextView(in window: CandidateWindow) -> NSTextView? {
         guard let contentView = window.contentView else { return nil }
-        return findView(in: contentView) { (iv: NSImageView) in true }
+        // Find NSTextView inside NSScrollView (classic mode structure)
+        if let scrollView = findView(in: contentView, matching: { (sv: NSScrollView) in true }),
+           let textView = scrollView.documentView as? NSTextView {
+            return textView
+        }
+        return nil
     }
 
     private func findStackViewLabels(in window: CandidateWindow) -> [NSTextField] {
