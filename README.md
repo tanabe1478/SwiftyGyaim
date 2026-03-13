@@ -64,14 +64,7 @@ Finder で以下のフォルダを開きます：
 ### 前提条件
 
 - **Xcode** — [Mac App Store](https://apps.apple.com/app/xcode/id497799835) からインストール
-- **XcodeGen** — `project.yml` から Xcode プロジェクトを生成するツール。[Homebrew](https://brew.sh/) でインストールできます：
-  ```bash
-  brew install xcodegen
-  ```
-  Homebrew が未導入の場合は、先に以下を実行してください：
-  ```bash
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  ```
+- **XcodeGen** — `project.yml` から Xcode プロジェクトを生成するツール。インストール方法は [XcodeGen のリポジトリ](https://github.com/yonaskolb/XcodeGen) を参照してください
 
 ### ビルド手順
 
