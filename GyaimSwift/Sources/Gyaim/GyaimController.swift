@@ -91,6 +91,8 @@ class GyaimController: IMKInputController {
     private var candWindow: CandidateWindow?
     /// Tracks the in-flight Google Transliterate query to discard stale results.
     private var pendingGoogleQuery: String?
+    /// Tracks the in-flight external command query to discard stale results.
+    private var pendingExternalQuery: String?
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         super.init(server: server, delegate: delegate, client: inputClient)
@@ -140,6 +142,7 @@ class GyaimController: IMKInputController {
         clipboardCandidate = nil
         selectedCandidate = nil
         pendingGoogleQuery = nil
+        pendingExternalQuery = nil
     }
 
     private var converting: Bool {
@@ -206,6 +209,16 @@ class GyaimController: IMKInputController {
         // Google Transliterate shortcut (e.g. Ctrl+G)
         if converting, KeyBindings.shared.matchesGoogleTransliterate(event: event) {
             triggerGoogleTransliterate(client: sender)
+            return true
+        }
+
+        // External command shortcuts (encrypt / decrypt)
+        if converting, KeyBindings.shared.matchesEncrypt(event: event) {
+            triggerEncrypt(client: sender)
+            return true
+        }
+        if KeyBindings.shared.matchesDecrypt(event: event) {
+            triggerDecryptList(client: sender)
             return true
         }
 
@@ -340,6 +353,8 @@ class GyaimController: IMKInputController {
             case undoAndSpace
             case undoThenInsertChar
             case googleTransliterate
+            case encryptExternal
+            case decryptExternal
         }
     }
 
@@ -360,6 +375,8 @@ class GyaimController: IMKInputController {
         matchesHiraganaShortcut: Bool,
         matchesKatakanaShortcut: Bool,
         matchesGoogleTransliterateShortcut: Bool = false,
+        matchesEncryptShortcut: Bool = false,
+        matchesDecryptShortcut: Bool = false,
         inputPatEmpty: Bool,
         hasEventString: Bool
     ) -> HandleResult {
@@ -382,6 +399,14 @@ class GyaimController: IMKInputController {
         // Google Transliterate shortcut (e.g. Ctrl+G)
         if converting, matchesGoogleTransliterateShortcut {
             return HandleResult(handled: true, action: .googleTransliterate)
+        }
+
+        // External command shortcuts (encrypt / decrypt)
+        if converting, matchesEncryptShortcut {
+            return HandleResult(handled: true, action: .encryptExternal)
+        }
+        if matchesDecryptShortcut {
+            return HandleResult(handled: true, action: .decryptExternal)
         }
 
         // No event string → handled (consumed, no action)
@@ -626,6 +651,82 @@ class GyaimController: IMKInputController {
         }
     }
 
+    // MARK: - External Command (Encrypt / Decrypt)
+
+    /// Encrypt current inputPat via external command.
+    private func triggerEncrypt(client sender: Any? = nil) {
+        let plaintext = ExternalCommand.extractPlaintext(inputPat)
+        guard !plaintext.isEmpty else { return }
+
+        pendingExternalQuery = plaintext
+        Log.input.info("External encrypt triggered: \"\(plaintext)\"")
+
+        candidates = ExternalCommand.buildPendingCandidates(source: plaintext)
+        nthCand = 0
+        showCands(client: sender ?? self.client())
+
+        ExternalCommand.encrypt(plaintext: plaintext) { [weak self] results in
+            guard let self else { return }
+            guard self.pendingExternalQuery == plaintext else {
+                Log.input.debug("External encrypt stale result discarded for \"\(plaintext)\"")
+                return
+            }
+            self.pendingExternalQuery = nil
+
+            let extCandidates = ExternalCommand.buildCandidates(results: results, source: plaintext)
+            Log.input.info("External encrypt results for \"\(plaintext)\": \(results)")
+            GyaimController.showCands(extCandidates)
+        }
+    }
+
+    /// Show decrypt list via external command (first step of 2-step flow).
+    private func triggerDecryptList(client sender: Any? = nil) {
+        let queryId = "@decrypt-list"
+        pendingExternalQuery = queryId
+        Log.input.info("External decrypt list triggered")
+
+        candidates = ExternalCommand.buildPendingCandidates(source: "復号化")
+        nthCand = 0
+        showCands(client: sender ?? self.client())
+
+        ExternalCommand.list { [weak self] labels in
+            guard let self else { return }
+            guard self.pendingExternalQuery == queryId else {
+                Log.input.debug("External decrypt list stale result discarded")
+                return
+            }
+            self.pendingExternalQuery = nil
+
+            let listCandidates = ExternalCommand.buildDecryptListCandidates(labels: labels)
+            Log.input.info("External decrypt list: \(labels)")
+            GyaimController.showCands(listCandidates)
+        }
+    }
+
+    /// Decrypt a specific label via external command (second step of 2-step flow).
+    private func triggerDecrypt(label: String, client sender: Any? = nil) {
+        let queryId = "@decrypt:\(label)"
+        pendingExternalQuery = queryId
+        Log.input.info("External decrypt triggered: \"\(label)\"")
+
+        candidates = ExternalCommand.buildPendingCandidates(source: label)
+        nthCand = 0
+        showCands(client: sender ?? self.client())
+
+        ExternalCommand.decrypt(label: label) { [weak self] results in
+            guard let self else { return }
+            guard self.pendingExternalQuery == queryId else {
+                Log.input.debug("External decrypt stale result discarded for \"\(label)\"")
+                return
+            }
+            self.pendingExternalQuery = nil
+
+            let decryptCandidates = ExternalCommand.buildCandidates(results: results, source: label)
+            Log.input.info("External decrypt results for \"\(label)\": \(results)")
+            GyaimController.showCands(decryptCandidates)
+        }
+    }
+
     private func searchAndShowCands(client sender: Any?) {
         guard let ws else { return }
 
@@ -633,6 +734,18 @@ class GyaimController: IMKInputController {
         if GoogleTransliterate.hasTriggerSuffix(inputPat) {
             let query = GoogleTransliterate.stripTriggerSuffix(inputPat)
             triggerGoogleTransliterate(query: query, client: sender)
+            return
+        }
+
+        // External command: encrypt suffix trigger (e.g. "4111@e")
+        if ExternalCommand.hasEncryptTrigger(inputPat) {
+            triggerEncrypt(client: sender)
+            return
+        }
+
+        // External command: decrypt suffix trigger (e.g. "@d" or "card@d")
+        if ExternalCommand.hasDecryptTrigger(inputPat) {
+            triggerDecryptList(client: sender)
             return
         }
 
@@ -742,6 +855,15 @@ class GyaimController: IMKInputController {
             return
         }
         let candidate = candidates[nthCand]
+
+        // 2-step decrypt flow: if this is a decrypt list item, trigger decrypt instead of inserting
+        if ExternalCommand.isDecryptListCandidate(candidate),
+           let label = ExternalCommand.decryptLabelFromReading(candidate.reading) {
+            Log.input.info("Decrypt list item selected: \"\(label)\", triggering decrypt")
+            triggerDecrypt(label: label, client: sender)
+            return
+        }
+
         let word = candidate.word
         let reading = candidate.reading ?? inputPat
         let candidateWords = candidates.map(\.word)

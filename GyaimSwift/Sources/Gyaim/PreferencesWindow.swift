@@ -14,6 +14,11 @@ class PreferencesWindow: NSWindow {
     private var displayModeControl: NSSegmentedControl?
     private var googleTriggerField: NSTextField?
     private var googleTransliterateRecorders: [ShortcutRecorderRow] = []
+    private var extCommandPathField: NSTextField?
+    private var extEncryptTriggerField: NSTextField?
+    private var extDecryptTriggerField: NSTextField?
+    private var extEncryptRecorders: [ShortcutRecorderRow] = []
+    private var extDecryptRecorders: [ShortcutRecorderRow] = []
 
     static func show() {
         if shared == nil {
@@ -186,6 +191,9 @@ class PreferencesWindow: NSWindow {
         addGoogleBtn.bezelStyle = .rounded
         contentBox.addSubview(addGoogleBtn)
 
+        // External command section
+        y = buildExternalCommandSection(y: y)
+
         // Log section
         y -= 40
         let logTitle = makeLabel("ログ", bold: true)
@@ -280,6 +288,8 @@ class PreferencesWindow: NSWindow {
         hiraganaRecorders.forEach { $0.removeFromSuperview() }
         katakanaRecorders.forEach { $0.removeFromSuperview() }
         googleTransliterateRecorders.forEach { $0.removeFromSuperview() }
+        extEncryptRecorders.forEach { $0.removeFromSuperview() }
+        extDecryptRecorders.forEach { $0.removeFromSuperview() }
 
         var y = frame.height - 60
 
@@ -394,6 +404,9 @@ class PreferencesWindow: NSWindow {
         addGoogleBtn.bezelStyle = .rounded
         contentBox.addSubview(addGoogleBtn)
 
+        // External command section in rebuildLayout
+        y = buildExternalCommandSection(y: y)
+
         // Log section in rebuildLayout
         y -= 40
         let logTitle = makeLabel("ログ", bold: true)
@@ -438,6 +451,147 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(resetBtn)
     }
 
+    // MARK: - External Command Section
+
+    private func buildExternalCommandSection(y startY: CGFloat) -> CGFloat {
+        var y = startY
+
+        y -= 40
+        let extTitle = makeLabel("外部コマンド", bold: true)
+        extTitle.frame = NSRect(x: 20, y: y, width: 440, height: 24)
+        contentBox.addSubview(extTitle)
+
+        y -= 28
+        let pathLabel = makeLabel("コマンドパス:")
+        pathLabel.frame = NSRect(x: 20, y: y, width: 100, height: 20)
+        contentBox.addSubview(pathLabel)
+
+        let pathField = NSTextField()
+        pathField.frame = NSRect(x: 120, y: y - 2, width: 260, height: 24)
+        pathField.stringValue = ExternalCommand.commandPath
+        pathField.placeholderString = "~/.gyaim/secret.sh"
+        pathField.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        contentBox.addSubview(pathField)
+        extCommandPathField = pathField
+
+        let browseBtn = NSButton(title: "参照...", target: self, action: #selector(browseExternalCommand))
+        browseBtn.frame = NSRect(x: 390, y: y - 2, width: 70, height: 24)
+        browseBtn.bezelStyle = .rounded
+        contentBox.addSubview(browseBtn)
+
+        y -= 28
+        let encTriggerLabel = makeLabel("暗号化トリガー:")
+        encTriggerLabel.frame = NSRect(x: 20, y: y, width: 110, height: 20)
+        contentBox.addSubview(encTriggerLabel)
+
+        let encTriggerField = NSTextField()
+        encTriggerField.frame = NSRect(x: 130, y: y - 2, width: 40, height: 24)
+        encTriggerField.stringValue = ExternalCommand.encryptTrigger
+        encTriggerField.alignment = .center
+        encTriggerField.placeholderString = "@e"
+        contentBox.addSubview(encTriggerField)
+        extEncryptTriggerField = encTriggerField
+
+        let encHint = makeLabel("入力末尾に付けて暗号化（例: text@e）")
+        encHint.font = NSFont.systemFont(ofSize: 11)
+        encHint.textColor = .secondaryLabelColor
+        encHint.frame = NSRect(x: 180, y: y, width: 300, height: 20)
+        contentBox.addSubview(encHint)
+
+        y -= 28
+        let decTriggerLabel = makeLabel("復号化トリガー:")
+        decTriggerLabel.frame = NSRect(x: 20, y: y, width: 110, height: 20)
+        contentBox.addSubview(decTriggerLabel)
+
+        let decTriggerField = NSTextField()
+        decTriggerField.frame = NSRect(x: 130, y: y - 2, width: 40, height: 24)
+        decTriggerField.stringValue = ExternalCommand.decryptTrigger
+        decTriggerField.alignment = .center
+        decTriggerField.placeholderString = "@d"
+        contentBox.addSubview(decTriggerField)
+        extDecryptTriggerField = decTriggerField
+
+        let decHint = makeLabel("入力末尾に付けて復号一覧（例: @d）")
+        decHint.font = NSFont.systemFont(ofSize: 11)
+        decHint.textColor = .secondaryLabelColor
+        decHint.frame = NSRect(x: 180, y: y, width: 300, height: 20)
+        contentBox.addSubview(decHint)
+
+        y -= 28
+        let encShortcutLabel = makeLabel("暗号化ショートカット:")
+        encShortcutLabel.frame = NSRect(x: 20, y: y, width: 160, height: 20)
+        contentBox.addSubview(encShortcutLabel)
+
+        for row in extEncryptRecorders {
+            y -= 32
+            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
+            contentBox.addSubview(row)
+        }
+
+        y -= 30
+        let addEncBtn = NSButton(title: "+ 追加", target: self, action: #selector(addEncryptShortcut))
+        addEncBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
+        addEncBtn.bezelStyle = .rounded
+        contentBox.addSubview(addEncBtn)
+
+        y -= 28
+        let decShortcutLabel = makeLabel("復号化ショートカット:")
+        decShortcutLabel.frame = NSRect(x: 20, y: y, width: 160, height: 20)
+        contentBox.addSubview(decShortcutLabel)
+
+        for row in extDecryptRecorders {
+            y -= 32
+            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
+            contentBox.addSubview(row)
+        }
+
+        y -= 30
+        let addDecBtn = NSButton(title: "+ 追加", target: self, action: #selector(addDecryptShortcut))
+        addDecBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
+        addDecBtn.bezelStyle = .rounded
+        contentBox.addSubview(addDecBtn)
+
+        return y
+    }
+
+    @objc private func browseExternalCommand() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            extCommandPathField?.stringValue = url.path
+        }
+    }
+
+    @objc private func addEncryptShortcut() {
+        let row = ShortcutRecorderRow(frame: .zero)
+        row.onRemove = { [weak self] r in self?.removeEncryptRow(r) }
+        extEncryptRecorders.append(row)
+        contentBox.addSubview(row)
+        rebuildLayout()
+    }
+
+    @objc private func addDecryptShortcut() {
+        let row = ShortcutRecorderRow(frame: .zero)
+        row.onRemove = { [weak self] r in self?.removeDecryptRow(r) }
+        extDecryptRecorders.append(row)
+        contentBox.addSubview(row)
+        rebuildLayout()
+    }
+
+    private func removeEncryptRow(_ row: ShortcutRecorderRow) {
+        row.removeFromSuperview()
+        extEncryptRecorders.removeAll { $0 === row }
+        rebuildLayout()
+    }
+
+    private func removeDecryptRow(_ row: ShortcutRecorderRow) {
+        row.removeFromSuperview()
+        extDecryptRecorders.removeAll { $0 === row }
+        rebuildLayout()
+    }
+
     @objc private func addGoogleTransliterateShortcut() {
         let row = ShortcutRecorderRow(frame: .zero)
         row.onRemove = { [weak self] r in self?.removeGoogleTransliterateRow(r) }
@@ -456,7 +610,29 @@ class PreferencesWindow: NSWindow {
         KeyBindings.shared.hiragana = hiraganaRecorders.compactMap { $0.shortcut }
         KeyBindings.shared.katakana = katakanaRecorders.compactMap { $0.shortcut }
         KeyBindings.shared.googleTransliterate = googleTransliterateRecorders.compactMap { $0.shortcut }
+        KeyBindings.shared.encryptShortcut = extEncryptRecorders.compactMap { $0.shortcut }
+        KeyBindings.shared.decryptShortcut = extDecryptRecorders.compactMap { $0.shortcut }
         KeyBindings.shared.save()
+
+        // Save external command settings
+        if let pathField = extCommandPathField {
+            let path = pathField.stringValue.trimmingCharacters(in: .whitespaces)
+            if !path.isEmpty {
+                ExternalCommand.setCommandPath(path)
+            }
+        }
+        if let field = extEncryptTriggerField {
+            let trigger = field.stringValue.trimmingCharacters(in: .whitespaces)
+            if !trigger.isEmpty {
+                ExternalCommand.setEncryptTrigger(trigger)
+            }
+        }
+        if let field = extDecryptTriggerField {
+            let trigger = field.stringValue.trimmingCharacters(in: .whitespaces)
+            if !trigger.isEmpty {
+                ExternalCommand.setDecryptTrigger(trigger)
+            }
+        }
 
         // Save Google Transliterate trigger suffix (single non-alphanumeric ASCII only)
         if let field = googleTriggerField {
@@ -478,9 +654,13 @@ class PreferencesWindow: NSWindow {
         hiraganaRecorders.forEach { $0.removeFromSuperview() }
         katakanaRecorders.forEach { $0.removeFromSuperview() }
         googleTransliterateRecorders.forEach { $0.removeFromSuperview() }
+        extEncryptRecorders.forEach { $0.removeFromSuperview() }
+        extDecryptRecorders.forEach { $0.removeFromSuperview() }
         hiraganaRecorders = []
         katakanaRecorders = []
         googleTransliterateRecorders = []
+        extEncryptRecorders = []
+        extDecryptRecorders = []
 
         for shortcut in KeyBindings.shared.hiragana {
             let row = ShortcutRecorderRow(frame: .zero)
@@ -498,6 +678,14 @@ class PreferencesWindow: NSWindow {
         // Reset trigger suffix to default
         UserDefaults.standard.removeObject(forKey: "googleTransliterateTrigger")
         googleTriggerField?.stringValue = GoogleTransliterate.triggerSuffix
+
+        // Reset external command settings to default
+        UserDefaults.standard.removeObject(forKey: "externalCommandEncryptTrigger")
+        UserDefaults.standard.removeObject(forKey: "externalCommandDecryptTrigger")
+        UserDefaults.standard.removeObject(forKey: "externalCommandPath")
+        extEncryptTriggerField?.stringValue = ExternalCommand.encryptTrigger
+        extDecryptTriggerField?.stringValue = ExternalCommand.decryptTrigger
+        extCommandPathField?.stringValue = ExternalCommand.commandPath
 
         rebuildLayout()
     }

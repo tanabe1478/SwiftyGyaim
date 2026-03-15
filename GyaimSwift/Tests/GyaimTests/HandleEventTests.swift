@@ -23,6 +23,8 @@ final class HandleEventTests: XCTestCase {
         matchesHiraganaShortcut: Bool = false,
         matchesKatakanaShortcut: Bool = false,
         matchesGoogleTransliterateShortcut: Bool = false,
+        matchesEncryptShortcut: Bool = false,
+        matchesDecryptShortcut: Bool = false,
         inputPatEmpty: Bool = true,
         hasEventString: Bool = true
     ) -> Result {
@@ -41,6 +43,8 @@ final class HandleEventTests: XCTestCase {
             matchesHiraganaShortcut: matchesHiraganaShortcut,
             matchesKatakanaShortcut: matchesKatakanaShortcut,
             matchesGoogleTransliterateShortcut: matchesGoogleTransliterateShortcut,
+            matchesEncryptShortcut: matchesEncryptShortcut,
+            matchesDecryptShortcut: matchesDecryptShortcut,
             inputPatEmpty: inputPatEmpty,
             hasEventString: hasEventString
         )
@@ -472,6 +476,44 @@ final class HandleEventTests: XCTestCase {
         )
         // Not converting → shortcut check skipped, falls through
         XCTAssertNotEqual(result.action, .googleTransliterate)
+    }
+
+    // MARK: - Edge: 0x08 (backspace alt) treated same as 0x7F
+
+    // MARK: - External Command shortcuts (encrypt / decrypt)
+
+    func testEncryptShortcutWhenConverting_returnsEncryptExternal() {
+        let result = route(
+            converting: true,
+            matchesEncryptShortcut: true
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .encryptExternal))
+    }
+
+    func testEncryptShortcutWhenNotConverting_ignored() {
+        let result = route(
+            converting: false,
+            matchesEncryptShortcut: true,
+            hasEventString: false
+        )
+        XCTAssertNotEqual(result.action, .encryptExternal)
+    }
+
+    func testDecryptShortcutWhenConverting_returnsDecryptExternal() {
+        let result = route(
+            converting: true,
+            matchesDecryptShortcut: true
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .decryptExternal))
+    }
+
+    func testDecryptShortcutWhenNotConverting_returnsDecryptExternal() {
+        // Decrypt can trigger even when not converting (to show list)
+        let result = route(
+            converting: false,
+            matchesDecryptShortcut: true
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .decryptExternal))
     }
 
     // MARK: - Edge: 0x08 (backspace alt) treated same as 0x7F
