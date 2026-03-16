@@ -40,6 +40,18 @@ cp -r .build/Build/Products/Debug/Gyaim.app ~/Library/Input\ Methods/
 
 Working directory for build commands: `GyaimSwift/`
 
+### CRITICAL: コード変更後は必ずビルド&インストールすること
+
+GyaimはIMEアプリであり、コードを変更しただけでは反映されない。以下の手順を**毎回**実行する必要がある:
+
+1. `killall Gyaim` — 実行中のGyaimプロセスを終了
+2. `xcodebuild ... build` — ビルド
+3. `rm -rf ~/Library/Input\ Methods/Gyaim.app` — 古いアプリを削除
+4. `cp -r .build/Build/Products/Debug/Gyaim.app ~/Library/Input\ Methods/` — 新しいアプリをインストール
+5. 入力ソースを切り替えてGyaimを再起動
+
+**よくあるミス**: コード変更後にビルド&インストールを忘れて「動作がおかしい」「候補が出ない」と悩む。変更が反映されていないだけ。
+
 ## Architecture
 
 ### Core Input Flow

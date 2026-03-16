@@ -157,6 +157,10 @@ class KeyBindings {
     /// Google Transliterate trigger shortcuts (modifier-key based).
     var googleTransliterate: [KeyShortcut] = []
 
+    /// External command encrypt/decrypt shortcuts (modifier-key based, default empty).
+    var encryptShortcut: [KeyShortcut] = []
+    var decryptShortcut: [KeyShortcut] = []
+
     /// Single-key confirm (ASCII value, 0 = disabled). Works in converting mode.
     var hiraganaChar: UInt8 = 0x3B   // ;
     var katakanaChar: UInt8 = 0x71   // q
@@ -177,6 +181,14 @@ class KeyBindings {
         googleTransliterate.contains { $0.matches(event: event) }
     }
 
+    func matchesEncrypt(event: NSEvent) -> Bool {
+        encryptShortcut.contains { $0.matches(event: event) }
+    }
+
+    func matchesDecrypt(event: NSEvent) -> Bool {
+        decryptShortcut.contains { $0.matches(event: event) }
+    }
+
     func load() {
         guard let data = UserDefaults.standard.data(forKey: defaultsKey) else { return }
         let decoded: StoredBindings
@@ -191,12 +203,16 @@ class KeyBindings {
         hiraganaChar = decoded.hiraganaChar ?? 0x3B
         katakanaChar = decoded.katakanaChar ?? 0x71
         googleTransliterate = decoded.googleTransliterate ?? []
+        encryptShortcut = decoded.encryptShortcut ?? []
+        decryptShortcut = decoded.decryptShortcut ?? []
     }
 
     func save() {
         let stored = StoredBindings(hiragana: hiragana, katakana: katakana,
                                     hiraganaChar: hiraganaChar, katakanaChar: katakanaChar,
-                                    googleTransliterate: googleTransliterate)
+                                    googleTransliterate: googleTransliterate,
+                                    encryptShortcut: encryptShortcut,
+                                    decryptShortcut: decryptShortcut)
         do {
             let data = try JSONEncoder().encode(stored)
             UserDefaults.standard.set(data, forKey: defaultsKey)
@@ -217,6 +233,8 @@ class KeyBindings {
         hiraganaChar = 0x3B
         katakanaChar = 0x71
         googleTransliterate = []
+        encryptShortcut = []
+        decryptShortcut = []
         save()
     }
 
@@ -226,5 +244,7 @@ class KeyBindings {
         var hiraganaChar: UInt8?
         var katakanaChar: UInt8?
         var googleTransliterate: [KeyShortcut]?
+        var encryptShortcut: [KeyShortcut]?
+        var decryptShortcut: [KeyShortcut]?
     }
 }
