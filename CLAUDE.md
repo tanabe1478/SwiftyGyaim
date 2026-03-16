@@ -83,6 +83,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 - **NSApp.setActivationPolicy** — Use `.accessory` temporarily when opening settings/dict editor windows, revert to `.prohibited` on close
 - **Icon must be 20x20 PDF** for Retina-compatible menu bar display
 - **User data directory**: `~/.gyaim/` (localdict.txt, studydict.txt)
+- **IME切替時の未確定テキスト**: `deactivateServer` で未確定テキストを自動確定する（Mozc/Google日本語入力等と同じ標準動作）。`fix(client: sender)` でクライアントに挿入し、`self.client()` フォールバックで堅牢性を確保
 
 ## Testing
 

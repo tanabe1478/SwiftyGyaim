@@ -126,9 +126,9 @@ class GyaimController: IMKInputController {
     }
 
     override func deactivateServer(_ sender: Any!) {
-        Log.input.info("IME deactivated")
+        Log.input.info("IME deactivated: committing preedit (converting=\(converting), candidates=\(candidates.count))")
         hideWindow()
-        fix()
+        fix(client: sender)
         ws?.finish()
     }
 
@@ -747,7 +747,8 @@ class GyaimController: IMKInputController {
         let candidateWords = candidates.map(\.word)
         Log.input.info("Fixed: \"\(word)\" (reading: \"\(reading)\", index: \(nthCand)/\(candidates.count), candidates: \(candidateWords))")
 
-        guard let client = sender as? IMKTextInput else {
+        let resolvedClient = (sender as? IMKTextInput) ?? (self.client() as? IMKTextInput)
+        guard let client = resolvedClient else {
             resetState()
             return
         }
