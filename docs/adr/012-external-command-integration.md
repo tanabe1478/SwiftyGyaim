@@ -55,6 +55,33 @@ P4はP1〜P3のすべてを包含する。ユーザーがスクリプト内でKe
 
 Google Transliterateと同一パターン: 非同期Process実行 → stale guard → メインスレッドで候補更新。待機中は「(実行中...)」を候補表示。タイムアウト5秒。
 
+### IMEリセット
+
+外部コマンドがGUIを表示する可能性があるため、コマンド実行前にGyaimのIME状態をリセットする（inputPat空、マーク解除、候補ウィンドウ非表示）。これにより外部GUIのテキスト入力をGyaimが横取りしない。encrypt / list / decrypt の3サブコマンドすべてで共通。
+
+### 将来の拡張: EpisoPass連携
+
+P4アーキテクチャはEpisoPass（エピソード記憶ベースの暗号鍵導出）との連携を想定している。実現方法は2つ:
+
+**方式A: EpisoPass Web + クリップボード中継**
+
+1. secret.sh が `open https://episopass.com/?data=...` でブラウザを開く
+2. ユーザーがWeb上でエピソード質問に回答 → 鍵が生成される
+3. ユーザーが鍵をコピー → secret.sh が `pbpaste` で受け取る
+4. 鍵で暗号化/復号化してstdoutに出力
+
+課題: ブラウザ操作完了をスクリプトが検知するタイミング制御が必要（ポーリングまたはローカルHTTPサーバーでコールバック受信）。
+
+**方式B: EpisoPass CLIツール（推奨）**
+
+1. SwiftでローカルCLIツールを作成（Cocoaウィンドウで質問表示 → 回答 → MD5ハッシュで鍵導出 → stdoutに出力）
+2. secret.sh から `KEY=$(episopass-cli --questions ~/.gyaim/questions.json)` で呼び出す
+3. 鍵で暗号化/復号化してstdoutに出力
+
+利点: IMEリセット済みのためCocoaウィンドウへの入力が妨害されない。ブラウザ不要でオフライン動作可能。スクリプトとのstdout連携がシンプル。
+
+いずれの方式もsecret.shの差し替えのみで実現でき、Gyaim本体の変更は不要。
+
 ## Consequences
 
 ### 良い点

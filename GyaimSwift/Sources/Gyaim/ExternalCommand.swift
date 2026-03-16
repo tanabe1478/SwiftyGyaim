@@ -121,7 +121,7 @@ enum ExternalCommand {
     // MARK: - Async Execution
 
     /// Timeout for external command execution.
-    static var commandTimeout: TimeInterval = 5.0
+    static var commandTimeout: TimeInterval = 60.0
 
     /// Execute the external command with a subcommand and optional argument.
     /// Completion is called on the main thread with stdout lines.
@@ -193,5 +193,10 @@ enum ExternalCommand {
     /// Decrypt a specific label via external command.
     static func decrypt(label: String, completion: @escaping ([String]) -> Void) {
         execute(subcommand: "decrypt", argument: label, completion: completion)
+    }
+
+    /// Interactive decrypt: shows GUI for label selection, then decrypts.
+    static func decryptInteractive(completion: @escaping ([String]) -> Void) {
+        execute(subcommand: "decrypt-interactive", completion: completion)
     }
 }

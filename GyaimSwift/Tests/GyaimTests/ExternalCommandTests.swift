@@ -55,6 +55,7 @@ final class ExternalCommandTests: XCTestCase {
         XCTAssertEqual(ExternalCommand.extractPlaintext("秘密のテキスト@e"), "秘密のテキスト")
     }
 
+
     // MARK: - Extract Decrypt Label
 
     func testExtractDecryptLabel_withLabel() {
@@ -86,6 +87,13 @@ final class ExternalCommandTests: XCTestCase {
 
     func testShellEscape_withSpaces() {
         XCTAssertEqual(ExternalCommand.shellEscape("hello world"), "'hello world'")
+    }
+
+    // MARK: - Timeout
+
+    func testCommandTimeout_isExtendedForGUI() {
+        XCTAssertGreaterThanOrEqual(ExternalCommand.commandTimeout, 30.0,
+            "Timeout must be long enough for GUI dialog interaction")
     }
 
     // MARK: - Build Candidates

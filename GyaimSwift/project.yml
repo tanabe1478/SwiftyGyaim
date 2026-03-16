@@ -23,6 +23,18 @@ targets:
     frameworks:
       - InputMethodKit
       - Security
+    dependencies:
+      - target: GyaimLabelDialog
+        copy:
+          destination: executables
+      - target: GyaimSelectDialog
+        copy:
+          destination: executables
+    postBuildScripts:
+      - script: |
+          cp "${BUILT_PRODUCTS_DIR}/GyaimLabelDialog" "${BUILT_PRODUCTS_DIR}/Gyaim.app/Contents/MacOS/GyaimLabelDialog" 2>/dev/null || true
+          cp "${BUILT_PRODUCTS_DIR}/GyaimSelectDialog" "${BUILT_PRODUCTS_DIR}/Gyaim.app/Contents/MacOS/GyaimSelectDialog" 2>/dev/null || true
+        name: Copy helper tools to app bundle
 
   GyaimTests:
     type: bundle.unit-test
@@ -43,6 +55,31 @@ targets:
     frameworks:
       - InputMethodKit
       - Security
+
+  GyaimLabelDialog:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/GyaimLabelDialog
+    settings:
+      SWIFT_VERSION: "5.9"
+      PRODUCT_NAME: GyaimLabelDialog
+    frameworks:
+      - Cocoa
+      - Carbon
+
+  GyaimSelectDialog:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/GyaimSelectDialog
+    settings:
+      SWIFT_VERSION: "5.9"
+      PRODUCT_NAME: GyaimSelectDialog
+    frameworks:
+      - Cocoa
+      - Carbon
+      - LocalAuthentication
 
   GyaimE2ETests:
     type: bundle.unit-test

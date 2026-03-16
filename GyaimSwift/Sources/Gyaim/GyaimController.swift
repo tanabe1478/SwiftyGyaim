@@ -218,7 +218,7 @@ class GyaimController: IMKInputController {
             return true
         }
         if KeyBindings.shared.matchesDecrypt(event: event) {
-            triggerDecryptList(client: sender)
+            triggerDecryptInteractive(client: sender)
             return true
         }
 
@@ -653,77 +653,49 @@ class GyaimController: IMKInputController {
 
     // MARK: - External Command (Encrypt / Decrypt)
 
+    /// Reset IME state and clear marked text so external commands can show GUIs
+    /// (osascript dialogs, EpisoPass browser, etc.) without Gyaim intercepting input.
+    private func clearIMEForExternalCommand(client sender: Any?) {
+        let client = sender ?? self.client()
+        resetState()
+        if let ic = client as? (any IMKTextInput) {
+            ic.setMarkedText("", selectionRange: NSRange(location: 0, length: 0),
+                             replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+        hideWindow()
+    }
+
     /// Encrypt current inputPat via external command.
     private func triggerEncrypt(client sender: Any? = nil) {
         let plaintext = ExternalCommand.extractPlaintext(inputPat)
         guard !plaintext.isEmpty else { return }
 
-        pendingExternalQuery = plaintext
         Log.input.info("External encrypt triggered: \"\(plaintext)\"")
+        clearIMEForExternalCommand(client: sender)
+        pendingExternalQuery = plaintext
 
-        candidates = ExternalCommand.buildPendingCandidates(source: plaintext)
-        nthCand = 0
-        showCands(client: sender ?? self.client())
-
-        ExternalCommand.encrypt(plaintext: plaintext) { [weak self] results in
-            guard let self else { return }
-            guard self.pendingExternalQuery == plaintext else {
-                Log.input.debug("External encrypt stale result discarded for \"\(plaintext)\"")
-                return
-            }
-            self.pendingExternalQuery = nil
-
+        ExternalCommand.encrypt(plaintext: plaintext) { results in
+            // Use shared instead of weak self — IME may reinitialize during external GUI
             let extCandidates = ExternalCommand.buildCandidates(results: results, source: plaintext)
             Log.input.info("External encrypt results for \"\(plaintext)\": \(results)")
             GyaimController.showCands(extCandidates)
         }
     }
 
-    /// Show decrypt list via external command (first step of 2-step flow).
-    private func triggerDecryptList(client sender: Any? = nil) {
-        let queryId = "@decrypt-list"
+    /// Interactive decrypt via external command GUI (single-step flow).
+    /// The external command handles label selection and decryption in a separate process.
+    private func triggerDecryptInteractive(client sender: Any? = nil) {
+        Log.input.info("External decrypt-interactive triggered")
+        clearIMEForExternalCommand(client: sender)
+
+        let queryId = "@decrypt-interactive"
         pendingExternalQuery = queryId
-        Log.input.info("External decrypt list triggered")
 
-        candidates = ExternalCommand.buildPendingCandidates(source: "復号化")
-        nthCand = 0
-        showCands(client: sender ?? self.client())
-
-        ExternalCommand.list { [weak self] labels in
-            guard let self else { return }
-            guard self.pendingExternalQuery == queryId else {
-                Log.input.debug("External decrypt list stale result discarded")
-                return
-            }
-            self.pendingExternalQuery = nil
-
-            let listCandidates = ExternalCommand.buildDecryptListCandidates(labels: labels)
-            Log.input.info("External decrypt list: \(labels)")
-            GyaimController.showCands(listCandidates)
-        }
-    }
-
-    /// Decrypt a specific label via external command (second step of 2-step flow).
-    private func triggerDecrypt(label: String, client sender: Any? = nil) {
-        let queryId = "@decrypt:\(label)"
-        pendingExternalQuery = queryId
-        Log.input.info("External decrypt triggered: \"\(label)\"")
-
-        candidates = ExternalCommand.buildPendingCandidates(source: label)
-        nthCand = 0
-        showCands(client: sender ?? self.client())
-
-        ExternalCommand.decrypt(label: label) { [weak self] results in
-            guard let self else { return }
-            guard self.pendingExternalQuery == queryId else {
-                Log.input.debug("External decrypt stale result discarded for \"\(label)\"")
-                return
-            }
-            self.pendingExternalQuery = nil
-
-            let decryptCandidates = ExternalCommand.buildCandidates(results: results, source: label)
-            Log.input.info("External decrypt results for \"\(label)\": \(results)")
-            GyaimController.showCands(decryptCandidates)
+        ExternalCommand.decryptInteractive { results in
+            Log.input.info("External decrypt-interactive callback: shared=\(GyaimController.shared != nil), results=\(results)")
+            guard let text = results.first, !text.isEmpty else { return }
+            // Try inserting with retries — client may not be ready immediately after focus returns
+            GyaimController.insertTextWhenReady(text, retries: 5, delay: 0.3)
         }
     }
 
@@ -745,7 +717,7 @@ class GyaimController: IMKInputController {
 
         // External command: decrypt suffix trigger (e.g. "@d" or "card@d")
         if ExternalCommand.hasDecryptTrigger(inputPat) {
-            triggerDecryptList(client: sender)
+            triggerDecryptInteractive(client: sender)
             return
         }
 
@@ -856,14 +828,6 @@ class GyaimController: IMKInputController {
         }
         let candidate = candidates[nthCand]
 
-        // 2-step decrypt flow: if this is a decrypt list item, trigger decrypt instead of inserting
-        if ExternalCommand.isDecryptListCandidate(candidate),
-           let label = ExternalCommand.decryptLabelFromReading(candidate.reading) {
-            Log.input.info("Decrypt list item selected: \"\(label)\", triggering decrypt")
-            triggerDecrypt(label: label, client: sender)
-            return
-        }
-
         let word = candidate.word
         let reading = candidate.reading ?? inputPat
         let candidateWords = candidates.map(\.word)
@@ -883,7 +847,12 @@ class GyaimController: IMKInputController {
             client.insertText(word, replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
         }
 
-        // Register or study logic
+        // Skip study for external command results (inputPat is placeholder)
+        if inputPat == "\u{200B}" {
+            resetState()
+            hideWindow()
+            return
+        }
         let isExternalCandidate = (word == clipboardCandidate || word == selectedCandidate)
         if isExternalCandidate {
             // External candidate (clipboard/selected text) → register to user dict
@@ -937,11 +906,36 @@ class GyaimController: IMKInputController {
     /// Class method for async candidate updates (e.g., from Google Transliterate).
     /// Sets searchMode = 2 to indicate "Google results displayed".
     /// searchMode values: 0 = prefix, 1 = exact, 2 = Google Transliterate results.
+    /// Insert text when IME client becomes available. Retries with delay if client is nil.
+    static func insertTextWhenReady(_ text: String, retries: Int, delay: TimeInterval) {
+        guard let gc = shared, let client = gc.client() as? IMKTextInput else {
+            if retries > 0 {
+                Log.input.debug("Client not ready, retrying in \(delay)s (retries left: \(retries))")
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    insertTextWhenReady(text, retries: retries - 1, delay: delay)
+                }
+            } else {
+                Log.input.info("Client unavailable after retries, copying to clipboard: \"\(text.prefix(10))...\"")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            }
+            return
+        }
+        client.insertText(text, replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
+        Log.input.info("Inserted decrypted text: \"\(text.prefix(10))...\"")
+    }
+
     static func showCands(_ newCandidates: [SearchCandidate]) {
         guard let gc = shared else { return }
         gc.candidates = newCandidates
         gc.searchMode = 2
+        // Set a placeholder inputPat so converting=true and showWindow works,
+        // but use a non-searchable marker to avoid polluting search results
+        if gc.inputPat.isEmpty {
+            gc.inputPat = "\u{200B}" // zero-width space as placeholder
+        }
         gc.showCands(client: gc.client())
+        gc.showWindow()
     }
 }
 
