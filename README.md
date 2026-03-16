@@ -1,4 +1,4 @@
-# Gyaim — macOS用 日本語IME
+# SwiftyGyaim — macOS用 日本語IME
 
 [masui/GyaimMotion](https://github.com/masui/GyaimMotion) のフォークです。
 オリジナルは増井俊之氏が RubyMotion で開発した日本語入力システムで、本フォークでは **Swift へ全面移行** しています。
