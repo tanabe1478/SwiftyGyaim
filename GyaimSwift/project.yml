@@ -19,7 +19,8 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.Gyaim
       INFOPLIST_FILE: Resources/Info.plist
       SWIFT_VERSION: "5.9"
-      PRODUCT_NAME: Gyaim
+      PRODUCT_NAME: SwiftyGyaim
+      PRODUCT_MODULE_NAME: Gyaim
     frameworks:
       - InputMethodKit
       - Security
@@ -40,6 +41,7 @@ targets:
       SWIFT_VERSION: "5.9"
       GENERATE_INFOPLIST_FILE: YES
       PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.Gyaim.Tests
+      PRODUCT_MODULE_NAME: Gyaim
     frameworks:
       - InputMethodKit
       - Security
