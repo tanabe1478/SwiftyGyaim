@@ -19,7 +19,8 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.Gyaim
       INFOPLIST_FILE: Resources/Info.plist
       SWIFT_VERSION: "5.9"
-      PRODUCT_NAME: Gyaim
+      PRODUCT_NAME: SwiftyGyaim
+      PRODUCT_MODULE_NAME: Gyaim
     frameworks:
       - InputMethodKit
       - Security
@@ -32,8 +33,8 @@ targets:
           destination: executables
     postBuildScripts:
       - script: |
-          cp "${BUILT_PRODUCTS_DIR}/GyaimLabelDialog" "${BUILT_PRODUCTS_DIR}/Gyaim.app/Contents/MacOS/GyaimLabelDialog" 2>/dev/null || true
-          cp "${BUILT_PRODUCTS_DIR}/GyaimSelectDialog" "${BUILT_PRODUCTS_DIR}/Gyaim.app/Contents/MacOS/GyaimSelectDialog" 2>/dev/null || true
+          cp "${BUILT_PRODUCTS_DIR}/GyaimLabelDialog" "${BUILT_PRODUCTS_DIR}/SwiftyGyaim.app/Contents/MacOS/GyaimLabelDialog" 2>/dev/null || true
+          cp "${BUILT_PRODUCTS_DIR}/GyaimSelectDialog" "${BUILT_PRODUCTS_DIR}/SwiftyGyaim.app/Contents/MacOS/GyaimSelectDialog" 2>/dev/null || true
         name: Copy helper tools to app bundle
 
   GyaimTests:
@@ -52,6 +53,7 @@ targets:
       SWIFT_VERSION: "5.9"
       GENERATE_INFOPLIST_FILE: YES
       PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.Gyaim.Tests
+      PRODUCT_MODULE_NAME: Gyaim
     frameworks:
       - InputMethodKit
       - Security

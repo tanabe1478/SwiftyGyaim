@@ -33,9 +33,9 @@ xcodegen generate
 xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Debug -derivedDataPath .build build
 
 # Install
-killall Gyaim
-rm -rf ~/Library/Input\ Methods/Gyaim.app
-cp -r .build/Build/Products/Debug/Gyaim.app ~/Library/Input\ Methods/
+killall SwiftyGyaim
+rm -rf ~/Library/Input\ Methods/SwiftyGyaim.app
+cp -r .build/Build/Products/Debug/SwiftyGyaim.app ~/Library/Input\ Methods/
 ```
 
 Working directory for build commands: `GyaimSwift/`
@@ -44,10 +44,10 @@ Working directory for build commands: `GyaimSwift/`
 
 GyaimはIMEアプリであり、コードを変更しただけでは反映されない。以下の手順を**毎回**実行する必要がある:
 
-1. `killall Gyaim` — 実行中のGyaimプロセスを終了
+1. `killall SwiftyGyaim` — 実行中のGyaimプロセスを終了
 2. `xcodebuild ... build` — ビルド
-3. `rm -rf ~/Library/Input\ Methods/Gyaim.app` — 古いアプリを削除
-4. `cp -r .build/Build/Products/Debug/Gyaim.app ~/Library/Input\ Methods/` — 新しいアプリをインストール
+3. `rm -rf ~/Library/Input\ Methods/SwiftyGyaim.app` — 古いアプリを削除
+4. `cp -r .build/Build/Products/Debug/SwiftyGyaim.app ~/Library/Input\ Methods/` — 新しいアプリをインストール
 5. 入力ソースを切り替えてGyaimを再起動
 
 **よくあるミス**: コード変更後にビルド&インストールを忘れて「動作がおかしい」「候補が出ない」と悩む。変更が反映されていないだけ。
