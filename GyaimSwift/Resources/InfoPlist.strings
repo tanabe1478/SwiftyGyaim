@@ -3,16 +3,16 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Gyaim</string>
+	<string>SwiftyGyaim</string>
 	<key>CFBundleGetInfoString</key>
-	<string>Gyaim version 1.0, Copyright 2015, Pitecan Systems.</string>
+	<string>SwiftyGyaim version 1.0, Copyright 2015, Pitecan Systems.</string>
 	<key>CFBundleName</key>
-	<string>Gyaim</string>
+	<string>SwiftyGyaim</string>
 	<key>CFBundleShortVersionString</key>
-	<string>Gyaim version 1.0</string>
+	<string>SwiftyGyaim version 1.0</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© Pitecan Systems, 2015</string>
 	<key>com.apple.inputmethod.Japanese</key>
-	<string>Gyaim</string>
+	<string>SwiftyGyaim</string>
 </dict>
 </plist>

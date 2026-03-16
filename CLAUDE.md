@@ -33,9 +33,9 @@ xcodegen generate
 xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Debug -derivedDataPath .build build
 
 # Install
-killall Gyaim
-rm -rf ~/Library/Input\ Methods/Gyaim.app
-cp -r .build/Build/Products/Debug/Gyaim.app ~/Library/Input\ Methods/
+killall SwiftyGyaim
+rm -rf ~/Library/Input\ Methods/SwiftyGyaim.app
+cp -r .build/Build/Products/Debug/SwiftyGyaim.app ~/Library/Input\ Methods/
 ```
 
 Working directory for build commands: `GyaimSwift/`
