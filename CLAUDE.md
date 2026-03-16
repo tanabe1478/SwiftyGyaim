@@ -18,7 +18,7 @@ gh pr create --title ... --body ...
 
 Gyaim is a Japanese Input Method Editor (IME) for macOS. Originally created by Toshiyuki Masui (2011) in RubyMotion, migrated to Swift (GyaimSwift/).
 
-- **App identifier**: `com.pitecan.inputmethod.Gyaim`
+- **App identifier**: `com.pitecan.inputmethod.SwiftyGyaim`
 - **Language**: Swift
 - **Frameworks**: InputMethodKit, Security
 - **Project management**: XcodeGen (project.yml)
@@ -33,9 +33,9 @@ xcodegen generate
 xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Debug -derivedDataPath .build build
 
 # Install
-killall Gyaim
-rm -rf ~/Library/Input\ Methods/Gyaim.app
-cp -r .build/Build/Products/Debug/Gyaim.app ~/Library/Input\ Methods/
+killall SwiftyGyaim
+rm -rf ~/Library/Input\ Methods/SwiftyGyaim.app
+cp -r .build/Build/Products/Debug/SwiftyGyaim.app ~/Library/Input\ Methods/
 ```
 
 Working directory for build commands: `GyaimSwift/`
@@ -166,7 +166,7 @@ docs/adr/
 
 ```bash
 # Console.app / ターミナル
-log stream --predicate 'subsystem == "com.pitecan.inputmethod.Gyaim"' --level debug
+log stream --predicate 'subsystem == "com.pitecan.inputmethod.SwiftyGyaim"' --level debug
 
 # ファイルログ（info以上）
 tail -f ~/.gyaim/gyaim.log

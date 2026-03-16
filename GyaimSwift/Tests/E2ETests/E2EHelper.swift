@@ -5,7 +5,7 @@ enum E2EHelper {
     /// Activate Gyaim as the current input source
     static func selectGyaimInputSource() -> Bool {
         guard let sources = TISCreateInputSourceList(
-            [kTISPropertyBundleID: "com.pitecan.inputmethod.Gyaim"] as CFDictionary,
+            [kTISPropertyBundleID: "com.pitecan.inputmethod.SwiftyGyaim"] as CFDictionary,
             false
         )?.takeRetainedValue() as? [TISInputSource],
               let gyaim = sources.first else {
