@@ -4,7 +4,7 @@ import os
 // MARK: - Log (Entry Point)
 
 enum Log {
-    static let subsystem = "com.pitecan.inputmethod.Gyaim"
+    static let subsystem = "com.pitecan.inputmethod.SwiftyGyaim"
 
     static var isEnabled: Bool {
         UserDefaults.standard.bool(forKey: "loggingEnabled")
@@ -75,7 +75,7 @@ struct GLogger {
 final class FileLogger {
     static let shared = FileLogger()
 
-    private let queue = DispatchQueue(label: "com.pitecan.inputmethod.Gyaim.filelogger")
+    private let queue = DispatchQueue(label: "com.pitecan.inputmethod.SwiftyGyaim.filelogger")
     private let logPath: String
     private let rotatedPath: String
     private let maxSize: Int64 = 5 * 1024 * 1024  // 5 MB
