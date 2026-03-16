@@ -128,7 +128,7 @@ class GyaimController: IMKInputController {
     override func deactivateServer(_ sender: Any!) {
         Log.input.info("IME deactivated: committing preedit (converting=\(converting), candidates=\(candidates.count))")
         hideWindow()
-        fix(client: sender)
+        fix(client: sender, skipStudy: true)
         ws?.finish()
     }
 
@@ -736,7 +736,7 @@ class GyaimController: IMKInputController {
 
     // MARK: - Fix (commit selection)
 
-    private func fix(client sender: Any? = nil) {
+    private func fix(client sender: Any? = nil, skipStudy: Bool = false) {
         guard nthCand < candidates.count else {
             resetState()
             return
@@ -762,19 +762,25 @@ class GyaimController: IMKInputController {
             client.insertText(word, replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
         }
 
-        // Register or study logic
-        let isExternalCandidate = (word == clipboardCandidate || word == selectedCandidate)
-        if isExternalCandidate {
-            // External candidate (clipboard/selected text) → register to user dict
-            ws?.register(word: word, reading: inputPat)
-            Log.input.info("Registered to user dict: \"\(word)\" (reading: \"\(inputPat)\")")
-        } else if let reading = candidate.reading {
-            if reading != "ds" {
-                ws?.study(word: word, reading: reading)
-            }
+        // Register or study logic (skip when deactivating — user didn't intentionally select)
+        if skipStudy {
+            Log.input.info("Study skipped (deactivation): \"\(word)\" (reading: \"\(reading)\")")
         } else {
-            if inputPat != "ds" {
-                ws?.study(word: word, reading: inputPat)
+            let isExternalCandidate = (word == clipboardCandidate || word == selectedCandidate)
+            if isExternalCandidate {
+                // External candidate (clipboard/selected text) → register to user dict
+                ws?.register(word: word, reading: inputPat)
+                Log.input.info("Registered to user dict: \"\(word)\" (reading: \"\(inputPat)\")")
+            } else if let reading = candidate.reading {
+                if reading != "ds" {
+                    ws?.study(word: word, reading: reading)
+                    Log.input.info("Studied: \"\(word)\" (reading: \"\(reading)\")")
+                }
+            } else {
+                if inputPat != "ds" {
+                    ws?.study(word: word, reading: inputPat)
+                    Log.input.info("Studied: \"\(word)\" (reading: \"\(inputPat)\")")
+                }
             }
         }
 
