@@ -16,7 +16,7 @@ targets:
           - Info.plist
         buildPhase: resources
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.Gyaim
+      PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.SwiftyGyaim
       INFOPLIST_FILE: Resources/Info.plist
       SWIFT_VERSION: "5.9"
       PRODUCT_NAME: SwiftyGyaim
@@ -40,7 +40,7 @@ targets:
     settings:
       SWIFT_VERSION: "5.9"
       GENERATE_INFOPLIST_FILE: YES
-      PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.Gyaim.Tests
+      PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.SwiftyGyaim.Tests
       PRODUCT_MODULE_NAME: Gyaim
     frameworks:
       - InputMethodKit
@@ -54,7 +54,7 @@ targets:
     settings:
       SWIFT_VERSION: "5.9"
       GENERATE_INFOPLIST_FILE: YES
-      PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.Gyaim.E2ETests
+      PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.SwiftyGyaim.E2ETests
     frameworks:
       - Carbon
       - Cocoa

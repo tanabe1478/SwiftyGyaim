@@ -25,7 +25,7 @@
 			<key>com.apple.inputmethod.Japanese</key>
 			<dict>
 				<key>TISInputSourceID</key>
-				<string>com.pitecan.inputmethod.Gyaim.Japanese</string>
+				<string>com.pitecan.inputmethod.SwiftyGyaim.Japanese</string>
 				<key>TISIntendedLanguage</key>
 				<string>ja</string>
 				<key>tsInputModePrimaryInScriptKey</key>
