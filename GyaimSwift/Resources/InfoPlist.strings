@@ -5,11 +5,11 @@
 	<key>CFBundleDisplayName</key>
 	<string>SwiftyGyaim</string>
 	<key>CFBundleGetInfoString</key>
-	<string>SwiftyGyaim version 1.0, Copyright 2015, Pitecan Systems.</string>
+	<string>SwiftyGyaim version 1.2, Copyright 2015, Pitecan Systems.</string>
 	<key>CFBundleName</key>
 	<string>SwiftyGyaim</string>
 	<key>CFBundleShortVersionString</key>
-	<string>SwiftyGyaim version 1.0</string>
+	<string>SwiftyGyaim version 1.2</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© Pitecan Systems, 2015</string>
 	<key>com.apple.inputmethod.Japanese</key>
