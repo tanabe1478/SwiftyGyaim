@@ -47,8 +47,6 @@
 	<string>GyaimController</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
 	<key>LSBackgroundOnly</key>
 	<true/>
 	<key>tsInputMethodCharacterRepertoireKey</key>

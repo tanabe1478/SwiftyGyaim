@@ -13,7 +13,7 @@
 
 ダウンロードした `.dmg` ファイルをダブルクリックして開きます。
 
-### 3. SwiftyGyaim.app をコピー
+### 3. Gyaim.app をコピー
 
 Finder で以下のフォルダを開きます：
 
@@ -22,15 +22,15 @@ Finder で以下のフォルダを開きます：
    ```
    ~/Library/Input Methods
    ```
-3. DMG 内の `SwiftyGyaim.app` をこのフォルダにドラッグ＆ドロップでコピーします
+3. DMG 内の `Gyaim.app` をこのフォルダにドラッグ＆ドロップでコピーします
 
 ### 4. セキュリティの許可
 
-初回起動時に「"SwiftyGyaim.app"は開いていません」という警告が表示されます。これは Apple の署名がないためです。
+初回起動時に「"Gyaim.app"は開いていません」という警告が表示されます。これは Apple の署名がないためです。
 
 1. **システム設定** を開く
 2. **プライバシーとセキュリティ** を選択
-3. 画面下部に「"SwiftyGyaim.app"は開発元を確認できないため、使用がブロックされました」と表示されるので、**「このまま開く」** をクリック
+3. 画面下部に「"Gyaim.app"は開発元を確認できないため、使用がブロックされました」と表示されるので、**「このまま開く」** をクリック
 4. パスワードまたは Touch ID で認証
 
 ### 5. 入力ソースの追加
@@ -43,7 +43,7 @@ Finder で以下のフォルダを開きます：
 ### アンインストール
 
 1. システム設定 > キーボード > 入力ソースから Gyaim を削除
-2. `~/Library/Input Methods/SwiftyGyaim.app` を削除
+2. `~/Library/Input Methods/Gyaim.app` を削除
 
 ## オリジナルとの主な違い
 
@@ -78,9 +78,9 @@ xcodegen generate
 xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Debug -derivedDataPath .build build
 
 # インストール
-killall SwiftyGyaim
-rm -rf ~/Library/Input\ Methods/SwiftyGyaim.app
-cp -r .build/Build/Products/Debug/SwiftyGyaim.app ~/Library/Input\ Methods/
+killall Gyaim
+rm -rf ~/Library/Input\ Methods/Gyaim.app
+cp -r .build/Build/Products/Debug/Gyaim.app ~/Library/Input\ Methods/
 ```
 
 ## 辞書
