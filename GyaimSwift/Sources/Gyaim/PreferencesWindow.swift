@@ -14,6 +14,7 @@ class PreferencesWindow: NSWindow {
     private var displayModeControl: NSSegmentedControl?
     private var googleTriggerField: NSTextField?
     private var googleTransliterateRecorders: [ShortcutRecorderRow] = []
+    private var evictionModeControl: NSSegmentedControl?
 
     static func show() {
         if shared == nil {
@@ -140,6 +141,33 @@ class PreferencesWindow: NSWindow {
         stToggle.state = GyaimController.isSelectedTextCandidateEnabled ? .on : .off
         contentBox.addSubview(stToggle)
         selectedTextToggle = stToggle
+
+        // Study dict eviction section
+        y -= 36
+        let studyTitle = makeLabel("学習辞書", bold: true)
+        studyTitle.frame = NSRect(x: 20, y: y, width: 440, height: 24)
+        contentBox.addSubview(studyTitle)
+
+        y -= 28
+        let evictLabel = makeLabel("淘汰方式:")
+        evictLabel.frame = NSRect(x: 20, y: y, width: 80, height: 20)
+        contentBox.addSubview(evictLabel)
+
+        let evictControl = NSSegmentedControl(labels: ["MRU", "淘汰なし", "スコアベース"],
+                                               trackingMode: .selectOne,
+                                               target: self,
+                                               action: #selector(changeEvictionMode(_:)))
+        evictControl.frame = NSRect(x: 100, y: y - 2, width: 280, height: 24)
+        evictControl.selectedSegment = EvictionMode.current.rawValue
+        contentBox.addSubview(evictControl)
+        evictionModeControl = evictControl
+
+        y -= 28
+        let evictHint = makeLabel("MRU: 最近使った順に保持  淘汰なし: 追加順のまま保持  スコアベース: 使用頻度と時間で評価")
+        evictHint.font = NSFont.systemFont(ofSize: 11)
+        evictHint.textColor = .secondaryLabelColor
+        evictHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
+        contentBox.addSubview(evictHint)
 
         // Google Transliterate section
         y -= 40
@@ -352,6 +380,33 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(stToggle)
         selectedTextToggle = stToggle
 
+        // Study dict eviction section in rebuildLayout
+        y -= 36
+        let studyTitle = makeLabel("学習辞書", bold: true)
+        studyTitle.frame = NSRect(x: 20, y: y, width: 440, height: 24)
+        contentBox.addSubview(studyTitle)
+
+        y -= 28
+        let evictLabel = makeLabel("淘汰方式:")
+        evictLabel.frame = NSRect(x: 20, y: y, width: 80, height: 20)
+        contentBox.addSubview(evictLabel)
+
+        let evictControl = NSSegmentedControl(labels: ["MRU", "淘汰なし", "スコアベース"],
+                                               trackingMode: .selectOne,
+                                               target: self,
+                                               action: #selector(changeEvictionMode(_:)))
+        evictControl.frame = NSRect(x: 100, y: y - 2, width: 280, height: 24)
+        evictControl.selectedSegment = EvictionMode.current.rawValue
+        contentBox.addSubview(evictControl)
+        evictionModeControl = evictControl
+
+        y -= 28
+        let evictHint = makeLabel("MRU: 最近使った順に保持  淘汰なし: 追加順のまま保持  スコアベース: 使用頻度と時間で評価")
+        evictHint.font = NSFont.systemFont(ofSize: 11)
+        evictHint.textColor = .secondaryLabelColor
+        evictHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
+        contentBox.addSubview(evictHint)
+
         // Google Transliterate section in rebuildLayout
         y -= 40
         let googleTitle = makeLabel("Google変換", bold: true)
@@ -506,6 +561,11 @@ class PreferencesWindow: NSWindow {
         let mode = CandidateDisplayMode(rawValue: sender.selectedSegment) ?? .list
         CandidateDisplayMode.setCurrent(mode)
         CandidateWindow.shared?.applyDisplayMode()
+    }
+
+    @objc private func changeEvictionMode(_ sender: NSSegmentedControl) {
+        let mode = EvictionMode(rawValue: sender.selectedSegment) ?? .scoreBased
+        EvictionMode.setCurrent(mode)
     }
 
     @objc private func toggleClipboardCandidate(_ sender: NSButton) {
