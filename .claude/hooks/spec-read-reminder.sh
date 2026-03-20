@@ -1,6 +1,7 @@
 #!/bin/bash
 # PreToolUse hook: Remind to read relevant spec before editing .swift files
-# Fires on: Edit *.swift
+# Fires on: Edit (all files, filters .swift internally)
+# Output: JSON with hookSpecificOutput.additionalContext for Claude to see
 
 INPUT=$(cat)
 
@@ -42,13 +43,26 @@ for spec in "$SPECS_DIR"/*.md; do
   fi
   if echo "$triggers" | grep -q "$BASENAME"; then
     spec_name=$(basename "$spec")
-    MATCHED="$MATCHED docs/specs/$spec_name"
+    if [ -z "$MATCHED" ]; then
+      MATCHED="docs/specs/$spec_name"
+    else
+      MATCHED="$MATCHED, docs/specs/$spec_name"
+    fi
   fi
 done
 
 if [ -n "$MATCHED" ]; then
-  echo "[Spec Reminder] $BASENAME を編集 → 参照:$MATCHED" >&2
+  # Output JSON so Claude sees the reminder in context
+  cat <<ENDJSON
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "additionalContext": "[Spec Reminder] ${BASENAME} を編集する前に ${MATCHED} を確認してください。CLAUDE.md Tier 2ルールに従い、関連specをReadしてから編集すること。"
+  }
+}
+ENDJSON
+else
+  echo "$INPUT"
 fi
 
-echo "$INPUT"
 exit 0
