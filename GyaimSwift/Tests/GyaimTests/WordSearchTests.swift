@@ -92,10 +92,10 @@ final class WordSearchTests: XCTestCase {
 
     func testSearchReturnsMoreThan10Results() throws {
         try XCTSkipIf(ws == nil)
-        // Common prefix "a" should have many candidates in dict.txt
+        // Default limit=0 (unlimited), common prefix "a" should have many candidates
         let results = ws.search(query: "a", searchMode: 0)
         XCTAssertGreaterThan(results.count, 10,
-            "Default limit=100 should return more than 10 results for common query 'a', got \(results.count)")
+            "Unlimited search should return more than 10 results for common query 'a', got \(results.count)")
     }
 
     func testSearchWithExplicitLimit() throws {
