@@ -50,7 +50,7 @@ Working directory for build commands: `GyaimSwift/`
 
 1. **Connection Dictionary** (`resources/dict.txt`) — Fixed morphological dictionary with conjugation support. Tab-separated format: `romaji[TAB]surface[TAB]input_connection[TAB]output_connection`.
 2. **Local Dictionary** (`~/.gyaim/localdict.txt`) — User-registered words, highest priority. Hot reload via mtime check.
-3. **Study Dictionary** (`~/.gyaim/studydict.txt`) — Frequency-based learning (max 1000 entries, MRU ordering).
+3. **Study Dictionary** (`~/.gyaim/studydict.txt`) — Score-based learning (max 10,000 entries). 4-column TSV: `reading[TAB]word[TAB]timestamp[TAB]frequency`. Eviction mode selectable in Preferences (MRU / None / Score-based). Default: score-based (Mozc-style). See ADR-014.
 
 Search modes: 0 = prefix matching (incremental), 1 = exact matching + auto-add kana variants, 2 = Google Transliterate async results.
 
@@ -146,7 +146,10 @@ docs/adr/
 ├── 008-clipboard-selected-text-candidates.md
 ├── 009-route-event-extraction-and-test-strategy.md
 ├── 010-candidate-display-mode-toggle.md
-└── 011-google-transliterate-integration.md
+├── 011-google-transliterate-integration.md
+├── 012-commit-preedit-on-deactivation.md
+├── 013-three-tier-context-infrastructure.md
+└── 014-score-based-study-dict-eviction.md
 ```
 
 ## Logging & Monitoring

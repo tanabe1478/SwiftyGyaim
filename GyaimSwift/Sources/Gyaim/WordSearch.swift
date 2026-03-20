@@ -19,7 +19,7 @@ class WordSearch {
     private let localDictFile: String
     private let studyDictFile: String
     private var localDict: [[String]]   // [[yomi, word], ...]
-    private var studyDict: [[String]]
+    private var studyDict: [StudyEntry]
     private var localDictTime: Date
     private var searchMode: Int = 0
 
@@ -31,7 +31,7 @@ class WordSearch {
         }
         self.localDict = Self.loadDict(dictFile: localDictFile)
         self.localDictTime = Self.fileModTime(localDictFile)
-        self.studyDict = Self.loadDict(dictFile: studyDictFile)
+        self.studyDict = Self.loadStudyDict(dictFile: studyDictFile)
         Log.dict.info("WordSearch initialized: local=\(localDict.count), study=\(studyDict.count) entries")
     }
 
@@ -97,17 +97,31 @@ class WordSearch {
         let pattern = searchMode > 0 ? "^\(escaped)$" : "^\(escaped)"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return candidates }
 
-        // Search study + local dicts
-        for entry in (studyDict + localDict) {
-            guard entry.count >= 2 else { continue }
-            let yomi = entry[0]
-            let word = entry[1]
-            let range = NSRange(yomi.startIndex..., in: yomi)
-            if regex.firstMatch(in: yomi, range: range) != nil {
-                if !candfound.contains(word) {
-                    candidates.append(SearchCandidate(word: word, reading: yomi))
-                    candfound.insert(word)
+        // Search study dict
+        for entry in studyDict {
+            let range = NSRange(entry.reading.startIndex..., in: entry.reading)
+            if regex.firstMatch(in: entry.reading, range: range) != nil {
+                if !candfound.contains(entry.word) {
+                    candidates.append(SearchCandidate(word: entry.word, reading: entry.reading))
+                    candfound.insert(entry.word)
                     if limit > 0, candidates.count >= limit { break }
+                }
+            }
+        }
+
+        // Search local dict
+        if limit == 0 || candidates.count < limit {
+            for entry in localDict {
+                guard entry.count >= 2 else { continue }
+                let yomi = entry[0]
+                let word = entry[1]
+                let range = NSRange(yomi.startIndex..., in: yomi)
+                if regex.firstMatch(in: yomi, range: range) != nil {
+                    if !candfound.contains(word) {
+                        candidates.append(SearchCandidate(word: word, reading: yomi))
+                        candfound.insert(word)
+                        if limit > 0, candidates.count >= limit { break }
+                    }
                 }
             }
         }
@@ -153,15 +167,42 @@ class WordSearch {
             }
             if !registered {
                 // If in study dict but not connection dict, promote to local dict
-                if studyDict.contains([reading, word]) {
+                if studyDict.contains(where: { $0.reading == reading && $0.word == word }) {
                     register(word: word, reading: reading)
                 }
             }
         }
 
-        studyDict.insert([reading, word], at: 0)
-        if studyDict.count > 1000 {
-            studyDict = Array(studyDict.prefix(1001))
+        let now = Date().timeIntervalSince1970
+        if let idx = studyDict.firstIndex(where: { $0.reading == reading && $0.word == word }) {
+            var entry = studyDict.remove(at: idx)
+            entry.lastAccessTime = now
+            entry.frequency += 1
+            studyDict.insert(entry, at: 0)
+        } else {
+            studyDict.insert(StudyEntry(reading: reading, word: word,
+                                         lastAccessTime: now, frequency: 1), at: 0)
+        }
+
+        evict()
+    }
+
+    private static let maxStudyEntries = 10_000
+
+    private func evict() {
+        switch EvictionMode.current {
+        case .mru, .none:
+            if studyDict.count > Self.maxStudyEntries {
+                studyDict = Array(studyDict.prefix(Self.maxStudyEntries))
+            }
+        case .scoreBased:
+            if studyDict.count > Self.maxStudyEntries {
+                let protectedCount = min(100, studyDict.count)
+                let range = protectedCount..<studyDict.count
+                if let minIdx = range.min(by: { studyDict[$0].score() < studyDict[$1].score() }) {
+                    studyDict.remove(at: minIdx)
+                }
+            }
         }
     }
 
@@ -170,7 +211,7 @@ class WordSearch {
     }
 
     func finish() {
-        Self.saveDict(dictFile: studyDictFile, dict: studyDict)
+        Self.saveStudyDict(dictFile: studyDictFile, dict: studyDict)
     }
 
     // MARK: - File I/O
@@ -211,6 +252,55 @@ class WordSearch {
             try content.write(toFile: dictFile, atomically: true, encoding: .utf8)
         } catch {
             Log.dict.error("Failed to save dict \(dictFile): \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Study Dict I/O
+
+    static func loadStudyDict(dictFile: String) -> [StudyEntry] {
+        var entries: [StudyEntry] = []
+        let content: String
+        do {
+            content = try String(contentsOfFile: dictFile, encoding: .utf8)
+        } catch {
+            Log.dict.error("Failed to load study dict \(dictFile): \(error.localizedDescription)")
+            return entries
+        }
+        let now = Date().timeIntervalSince1970
+        for line in content.split(separator: "\n", omittingEmptySubsequences: false) {
+            let s = String(line)
+            if s.hasPrefix("#") || s.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+            let parts = s.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false)
+            if parts.count >= 4,
+               let timestamp = Double(parts[2]),
+               let freq = Int(parts[3]) {
+                // New 4-column format
+                entries.append(StudyEntry(reading: String(parts[0]), word: String(parts[1]),
+                                          lastAccessTime: timestamp, frequency: freq))
+            } else if parts.count >= 2 {
+                // Legacy 2-column format
+                entries.append(StudyEntry(reading: String(parts[0]), word: String(parts[1]),
+                                          lastAccessTime: now, frequency: 1))
+            }
+        }
+        return entries
+    }
+
+    static func saveStudyDict(dictFile: String, dict: [StudyEntry]) {
+        var saved: Set<String> = []
+        var lines: [String] = []
+        for entry in dict {
+            let key = "\(entry.reading)\t\(entry.word)"
+            if !saved.contains(key) {
+                lines.append("\(entry.reading)\t\(entry.word)\t\(entry.lastAccessTime)\t\(entry.frequency)")
+                saved.insert(key)
+            }
+        }
+        let content = lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n")
+        do {
+            try content.write(toFile: dictFile, atomically: true, encoding: .utf8)
+        } catch {
+            Log.dict.error("Failed to save study dict \(dictFile): \(error.localizedDescription)")
         }
     }
 

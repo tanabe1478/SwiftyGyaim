@@ -112,4 +112,81 @@ final class WordSearchTests: XCTestCase {
         let words = results.map(\.word)
         XCTAssertTrue(words.contains("テスト単語"))
     }
+
+    // MARK: - Study + Eviction
+
+    override func tearDown() {
+        super.tearDown()
+        UserDefaults.standard.removeObject(forKey: "studyDictEvictionMode")
+    }
+
+    func testStudyInsertsNewEntry() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "東京", reading: "tokyo")
+        let results = ws.search(query: "tokyo", searchMode: 1)
+        XCTAssertTrue(results.map(\.word).contains("東京"))
+    }
+
+    func testStudyIncrementsFrequency() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "東京", reading: "tokyo")
+        ws.study(word: "東京", reading: "tokyo")
+        // Verify it's searchable (frequency tracking is internal)
+        let results = ws.search(query: "tokyo", searchMode: 1)
+        XCTAssertTrue(results.map(\.word).contains("東京"))
+        // Save and reload to verify frequency was persisted
+        ws.finish()
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        let tokyo = entries.first { $0.word == "東京" }
+        XCTAssertEqual(tokyo?.frequency, 2)
+    }
+
+    func testEvictMRU() throws {
+        try XCTSkipIf(ws == nil)
+        EvictionMode.setCurrent(.mru)
+        // Add more than 10,000 entries (use smaller number for test speed)
+        // We test the eviction logic directly via save/load
+        for i in 0..<10_002 {
+            ws.study(word: "語\(i)", reading: "go\(i)")
+        }
+        ws.finish()
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        XCTAssertLessThanOrEqual(entries.count, 10_000)
+    }
+
+    func testEvictNone() throws {
+        try XCTSkipIf(ws == nil)
+        EvictionMode.setCurrent(.none)
+        // With .none mode, entries are still capped at 10,000
+        for i in 0..<10_002 {
+            ws.study(word: "語\(i)", reading: "go\(i)")
+        }
+        ws.finish()
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        XCTAssertLessThanOrEqual(entries.count, 10_000)
+    }
+
+    func testEvictScoreBased() throws {
+        try XCTSkipIf(ws == nil)
+        EvictionMode.setCurrent(.scoreBased)
+        // Add entries with varying timestamps to test score-based eviction
+        for i in 0..<10_002 {
+            ws.study(word: "語\(i)", reading: "go\(i)")
+        }
+        ws.finish()
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        XCTAssertLessThanOrEqual(entries.count, 10_000)
+    }
+
+    func testSearchStudyDictPriority() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "万歳", reading: "man")
+        let results = ws.search(query: "man", searchMode: 0)
+        // Study dict entry should appear before connection dict entries
+        XCTAssertEqual(results.first?.word, "万歳")
+    }
 }
