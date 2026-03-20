@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/tanabe.nobuyuki/Documents/repositories/SwiftyGyaim/.claude/hooks/spec-freshness-check.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/spec-freshness-check.sh"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/tanabe.nobuyuki/Documents/repositories/SwiftyGyaim/.claude/hooks/spec-read-reminder.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/spec-read-reminder.sh"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/tanabe.nobuyuki/Documents/repositories/SwiftyGyaim/.claude/hooks/pr-spec-reminder.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pr-spec-reminder.sh"
           }
         ]
       }
