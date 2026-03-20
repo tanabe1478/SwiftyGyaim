@@ -71,7 +71,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 
 | File | Purpose |
 |------|---------|
-| CandidateWindow.swift | 候補ウィンドウ。リスト表示（縦、番号1-9、最大9候補）とクラシック表示（横並び、candwin.png背景、最大11候補）の2モード対応。`CandidateDisplayMode` enumで切り替え |
+| CandidateWindow.swift | 候補ウィンドウ。リスト表示（縦、番号1-9、1ページ9候補）とクラシック表示（横並び、candwin.png背景、1ページ11候補）の2モード対応。候補数は無制限でスペースキー順送りによるページ送り。続きがある場合は末尾に▼インジケータを表示。`CandidateDisplayMode` enumで切り替え |
 | PreferencesWindow.swift | キーボードショートカット設定、候補表示スタイル切り替え（NSSegmentedControl）、候補トグル（クリップボード/選択テキスト）、Google変換設定（トリガー文字・ショートカット）、ログ管理UI。動的ウィンドウリサイズ対応 |
 | DictEditorWindow.swift | User dictionary editor (NSTableView), add/delete/save/reload |
 | KeyBindings.swift | Configurable shortcuts (hiragana/katakana/Google Transliterate), UserDefaults persistence, single-key kana confirm |
@@ -90,7 +90,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（148テスト）
+# ユニットテスト（160テスト）
 xcodebuild -project Gyaim.xcodeproj -scheme GyaimTests -derivedDataPath .build test
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
