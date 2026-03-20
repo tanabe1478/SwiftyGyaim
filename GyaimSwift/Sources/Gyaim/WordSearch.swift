@@ -41,7 +41,7 @@ class WordSearch {
     ///   - searchMode: 0 = prefix, 1 = exact, 2 = Google Transliterate (handled by Controller)
     ///   - limit: Max results
     /// - Returns: Array of SearchCandidate
-    func search(query: String, searchMode: Int, limit: Int = 10) -> [SearchCandidate] {
+    func search(query: String, searchMode: Int, limit: Int = 100) -> [SearchCandidate] {
         self.searchMode = searchMode
         guard !query.isEmpty else { return [] }
 
@@ -107,13 +107,14 @@ class WordSearch {
                 if !candfound.contains(word) {
                     candidates.append(SearchCandidate(word: word, reading: yomi))
                     candfound.insert(word)
-                    if candidates.count > limit { break }
+                    if candidates.count >= limit { break }
                 }
             }
         }
 
         // Search connection dict
         connectionDict.search(pat: q, searchMode: searchMode) { word, pat, outc in
+            guard candidates.count < limit else { return }
             var w = word
             if w.hasSuffix("*") { return }
             w = w.replacingOccurrences(of: "*", with: "")
