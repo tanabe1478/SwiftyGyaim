@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: GyaimSwift
+        run: xcodegen generate
+
+      - name: Run tests
+        working-directory: GyaimSwift
+        run: |
+          xcodebuild -project Gyaim.xcodeproj \
+            -scheme GyaimTests \
+            -derivedDataPath .build \
+            test
+
+      - name: Build
+        working-directory: GyaimSwift
+        run: |
+          xcodebuild -project Gyaim.xcodeproj \
+            -scheme Gyaim \
+            -configuration Debug \
+            -derivedDataPath .build \
+            build
+
+      - name: Create DMG
+        run: |
+          hdiutil create \
+            -volname "SwiftyGyaim ${{ github.ref_name }}" \
+            -srcfolder GyaimSwift/.build/Build/Products/Debug/SwiftyGyaim.app \
+            -ov -format UDZO \
+            SwiftyGyaim-${{ github.ref_name }}.dmg
+
+      - name: Create GitHub Release
+        run: |
+          gh release create ${{ github.ref_name }} \
+            SwiftyGyaim-${{ github.ref_name }}.dmg \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
