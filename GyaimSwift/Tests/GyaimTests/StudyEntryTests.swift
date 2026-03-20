@@ -35,7 +35,7 @@ final class StudyEntryTests: XCTestCase {
 
     func testEvictionModeDefault() {
         UserDefaults.standard.removeObject(forKey: "studyDictEvictionMode")
-        XCTAssertEqual(EvictionMode.current, .scoreBased)
+        XCTAssertEqual(EvictionMode.current, .mru)
     }
 
     func testEvictionModeSetAndGet() {
