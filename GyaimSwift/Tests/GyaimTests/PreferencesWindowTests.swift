@@ -172,4 +172,41 @@ final class PreferencesWindowTests: XCTestCase {
         let found = labels.contains { $0.stringValue == "候補" }
         XCTAssertTrue(found, "「候補」セクションタイトルが見つからない")
     }
+
+    // MARK: - Eviction mode control
+
+    private func findAllSegmentedControls(in view: NSView) -> [NSSegmentedControl] {
+        var results: [NSSegmentedControl] = []
+        for subview in view.subviews {
+            if let sc = subview as? NSSegmentedControl {
+                results.append(sc)
+            }
+            results.append(contentsOf: findAllSegmentedControls(in: subview))
+        }
+        return results
+    }
+
+    private func findEvictionModeControl() -> NSSegmentedControl? {
+        guard let contentView = window.contentView else { return nil }
+        let all = findAllSegmentedControls(in: contentView)
+        // The eviction mode control has 3 segments (MRU, 淘汰なし, スコアベース)
+        return all.first { $0.segmentCount == 3 }
+    }
+
+    func testEvictionModeControlExists() {
+        UserDefaults.standard.removeObject(forKey: "studyDictEvictionMode")
+        window.close()
+        window = PreferencesWindow()
+        let control = findEvictionModeControl()
+        XCTAssertNotNil(control, "淘汰方式のセグメントコントロールが見つからない")
+    }
+
+    func testEvictionModeControlDefaultValue() {
+        UserDefaults.standard.removeObject(forKey: "studyDictEvictionMode")
+        window.close()
+        window = PreferencesWindow()
+        let control = findEvictionModeControl()!
+        XCTAssertEqual(control.selectedSegment, EvictionMode.scoreBased.rawValue,
+                       "デフォルトはスコアベース（セグメント2）であるべき")
+    }
 }
