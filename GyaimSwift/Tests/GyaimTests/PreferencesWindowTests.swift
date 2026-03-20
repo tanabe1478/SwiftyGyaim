@@ -206,7 +206,7 @@ final class PreferencesWindowTests: XCTestCase {
         window.close()
         window = PreferencesWindow()
         let control = findEvictionModeControl()!
-        XCTAssertEqual(control.selectedSegment, EvictionMode.scoreBased.rawValue,
-                       "デフォルトはスコアベース（セグメント2）であるべき")
+        XCTAssertEqual(control.selectedSegment, EvictionMode.mru.rawValue,
+                       "デフォルトはMRU（セグメント0）であるべき")
     }
 }

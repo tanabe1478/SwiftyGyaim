@@ -25,19 +25,11 @@ enum EvictionMode: Int, CaseIterable {
     case none = 1       // No eviction (unlimited)
     case scoreBased = 2 // Mozc-style score-based eviction
 
-    static let defaultMode: EvictionMode = .scoreBased
+    static let defaultMode: EvictionMode = .mru
     private static let key = "studyDictEvictionMode"
 
     static var current: EvictionMode {
-        guard let mode = EvictionMode(rawValue: UserDefaults.standard.integer(forKey: key)) else {
-            return defaultMode
-        }
-        // UserDefaults returns 0 for unset keys, which maps to .mru.
-        // Distinguish "unset" from "explicitly set to 0" by checking if the key exists.
-        if UserDefaults.standard.object(forKey: key) == nil {
-            return defaultMode
-        }
-        return mode
+        EvictionMode(rawValue: UserDefaults.standard.integer(forKey: key)) ?? defaultMode
     }
 
     static func setCurrent(_ mode: EvictionMode) {

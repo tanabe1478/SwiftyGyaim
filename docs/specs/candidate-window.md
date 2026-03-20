@@ -45,7 +45,7 @@ NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackV
 候補セクションの下に「学習辞書」セクションを追加（ADR-014）。
 
 - **淘汰方式**: NSSegmentedControl（3セグメント: MRU / 淘汰なし / スコアベース）
-- UserDefaultsキー: `studyDictEvictionMode` (Int, 0=mru, 1=none, 2=scoreBased, デフォルト2)
+- UserDefaultsキー: `studyDictEvictionMode` (Int, 0=mru, 1=none, 2=scoreBased, デフォルト0)
 - `changeEvictionMode(_:)` アクションで即座にUserDefaultsに保存
 - `buildUI()` と `rebuildLayout()` の両方に同じUIを構築（既存パターンに従う）
 

@@ -564,7 +564,7 @@ class PreferencesWindow: NSWindow {
     }
 
     @objc private func changeEvictionMode(_ sender: NSSegmentedControl) {
-        let mode = EvictionMode(rawValue: sender.selectedSegment) ?? .scoreBased
+        let mode = EvictionMode(rawValue: sender.selectedSegment) ?? .mru
         EvictionMode.setCurrent(mode)
     }
 
