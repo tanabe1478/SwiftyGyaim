@@ -188,17 +188,19 @@ class CandidateWindow: NSPanel {
     // MARK: - Update Candidates
 
     /// Update the candidate list. `selected` is the currently highlighted index within `words`.
-    func updateCandidates(_ words: [String], selectedIndex: Int) {
+    /// `hasMore` indicates more candidates exist after current page.
+    /// `hasPrev` indicates candidates exist before current page.
+    func updateCandidates(_ words: [String], selectedIndex: Int, hasMore: Bool = false, hasPrev: Bool = false) {
         let mode = CandidateDisplayMode.current
         switch mode {
         case .list:
-            updateListMode(words, selectedIndex: selectedIndex)
+            updateListMode(words, selectedIndex: selectedIndex, hasMore: hasMore, hasPrev: hasPrev)
         case .classic:
-            updateClassicMode(words, selectedIndex: selectedIndex)
+            updateClassicMode(words, selectedIndex: selectedIndex, hasMore: hasMore, hasPrev: hasPrev)
         }
     }
 
-    private func updateListMode(_ words: [String], selectedIndex: Int) {
+    private func updateListMode(_ words: [String], selectedIndex: Int, hasMore: Bool = false, hasPrev: Bool = false) {
         candidateLabels.forEach { $0.removeFromSuperview() }
         candidateLabels.removeAll()
 
@@ -216,11 +218,25 @@ class CandidateWindow: NSPanel {
             candidateLabels.append(label)
         }
 
-        let totalHeight = padding * 2 + CGFloat(count) * rowHeight + CGFloat(max(0, count - 1)) * stackView.spacing
+        // Page indicator
+        if hasPrev || hasMore {
+            let indicators = [hasPrev ? "▲" : nil, hasMore ? "▼" : nil].compactMap { $0 }.joined(separator: " ")
+            let indicatorLabel = NSTextField(labelWithString: indicators)
+            indicatorLabel.font = NSFont.systemFont(ofSize: 11)
+            indicatorLabel.textColor = .secondaryLabelColor
+            indicatorLabel.alignment = .center
+            indicatorLabel.isBezeled = false
+            stackView.addArrangedSubview(indicatorLabel)
+            candidateLabels.append(indicatorLabel)
+        }
+
+        let indicatorRows = (hasPrev || hasMore) ? 1 : 0
+        let totalRows = count + indicatorRows
+        let totalHeight = padding * 2 + CGFloat(totalRows) * rowHeight + CGFloat(max(0, totalRows - 1)) * stackView.spacing
         setContentSize(NSSize(width: windowWidth, height: totalHeight))
     }
 
-    private func updateClassicMode(_ words: [String], selectedIndex: Int) {
+    private func updateClassicMode(_ words: [String], selectedIndex: Int, hasMore: Bool = false, hasPrev: Bool = false) {
         guard !words.isEmpty else {
             classicTextView?.string = ""
             resizeClassicToFit()
@@ -231,7 +247,10 @@ class CandidateWindow: NSPanel {
         let maxVisible = CandidateDisplayMode.classic.maxVisible
         let count = min(words.count, maxVisible)
         let visibleWords = Array(words.prefix(count))
-        classicTextView?.string = visibleWords.joined(separator: " ")
+        var displayText = visibleWords.joined(separator: " ")
+        if hasPrev { displayText = "▲ " + displayText }
+        if hasMore { displayText = displayText + " ▼" }
+        classicTextView?.string = displayText
         resizeClassicToFit()
     }
 
