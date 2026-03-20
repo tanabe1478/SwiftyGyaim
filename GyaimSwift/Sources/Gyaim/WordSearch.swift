@@ -39,9 +39,9 @@ class WordSearch {
     /// - Parameters:
     ///   - query: Input romaji pattern
     ///   - searchMode: 0 = prefix, 1 = exact, 2 = Google Transliterate (handled by Controller)
-    ///   - limit: Max results
+    ///   - limit: Max results (0 = unlimited)
     /// - Returns: Array of SearchCandidate
-    func search(query: String, searchMode: Int, limit: Int = 100) -> [SearchCandidate] {
+    func search(query: String, searchMode: Int, limit: Int = 0) -> [SearchCandidate] {
         self.searchMode = searchMode
         guard !query.isEmpty else { return [] }
 
@@ -107,14 +107,14 @@ class WordSearch {
                 if !candfound.contains(word) {
                     candidates.append(SearchCandidate(word: word, reading: yomi))
                     candfound.insert(word)
-                    if candidates.count >= limit { break }
+                    if limit > 0, candidates.count >= limit { break }
                 }
             }
         }
 
         // Search connection dict
         connectionDict.search(pat: q, searchMode: searchMode) { word, pat, outc in
-            guard candidates.count < limit else { return }
+            if limit > 0 { guard candidates.count < limit else { return } }
             var w = word
             if w.hasSuffix("*") { return }
             w = w.replacingOccurrences(of: "*", with: "")
@@ -124,7 +124,7 @@ class WordSearch {
             }
         }
         // Limit results
-        if candidates.count > limit {
+        if limit > 0, candidates.count > limit {
             candidates = Array(candidates.prefix(limit))
         }
 
