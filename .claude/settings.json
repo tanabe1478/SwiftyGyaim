@@ -11,7 +11,7 @@
         ]
       },
       {
-        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"\\\\.swift$\"",
+        "matcher": "Edit",
         "hooks": [
           {
             "type": "command",
@@ -22,7 +22,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "tool == \"Bash\" && tool_input.command matches \"gh pr create\"",
+        "matcher": "Bash(gh pr create*)",
         "hooks": [
           {
             "type": "command",

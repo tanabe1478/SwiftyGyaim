@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-03-20
+> Last updated: 2026-03-20 (淘汰方式UI追加)
 
 ## 概要
 
@@ -39,6 +39,15 @@ UserDefaultsキー: `candidateDisplayMode` (Int, 0=list, 1=classic, デフォル
 ## モード切替の実装
 
 NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackViewとclassic用のClassicBackgroundViewを両方保持し、表示時に切り替える。
+
+## PreferencesWindow: 学習辞書セクション
+
+候補セクションの下に「学習辞書」セクションを追加（ADR-014）。
+
+- **淘汰方式**: NSSegmentedControl（3セグメント: MRU / 淘汰なし / スコアベース）
+- UserDefaultsキー: `studyDictEvictionMode` (Int, 0=mru, 1=none, 2=scoreBased, デフォルト2)
+- `changeEvictionMode(_:)` アクションで即座にUserDefaultsに保存
+- `buildUI()` と `rebuildLayout()` の両方に同じUIを構築（既存パターンに従う）
 
 ## 既知の制約
 
