@@ -99,6 +99,10 @@ cp -r .build/Build/Products/Debug/SwiftyGyaim.app ~/Library/Input\ Methods/
 2. **ユーザー辞書** (`~/.gyaim/localdict.txt`) — ユーザー登録語（最優先）
 3. **学習辞書** (`~/.gyaim/studydict.txt`) — 使用頻度に基づく学習（最大1000件）
 
+## 関連リンク
+
+- [SwiftyGyaim Scrapbox](https://scrapbox.io/swifty-gyaim/) — 開発メモ・ナレッジベース・フォーラム
+
 ## ライセンス
 
 [MIT License](LICENSE) - Copyright (c) 2015-2026 Toshiyuki Masui
