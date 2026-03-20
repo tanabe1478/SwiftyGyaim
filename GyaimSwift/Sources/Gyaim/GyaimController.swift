@@ -579,7 +579,7 @@ class GyaimController: IMKInputController {
         candidates.insert(SearchCandidate(word: inputPat), at: 0)
 
         // Add hiragana if few candidates
-        if candidates.count < 8, !hiragana.isEmpty {
+        if candidates.count < CandidateDisplayMode.current.maxVisible, !hiragana.isEmpty {
             candidates.append(SearchCandidate(word: hiragana))
         }
 
@@ -705,7 +705,9 @@ class GyaimController: IMKInputController {
             guard idx < words.count, let cand = words[safe: idx] else { break }
             candList.append(cand)
         }
-        candWindow?.updateCandidates(candList, selectedIndex: -1)
+        let hasMore = (nthCand + 1 + maxCandList) < words.count
+        let hasPrev = nthCand > 0
+        candWindow?.updateCandidates(candList, selectedIndex: -1, hasMore: hasMore, hasPrev: hasPrev)
     }
 
     // MARK: - Fix as Kana (F6/F7)

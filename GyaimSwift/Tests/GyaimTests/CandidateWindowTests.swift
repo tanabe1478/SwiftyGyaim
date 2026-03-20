@@ -116,6 +116,97 @@ final class CandidateWindowTests: XCTestCase {
         CandidateWindow.shared = nil
     }
 
+    // MARK: - Page indicator tests
+
+    func testClassicModeShowsDownArrowWhenHasMore() {
+        CandidateDisplayMode.setCurrent(.classic)
+        let window = CandidateWindow()
+        window.updateCandidates(["候補1", "候補2", "候補3"], selectedIndex: 0, hasMore: true, hasPrev: false)
+
+        let textView = findClassicTextView(in: window)
+        XCTAssertNotNil(textView)
+        XCTAssertTrue(textView!.string.hasSuffix("▼"), "hasMore時にクラシック表示の末尾に▼があるべき: \(textView!.string)")
+        XCTAssertFalse(textView!.string.hasPrefix("▲"), "hasPrev=false時に▲は不要")
+
+        CandidateWindow.shared = nil
+    }
+
+    func testClassicModeNoArrowWhenHasPrevOnly() {
+        CandidateDisplayMode.setCurrent(.classic)
+        let window = CandidateWindow()
+        window.updateCandidates(["候補1", "候補2", "候補3"], selectedIndex: 0, hasMore: false, hasPrev: true)
+
+        let textView = findClassicTextView(in: window)
+        XCTAssertNotNil(textView)
+        XCTAssertFalse(textView!.string.contains("▲"), "hasPrevのみでは矢印不要")
+        XCTAssertFalse(textView!.string.contains("▼"), "hasMore=false時に▼は不要")
+
+        CandidateWindow.shared = nil
+    }
+
+    func testClassicModeShowsDownArrowWhenBothFlags() {
+        CandidateDisplayMode.setCurrent(.classic)
+        let window = CandidateWindow()
+        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: true, hasPrev: true)
+
+        let textView = findClassicTextView(in: window)
+        XCTAssertNotNil(textView)
+        XCTAssertFalse(textView!.string.contains("▲"), "▲は表示しない")
+        XCTAssertTrue(textView!.string.hasSuffix("▼"), "hasMore時に▼があるべき")
+
+        CandidateWindow.shared = nil
+    }
+
+    func testClassicModeNoArrowsWhenNoPageInfo() {
+        CandidateDisplayMode.setCurrent(.classic)
+        let window = CandidateWindow()
+        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0)
+
+        let textView = findClassicTextView(in: window)
+        XCTAssertNotNil(textView)
+        XCTAssertFalse(textView!.string.contains("▲"), "ページ情報なしでは▲不要")
+        XCTAssertFalse(textView!.string.contains("▼"), "ページ情報なしでは▼不要")
+
+        CandidateWindow.shared = nil
+    }
+
+    func testListModeShowsIndicatorWhenHasMore() {
+        CandidateDisplayMode.setCurrent(.list)
+        let window = CandidateWindow()
+        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: true, hasPrev: false)
+
+        let labels = findStackViewLabels(in: window)
+        let lastLabel = labels.last?.stringValue ?? ""
+        XCTAssertTrue(lastLabel.contains("▼"), "hasMore時にリスト表示の末尾に▼インジケータがあるべき: \(lastLabel)")
+
+        CandidateWindow.shared = nil
+    }
+
+    func testListModeNoIndicatorWhenHasPrevOnly() {
+        CandidateDisplayMode.setCurrent(.list)
+        let window = CandidateWindow()
+        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: false, hasPrev: true)
+
+        let labels = findStackViewLabels(in: window)
+        // hasPrevのみではインジケータ行なし（候補2件のみ）
+        XCTAssertEqual(labels.count, 2, "hasPrevのみではインジケータ不要")
+
+        CandidateWindow.shared = nil
+    }
+
+    func testListModeShowsOnlyDownWhenBothFlags() {
+        CandidateDisplayMode.setCurrent(.list)
+        let window = CandidateWindow()
+        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: true, hasPrev: true)
+
+        let labels = findStackViewLabels(in: window)
+        let lastLabel = labels.last?.stringValue ?? ""
+        XCTAssertFalse(lastLabel.contains("▲"), "▲は表示しない: \(lastLabel)")
+        XCTAssertTrue(lastLabel.contains("▼"), "hasMore時に▼があるべき: \(lastLabel)")
+
+        CandidateWindow.shared = nil
+    }
+
     // MARK: - Window positioning (pure function tests)
 
     // lineRect.origin.y = カーソル行の下端 (macOS座標系: Y上向き)

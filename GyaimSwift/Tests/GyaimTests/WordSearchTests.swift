@@ -90,6 +90,21 @@ final class WordSearchTests: XCTestCase {
         _ = results
     }
 
+    func testSearchReturnsMoreThan10Results() throws {
+        try XCTSkipIf(ws == nil)
+        // Default limit=0 (unlimited), common prefix "a" should have many candidates
+        let results = ws.search(query: "a", searchMode: 0)
+        XCTAssertGreaterThan(results.count, 10,
+            "Unlimited search should return more than 10 results for common query 'a', got \(results.count)")
+    }
+
+    func testSearchWithExplicitLimit() throws {
+        try XCTSkipIf(ws == nil)
+        let limited = ws.search(query: "a", searchMode: 0, limit: 5)
+        XCTAssertLessThanOrEqual(limited.count, 5,
+            "Explicit limit=5 should cap results to 5, got \(limited.count)")
+    }
+
     func testRegisterAndSearch() throws {
         try XCTSkipIf(ws == nil)
         ws.register(word: "テスト単語", reading: "testtango")
