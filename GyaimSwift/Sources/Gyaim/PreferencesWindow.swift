@@ -162,8 +162,8 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(evictControl)
         evictionModeControl = evictControl
 
-        y -= 20
-        let evictHint = makeLabel("スコアベースがおすすめ。頻度と時間に基づいて淘汰します")
+        y -= 28
+        let evictHint = makeLabel("MRU: 最近使った順に保持  淘汰なし: 追加順のまま保持  スコアベース: 使用頻度と時間で評価")
         evictHint.font = NSFont.systemFont(ofSize: 11)
         evictHint.textColor = .secondaryLabelColor
         evictHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
@@ -400,8 +400,8 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(evictControl)
         evictionModeControl = evictControl
 
-        y -= 20
-        let evictHint = makeLabel("スコアベースがおすすめ。頻度と時間に基づいて淘汰します")
+        y -= 28
+        let evictHint = makeLabel("MRU: 最近使った順に保持  淘汰なし: 追加順のまま保持  スコアベース: 使用頻度と時間で評価")
         evictHint.font = NSFont.systemFont(ofSize: 11)
         evictHint.textColor = .secondaryLabelColor
         evictHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
