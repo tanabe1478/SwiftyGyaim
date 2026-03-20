@@ -20,10 +20,11 @@ nbproject
 .dat*.*
 LOG.md
 PLAN.md
-# .claude - ignore all except hooks and skills
+# .claude - ignore all except hooks, skills, and settings
 .claude/*
 !.claude/hooks/
 !.claude/skills/
+!.claude/settings.json
 docs/gyaim-learning-roadmap.md
 docs/gyaim-learning-curriculum.md
 docs/gyaim-week1-tasklist.md

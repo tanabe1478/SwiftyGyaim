@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-03-17
+> Last updated: 2026-03-20
 
 ## 概要
 
@@ -52,6 +52,16 @@ deactivateServer(_:) → hideWindow, fix(skipStudy: true), 辞書finish
 ```
 
 **重要**: deactivationではsenderをfix()に渡すこと。渡さないとクライアント取得に失敗しテキストが破棄される（Issue #13で修正済み）。
+
+## showCands() のページ送り
+
+`showCands()` は `nthCand + 1` から `maxVisible` 個の候補を `CandidateWindow.updateCandidates()` に渡す。スペースキーで `nthCand` が進むと表示がスクロールする。
+
+ページ情報の計算:
+- `hasMore = (nthCand + 1 + maxCandList) < words.count`
+- `hasPrev = nthCand > 0`
+
+ひらがなフォールバック: 候補数が `CandidateDisplayMode.current.maxVisible` 未満の場合、ひらがなを候補に追加。
 
 ## 既知の制約
 
