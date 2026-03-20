@@ -219,9 +219,8 @@ class CandidateWindow: NSPanel {
         }
 
         // Page indicator
-        if hasPrev || hasMore {
-            let indicators = [hasPrev ? "▲" : nil, hasMore ? "▼" : nil].compactMap { $0 }.joined(separator: " ")
-            let indicatorLabel = NSTextField(labelWithString: indicators)
+        if hasMore {
+            let indicatorLabel = NSTextField(labelWithString: "▼")
             indicatorLabel.font = NSFont.systemFont(ofSize: 11)
             indicatorLabel.textColor = .secondaryLabelColor
             indicatorLabel.alignment = .center
@@ -230,7 +229,7 @@ class CandidateWindow: NSPanel {
             candidateLabels.append(indicatorLabel)
         }
 
-        let indicatorRows = (hasPrev || hasMore) ? 1 : 0
+        let indicatorRows = hasMore ? 1 : 0
         let totalRows = count + indicatorRows
         let totalHeight = padding * 2 + CGFloat(totalRows) * rowHeight + CGFloat(max(0, totalRows - 1)) * stackView.spacing
         setContentSize(NSSize(width: windowWidth, height: totalHeight))
@@ -248,7 +247,6 @@ class CandidateWindow: NSPanel {
         let count = min(words.count, maxVisible)
         let visibleWords = Array(words.prefix(count))
         var displayText = visibleWords.joined(separator: " ")
-        if hasPrev { displayText = "▲ " + displayText }
         if hasMore { displayText = displayText + " ▼" }
         classicTextView?.string = displayText
         resizeClassicToFit()
