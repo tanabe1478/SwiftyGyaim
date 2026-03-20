@@ -1,5 +1,5 @@
-import XCTest
 import Cocoa
+import XCTest
 
 final class GyaimE2ETests: XCTestCase {
 

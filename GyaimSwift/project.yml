@@ -24,6 +24,15 @@ targets:
     frameworks:
       - InputMethodKit
       - Security
+    postBuildScripts:
+      - script: |
+          if command -v swiftlint >/dev/null 2>&1; then
+            swiftlint lint --quiet
+          else
+            echo "warning: SwiftLint not installed. brew install swiftlint"
+          fi
+        name: SwiftLint
+        basedOnDependencyAnalysis: false
 
   GyaimTests:
     type: bundle.unit-test

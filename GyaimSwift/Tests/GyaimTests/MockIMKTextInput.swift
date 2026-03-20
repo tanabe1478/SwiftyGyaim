@@ -4,8 +4,8 @@ import InputMethodKit
 final class MockIMKTextInput: NSObject, IMKTextInput {
     var insertedTexts: [String] = []
     var markedTexts: [String] = []
-    var mockSelectedRange: NSRange = NSRange(location: NSNotFound, length: 0)
-    var mockSelectedText: String? = nil
+    var mockSelectedRange = NSRange(location: NSNotFound, length: 0)
+    var mockSelectedText: String?
 
     func insertText(_ string: Any!, replacementRange: NSRange) {
         if let s = string as? String {

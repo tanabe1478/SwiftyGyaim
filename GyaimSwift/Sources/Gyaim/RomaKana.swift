@@ -46,12 +46,12 @@ struct RomaKana {
     // MARK: - Roma to Kana
 
     func roma2hiragana(_ roma: String) -> String {
-        return romaToKana(roma, map: romaToHiragana, sortedKeys: sortedHiraKeys,
+        romaToKana(roma, map: romaToHiragana, sortedKeys: sortedHiraKeys,
                           tsu: "ん", smallTsu: "っ", isHiragana: true)
     }
 
     func roma2katakana(_ roma: String) -> String {
-        return romaToKana(roma, map: romaToKatakana, sortedKeys: sortedKataKeys,
+        romaToKana(roma, map: romaToKatakana, sortedKeys: sortedKataKeys,
                           tsu: "ン", smallTsu: "ッ", isHiragana: false)
     }
 
@@ -79,7 +79,7 @@ struct RomaKana {
                 let r1: String? = r1Index < roma.endIndex ? String(roma[r1Index]) : nil
 
                 let consonants = "bcdfghjklmnpqrstvwxz"
-                if (r0 == "n" || r0 == "N"), let r1, consonants.contains(r1) {
+                if r0 == "n" || r0 == "N", let r1, consonants.contains(r1) {
                     kana += tsu  // "ん" / "ン"
                     ind = roma.index(after: ind)
                 } else {
@@ -87,7 +87,7 @@ struct RomaKana {
                     if doubleConsonants.contains(r0), let r1, r0 == r1 {
                         kana += smallTsu  // "っ" / "ッ"
                         ind = roma.index(after: ind)
-                    } else if (r0 == "n" || r0 == "N"), r1 == nil {
+                    } else if r0 == "n" || r0 == "N", r1 == nil {
                         kana += tsu  // "ん" / "ン"
                         ind = roma.index(after: ind)
                     } else {

@@ -1,0 +1,107 @@
+# SwiftLint configuration for SwiftyGyaim
+# Based on Airbnb Swift Style Guide (https://github.com/airbnb/swift)
+# Violations in existing code are warnings; new code should have 0 violations.
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+
+# Disable rules not applicable to this project
+disabled_rules:
+  - trailing_comma            # Project style: trailing commas in arrays/dicts
+  - vertical_parameter_alignment # Manual NSRect-heavy UI code
+  - todo                      # TODOs are tracked in issues, not lint
+  - for_where                 # Explicit if inside for is acceptable
+
+# Airbnb-aligned opt-in rules
+opt_in_rules:
+  # Airbnb core rules
+  - fatal_error_message
+  - implicitly_unwrapped_optional
+  - legacy_constant
+  - legacy_constructor
+  - unowned_variable_capture
+  # Airbnb style rules (mapped from style guide)
+  - closure_spacing
+  - contains_over_first_not_nil
+  - empty_count
+  - first_where
+  - modifier_order
+  - sorted_imports
+  - toggle_bool
+  - unavailable_function
+  - implicit_return
+  - joined_default_parameter
+  - redundant_type_annotation
+  - yoda_condition
+
+# ── Rule Configuration ──
+
+# Airbnb: 100 target, 130 strict
+# SwiftyGyaim: warning at 130, error at 200 (existing code exceeds 100)
+line_length:
+  warning: 130
+  error: 200
+  ignores_urls: true
+  ignores_comments: true
+
+# Airbnb: lowerCamelCase, min 2 chars
+# SwiftyGyaim: allow 1-char vars (RubyMotion port convention) as warning
+identifier_name:
+  min_length:
+    warning: 1
+  max_length:
+    warning: 60
+  excluded:
+    - id
+    - ok
+    - to
+
+# Airbnb: types should be focused and small
+type_body_length:
+  warning: 250
+  error: 600
+
+file_length:
+  warning: 400
+  error: 1000
+
+# Airbnb: functions should be short and focused
+function_body_length:
+  warning: 40
+  error: 200
+
+cyclomatic_complexity:
+  warning: 10
+  error: 70
+
+function_parameter_count:
+  warning: 5
+  error: 20
+
+nesting:
+  type_level: 2
+
+large_tuple:
+  warning: 3
+  error: 5
+
+# Airbnb: no force unwrap/cast in production
+force_cast: warning
+force_try: warning
+
+# Airbnb: modifier order (using SwiftLint default order)
+
+# ── Custom Rules (Airbnb-inspired) ──
+custom_rules:
+  no_print:
+    name: "No print statements"
+    regex: "\\bprint\\s*\\("
+    match_kinds:
+      - identifier
+    message: "Use Log (os.Logger) instead of print()"
+    severity: warning
+    included: "Sources/.*\\.swift"

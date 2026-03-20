@@ -157,7 +157,9 @@ enum GoogleTransliterate {
                   let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [Any] else {
                 let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-                Log.dict.error("Google Input Tools failed: status=\(status), elapsed=\(String(format: "%.0f", elapsed))ms, error=\(error?.localizedDescription ?? "none")")
+                let elapsedStr = String(format: "%.0f", elapsed)
+                let errDesc = error?.localizedDescription ?? "none"
+                Log.dict.error("Google Input Tools failed: status=\(status), elapsed=\(elapsedStr)ms, error=\(errDesc)")
                 DispatchQueue.main.async { completion([]) }
                 return
             }

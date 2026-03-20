@@ -1,5 +1,5 @@
-import XCTest
 @testable import Gyaim
+import XCTest
 
 final class WordSearchTests: XCTestCase {
     var ws: WordSearch!

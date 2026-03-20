@@ -1,6 +1,6 @@
-import XCTest
 import Cocoa
 @testable import Gyaim
+import XCTest
 
 final class CopyTextTests: XCTestCase {
 

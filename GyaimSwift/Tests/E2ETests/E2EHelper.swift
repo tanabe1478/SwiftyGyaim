@@ -1,5 +1,5 @@
-import Cocoa
 import Carbon
+import Cocoa
 
 enum E2EHelper {
     /// Activate Gyaim as the current input source

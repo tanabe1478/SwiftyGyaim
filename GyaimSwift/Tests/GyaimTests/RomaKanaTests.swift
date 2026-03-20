@@ -1,5 +1,5 @@
-import XCTest
 @testable import Gyaim
+import XCTest
 
 final class RomaKanaTests: XCTestCase {
     let rk = RomaKana()

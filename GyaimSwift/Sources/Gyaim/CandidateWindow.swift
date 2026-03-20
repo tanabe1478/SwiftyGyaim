@@ -247,7 +247,7 @@ class CandidateWindow: NSPanel {
         let count = min(words.count, maxVisible)
         let visibleWords = Array(words.prefix(count))
         var displayText = visibleWords.joined(separator: " ")
-        if hasMore { displayText = displayText + " ▼" }
+        if hasMore { displayText += " ▼" }
         classicTextView?.string = displayText
         resizeClassicToFit()
     }
