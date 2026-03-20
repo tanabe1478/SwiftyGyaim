@@ -1,5 +1,5 @@
-import Foundation
 import CryptoKit
+import Foundation
 
 /// MD5-based XOR encryption compatible with the Ruby implementation.
 /// Uses uuencode → XOR with MD5 digest of salt → hex encoding.

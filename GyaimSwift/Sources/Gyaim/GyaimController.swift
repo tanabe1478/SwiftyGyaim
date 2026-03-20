@@ -188,7 +188,6 @@ class GyaimController: IMKInputController {
         let modifierFlags = event.modifierFlags
         Log.input.debug("keyDown: keyCode=\(keyCode), chars=\(event.characters ?? ""), mods=\(modifierFlags.rawValue)")
 
-
         if keyCode == kVirtualJISKanaModeKey || keyCode == kVirtualJISRomanModeKey {
             return true
         }
@@ -214,7 +213,7 @@ class GyaimController: IMKInputController {
         guard let c = eventString.utf8.first else { return true }
 
         // Single-key kana confirm: ; → hiragana, q → katakana (configurable)
-        if converting, modifierFlags.intersection([.control, .command, .option]).isEmpty {
+        if converting, modifierFlags.isDisjoint(with: [.control, .command, .option]) {
             if c == KeyBindings.shared.hiraganaChar {
                 fixAsKana(hiragana: true, client: sender)
                 return true
@@ -286,7 +285,7 @@ class GyaimController: IMKInputController {
         // Number keys 1-9: select candidate from list (only when list is visible)
         else if converting, nthCand > 0 || searchMode > 0,
                 c >= 0x31, c <= 0x39,
-                modifierFlags.intersection([.control, .command, .option]).isEmpty {
+                modifierFlags.isDisjoint(with: [.control, .command, .option]) {
             let num = Int(c - 0x30) // 1-9
             let targetIndex = nthCand + num
             if targetIndex < candidates.count {
@@ -297,7 +296,7 @@ class GyaimController: IMKInputController {
         }
         // Printable character (0x21-0x7e), no Control/Command/Option
         else if c >= 0x21, c <= 0x7e,
-                modifierFlags.intersection([.control, .command, .option]).isEmpty {
+                modifierFlags.isDisjoint(with: [.control, .command, .option]) {
             if nthCand > 0 || searchMode > 0 {
                 fix(client: sender)
             }
@@ -392,7 +391,7 @@ class GyaimController: IMKInputController {
         let c = character
 
         // Single-key kana confirm: ; → hiragana, q → katakana (configurable)
-        if converting, modifierFlags.intersection([.control, .command, .option]).isEmpty {
+        if converting, modifierFlags.isDisjoint(with: [.control, .command, .option]) {
             if c == hiraganaChar {
                 return HandleResult(handled: true, action: .fixAsKana(hiragana: true))
             }
@@ -452,7 +451,7 @@ class GyaimController: IMKInputController {
         // Number keys 1-9: select candidate from list (only when list is visible)
         if converting, nthCand > 0 || searchMode > 0,
            c >= 0x31, c <= 0x39,
-           modifierFlags.intersection([.control, .command, .option]).isEmpty {
+           modifierFlags.isDisjoint(with: [.control, .command, .option]) {
             let num = Int(c - 0x30)
             let targetIndex = nthCand + num
             if targetIndex < candidateCount {
@@ -463,7 +462,7 @@ class GyaimController: IMKInputController {
 
         // Printable character (0x21-0x7e), no Control/Command/Option
         if c >= 0x21, c <= 0x7e,
-           modifierFlags.intersection([.control, .command, .option]).isEmpty {
+           modifierFlags.isDisjoint(with: [.control, .command, .option]) {
             if nthCand > 0 || searchMode > 0 {
                 return HandleResult(handled: true, action: .fixThenSearchAndShow)
             }

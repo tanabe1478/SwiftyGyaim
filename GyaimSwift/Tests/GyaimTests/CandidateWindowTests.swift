@@ -1,5 +1,5 @@
-import XCTest
 @testable import Gyaim
+import XCTest
 
 final class CandidateWindowTests: XCTestCase {
 
@@ -44,7 +44,7 @@ final class CandidateWindowTests: XCTestCase {
         XCTAssertTrue(textView?.string.contains("候補2") ?? false)
 
         // Classic mode should have background view
-        let scrollView = findView(in: window.contentView!) { (sv: NSScrollView) in true }
+        let scrollView = findView(in: window.contentView!) { (_: NSScrollView) in true }
         XCTAssertNotNil(scrollView, "クラシックモードにはスクロールビューが必要")
 
         CandidateWindow.shared = nil
@@ -374,7 +374,7 @@ final class CandidateWindowTests: XCTestCase {
     private func findClassicTextView(in window: CandidateWindow) -> NSTextView? {
         guard let contentView = window.contentView else { return nil }
         // Find NSTextView inside NSScrollView (classic mode structure)
-        if let scrollView = findView(in: contentView, matching: { (sv: NSScrollView) in true }),
+        if let scrollView = findView(in: contentView, matching: { (_: NSScrollView) in true }),
            let textView = scrollView.documentView as? NSTextView {
             return textView
         }

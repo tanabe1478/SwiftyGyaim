@@ -85,7 +85,6 @@ class WordSearch {
             return candidates
         }
 
-
         // Special: uppercase → pass through
         if q.range(of: "[A-Z]", options: .regularExpression) != nil {
             candidates.append(SearchCandidate(word: q, reading: q))
@@ -127,7 +126,7 @@ class WordSearch {
         }
 
         // Search connection dict
-        connectionDict.search(pat: q, searchMode: searchMode) { word, pat, outc in
+        connectionDict.search(pat: q, searchMode: searchMode) { word, pat, _ in
             if limit > 0 { guard candidates.count < limit else { return } }
             var w = word
             if w.hasSuffix("*") { return }
