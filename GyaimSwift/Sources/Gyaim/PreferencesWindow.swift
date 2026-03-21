@@ -15,6 +15,7 @@ class PreferencesWindow: NSWindow {
     private var googleTriggerField: NSTextField?
     private var googleTransliterateRecorders: [ShortcutRecorderRow] = []
     private var evictionModeControl: NSSegmentedControl?
+    private var studyHiraganaToggle: NSButton?
 
     static func show() {
         if shared == nil {
@@ -168,6 +169,14 @@ class PreferencesWindow: NSWindow {
         evictHint.textColor = .secondaryLabelColor
         evictHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
         contentBox.addSubview(evictHint)
+
+        y -= 24
+        let shToggle = NSButton(checkboxWithTitle: "平仮名の確定を学習する",
+                                 target: self, action: #selector(toggleStudyHiragana(_:)))
+        shToggle.frame = NSRect(x: 20, y: y, width: 300, height: 20)
+        shToggle.state = WordSearch.isStudyHiraganaEnabled ? .on : .off
+        contentBox.addSubview(shToggle)
+        studyHiraganaToggle = shToggle
 
         // Google Transliterate section
         y -= 40
@@ -407,6 +416,14 @@ class PreferencesWindow: NSWindow {
         evictHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
         contentBox.addSubview(evictHint)
 
+        y -= 24
+        let shToggle = NSButton(checkboxWithTitle: "平仮名の確定を学習する",
+                                 target: self, action: #selector(toggleStudyHiragana(_:)))
+        shToggle.frame = NSRect(x: 20, y: y, width: 300, height: 20)
+        shToggle.state = WordSearch.isStudyHiraganaEnabled ? .on : .off
+        contentBox.addSubview(shToggle)
+        studyHiraganaToggle = shToggle
+
         // Google Transliterate section in rebuildLayout
         y -= 40
         let googleTitle = makeLabel("Google変換", bold: true)
@@ -566,6 +583,10 @@ class PreferencesWindow: NSWindow {
     @objc private func changeEvictionMode(_ sender: NSSegmentedControl) {
         let mode = EvictionMode(rawValue: sender.selectedSegment) ?? .mru
         EvictionMode.setCurrent(mode)
+    }
+
+    @objc private func toggleStudyHiragana(_ sender: NSButton) {
+        WordSearch.setStudyHiraganaEnabled(sender.state == .on)
     }
 
     @objc private func toggleClipboardCandidate(_ sender: NSButton) {
