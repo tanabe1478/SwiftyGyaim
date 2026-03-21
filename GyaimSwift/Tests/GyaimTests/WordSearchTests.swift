@@ -118,6 +118,7 @@ final class WordSearchTests: XCTestCase {
     override func tearDown() {
         super.tearDown()
         UserDefaults.standard.removeObject(forKey: "studyDictEvictionMode")
+        UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
     }
 
     func testStudyInsertsNewEntry() throws {
@@ -274,6 +275,70 @@ final class WordSearchTests: XCTestCase {
         let boostedSurvived = result.first { $0.word == "ブースト語" }
         XCTAssertNotNil(boostedSurvived,
                         "freq=3の語は7日前でも淘汰されずに生き残るべき")
+    }
+
+    // MARK: - Study Hiragana Skip
+
+    func testIsAllHiragana() {
+        XCTAssertTrue(WordSearch.isAllHiragana("して"))
+        XCTAssertTrue(WordSearch.isAllHiragana("の"))
+        XCTAssertTrue(WordSearch.isAllHiragana("できる"))
+        XCTAssertFalse(WordSearch.isAllHiragana("東京"))
+        XCTAssertFalse(WordSearch.isAllHiragana("食べる"))
+        XCTAssertFalse(WordSearch.isAllHiragana("カタカナ"))
+        XCTAssertFalse(WordSearch.isAllHiragana(""))
+        XCTAssertFalse(WordSearch.isAllHiragana("abc"))
+    }
+
+    func testStudySkipsHiraganaWhenDisabled() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setStudyHiraganaEnabled(false)
+        ws.study(word: "ふがほげ", reading: "fugahoge")
+        ws.finish()
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        XCTAssertFalse(entries.map(\.word).contains("ふがほげ"),
+                       "Hiragana word should not be studied when setting is OFF")
+    }
+
+    func testStudyLearnsHiraganaWhenEnabled() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setStudyHiraganaEnabled(true)
+        ws.study(word: "ふがほげ", reading: "fugahoge")
+        ws.finish()
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        XCTAssertTrue(entries.map(\.word).contains("ふがほげ"),
+                      "Hiragana word should be studied when setting is ON")
+    }
+
+    func testStudyHiraganaDefaultIsEnabled() throws {
+        try XCTSkipIf(ws == nil)
+        UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
+        ws.study(word: "ふがほげ", reading: "fugahoge")
+        ws.finish()
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        XCTAssertTrue(entries.map(\.word).contains("ふがほげ"),
+                      "Default should learn hiragana (backward compat)")
+    }
+
+    func testStudyAlwaysLearnsKanji() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setStudyHiraganaEnabled(false)
+        ws.study(word: "東京", reading: "tokyo")
+        let results = ws.search(query: "tokyo", searchMode: 1)
+        XCTAssertTrue(results.map(\.word).contains("東京"),
+                      "Kanji words should always be studied")
+    }
+
+    func testStudyLearnsMixedKanjiHiragana() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setStudyHiraganaEnabled(false)
+        ws.study(word: "食べる", reading: "taberu")
+        let results = ws.search(query: "taberu", searchMode: 1)
+        XCTAssertTrue(results.map(\.word).contains("食べる"),
+                      "Mixed kanji+hiragana words should always be studied")
     }
 
     func testSearchStudyDictPriority() throws {
