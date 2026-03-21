@@ -11,6 +11,7 @@ final class PreferencesWindowTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "clipboardCandidateEnabled")
         UserDefaults.standard.removeObject(forKey: "selectedTextCandidateEnabled")
         UserDefaults.standard.removeObject(forKey: "candidateDisplayMode")
+        UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
         window = PreferencesWindow()
     }
 
@@ -21,6 +22,7 @@ final class PreferencesWindowTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "clipboardCandidateEnabled")
         UserDefaults.standard.removeObject(forKey: "selectedTextCandidateEnabled")
         UserDefaults.standard.removeObject(forKey: "candidateDisplayMode")
+        UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
         super.tearDown()
     }
 
@@ -208,5 +210,31 @@ final class PreferencesWindowTests: XCTestCase {
         let control = findEvictionModeControl()!
         XCTAssertEqual(control.selectedSegment, EvictionMode.mru.rawValue,
                        "デフォルトはMRU（セグメント0）であるべき")
+    }
+
+    // MARK: - Study Hiragana Toggle
+
+    func testStudyHiraganaToggleExists() {
+        let toggle = findCheckbox(titled: "平仮名の確定を学習する")
+        XCTAssertNotNil(toggle, "平仮名学習のトグルが見つからない")
+    }
+
+    func testStudyHiraganaToggleDefaultOn() {
+        UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
+        window.close()
+        window = PreferencesWindow()
+        let toggle = findCheckbox(titled: "平仮名の確定を学習する")!
+        XCTAssertEqual(toggle.state, .on, "デフォルトでONであるべき")
+    }
+
+    func testClickStudyHiraganaToggleUpdatesUserDefaults() {
+        let toggle = findCheckbox(titled: "平仮名の確定を学習する")!
+        toggle.state = .off
+        toggle.sendAction(toggle.action, to: toggle.target)
+        XCTAssertFalse(WordSearch.isStudyHiraganaEnabled)
+
+        toggle.state = .on
+        toggle.sendAction(toggle.action, to: toggle.target)
+        XCTAssertTrue(WordSearch.isStudyHiraganaEnabled)
     }
 }

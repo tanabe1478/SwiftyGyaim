@@ -15,6 +15,25 @@ struct SearchCandidate: Equatable {
 /// Priority: study dict > local dict > connection dict.
 /// Ported from WordSearch.rb (Toshiyuki Masui, 2011-2015)
 class WordSearch {
+    // MARK: - Study Hiragana Setting
+
+    private static let studyHiraganaKey = "studyHiraganaEnabled"
+
+    static var isStudyHiraganaEnabled: Bool {
+        UserDefaults.standard.object(forKey: studyHiraganaKey) == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: studyHiraganaKey)
+    }
+
+    static func setStudyHiraganaEnabled(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: studyHiraganaKey)
+    }
+
+    /// Returns true if the string consists entirely of hiragana characters (U+3040-U+309F).
+    static func isAllHiragana(_ s: String) -> Bool {
+        !s.isEmpty && s.unicodeScalars.allSatisfy { $0.value >= 0x3040 && $0.value <= 0x309F }
+    }
+
     private let connectionDict: ConnectionDict
     private let localDictFile: String
     private let studyDictFile: String
@@ -154,6 +173,10 @@ class WordSearch {
 
     /// Learn a word to the study dictionary.
     func study(word: String, reading: String) {
+        if !Self.isStudyHiraganaEnabled && Self.isAllHiragana(word) {
+            Log.dict.debug("Study skipped (hiragana): \"\(word)\" (reading: \"\(reading)\")")
+            return
+        }
         if reading.count > 1 {
             var registered = false
             connectionDict.search(pat: reading, searchMode: searchMode) { w, _, _ in
