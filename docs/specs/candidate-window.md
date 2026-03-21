@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-03-20 (淘汰方式UI追加)
+> Last updated: 2026-03-21 (平仮名学習トグル追加)
 
 ## 概要
 
@@ -48,6 +48,9 @@ NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackV
 - UserDefaultsキー: `studyDictEvictionMode` (Int, 0=mru, 1=none, 2=scoreBased, デフォルト0)
 - `changeEvictionMode(_:)` アクションで即座にUserDefaultsに保存
 - `buildUI()` と `rebuildLayout()` の両方に同じUIを構築（既存パターンに従う）
+- **平仮名学習**: チェックボックス「平仮名の確定を学習する」（デフォルトON）
+- UserDefaultsキー: `studyHiraganaEnabled` (Bool, デフォルトtrue)
+- `toggleStudyHiragana(_:)` アクションで即座にUserDefaultsに保存
 
 ## 既知の制約
 

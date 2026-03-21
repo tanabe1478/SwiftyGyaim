@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-03-20
+> Last updated: 2026-03-21
 
 ## 概要
 
@@ -43,6 +43,7 @@ Connection: タブ区切り `romaji\tsurface\tinConnection\toutConnection`
 | frequency | Int | 使用回数 |
 
 ### study()
+- **平仮名スキップ**: `studyHiraganaEnabled` がOFFの場合、wordが全てひらがな（U+3040-U+309F）ならスキップ。デフォルトON（後方互換）。UserDefaultsキー `studyHiraganaEnabled`（Bool）
 - 既存エントリ: `lastAccessTime` を更新、`frequency` をインクリメント、先頭に移動
 - 新規エントリ: `StudyEntry(lastAccessTime: now, frequency: 1)` を先頭に挿入
 - 上限超過時に淘汰方式に応じたevictionを実行
