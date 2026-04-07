@@ -348,4 +348,83 @@ final class WordSearchTests: XCTestCase {
         // Study dict entry should appear before connection dict entries
         XCTAssertEqual(results.first?.word, "万歳")
     }
+
+    // MARK: - Candidate Source Tagging
+
+    func testSearchStudyCandidateHasStudySource() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "東京", reading: "tokyo")
+        let results = ws.search(query: "tokyo", searchMode: 1)
+        let tokyo = results.first { $0.word == "東京" }
+        XCTAssertEqual(tokyo?.source, .study)
+    }
+
+    func testSearchLocalCandidateHasLocalSource() throws {
+        try XCTSkipIf(ws == nil)
+        ws.register(word: "テスト語", reading: "tesutogo")
+        let results = ws.search(query: "tesutogo", searchMode: 1)
+        let testWord = results.first { $0.word == "テスト語" }
+        XCTAssertEqual(testWord?.source, .local)
+    }
+
+    func testSearchConnectionCandidateHasConnectionSource() throws {
+        try XCTSkipIf(ws == nil)
+        let results = ws.search(query: "man", searchMode: 1)
+        let man = results.first { $0.word == "万" }
+        XCTAssertEqual(man?.source, .connection)
+    }
+
+    // MARK: - Delete from Study Dict
+
+    func testDeleteFromStudy_removesEntry() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "削除テスト語", reading: "sakujotesutogo")
+        let deleted = ws.deleteFromStudy(word: "削除テスト語", reading: "sakujotesutogo")
+        XCTAssertTrue(deleted)
+        let results = ws.search(query: "sakujotesutogo", searchMode: 1)
+        XCTAssertFalse(results.map(\.word).contains("削除テスト語"))
+    }
+
+    func testDeleteFromStudy_returnsFalseWhenNotFound() throws {
+        try XCTSkipIf(ws == nil)
+        let deleted = ws.deleteFromStudy(word: "存在しない", reading: "sonzai")
+        XCTAssertFalse(deleted)
+    }
+
+    func testDeleteFromStudy_persistsAfterReload() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "永続テスト語", reading: "eizokutesutogo")
+        ws.finish()
+        _ = ws.deleteFromStudy(word: "永続テスト語", reading: "eizokutesutogo")
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        XCTAssertFalse(entries.map(\.word).contains("永続テスト語"))
+    }
+
+    // MARK: - Delete from Local Dict
+
+    func testDeleteFromLocal_removesEntry() throws {
+        try XCTSkipIf(ws == nil)
+        ws.register(word: "テスト語", reading: "tesutogo")
+        let deleted = ws.deleteFromLocal(word: "テスト語", reading: "tesutogo")
+        XCTAssertTrue(deleted)
+        let results = ws.search(query: "tesutogo", searchMode: 1)
+        XCTAssertFalse(results.map(\.word).contains("テスト語"))
+    }
+
+    func testDeleteFromLocal_returnsFalseWhenNotFound() throws {
+        try XCTSkipIf(ws == nil)
+        let deleted = ws.deleteFromLocal(word: "存在しない", reading: "sonzai")
+        XCTAssertFalse(deleted)
+    }
+
+    func testDeleteFromLocal_persistsAfterReload() throws {
+        try XCTSkipIf(ws == nil)
+        ws.register(word: "テスト語", reading: "tesutogo")
+        let deleted = ws.deleteFromLocal(word: "テスト語", reading: "tesutogo")
+        XCTAssertTrue(deleted)
+        let entries = WordSearch.loadDict(
+            dictFile: tempDir.appendingPathComponent("localdict.txt").path)
+        XCTAssertFalse(entries.contains(["tesutogo", "テスト語"]))
+    }
 }
