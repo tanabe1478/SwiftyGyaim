@@ -14,6 +14,7 @@ class PreferencesWindow: NSWindow {
     private var displayModeControl: NSSegmentedControl?
     private var googleTriggerField: NSTextField?
     private var googleTransliterateRecorders: [ShortcutRecorderRow] = []
+    private var deleteCandidateRecorders: [ShortcutRecorderRow] = []
     private var evictionModeControl: NSSegmentedControl?
     private var studyHiraganaToggle: NSButton?
 
@@ -223,6 +224,39 @@ class PreferencesWindow: NSWindow {
         addGoogleBtn.bezelStyle = .rounded
         contentBox.addSubview(addGoogleBtn)
 
+        // Delete candidate section
+        y -= 40
+        let deleteTitle = makeLabel("候補削除（Shift+X）", bold: true)
+        deleteTitle.frame = NSRect(x: 20, y: y, width: 440, height: 24)
+        contentBox.addSubview(deleteTitle)
+
+        y -= 28
+        let deleteShortcutLabel = makeLabel("ショートカット:")
+        deleteShortcutLabel.frame = NSRect(x: 20, y: y, width: 120, height: 20)
+        contentBox.addSubview(deleteShortcutLabel)
+
+        for shortcut in KeyBindings.shared.deleteCandidate {
+            y -= 32
+            let row = ShortcutRecorderRow(frame: NSRect(x: 30, y: y, width: 420, height: 28))
+            row.setShortcut(shortcut)
+            row.onRemove = { [weak self] r in self?.removeDeleteCandidateRow(r) }
+            contentBox.addSubview(row)
+            deleteCandidateRecorders.append(row)
+        }
+
+        y -= 30
+        let addDeleteBtn = NSButton(title: "+ 追加", target: self, action: #selector(addDeleteCandidateShortcut))
+        addDeleteBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
+        addDeleteBtn.bezelStyle = .rounded
+        contentBox.addSubview(addDeleteBtn)
+
+        let deleteHint = makeLabel("候補表示中にShift+Xまたは上記ショートカットで学習/ユーザー辞書の候補を削除")
+        deleteHint.font = NSFont.systemFont(ofSize: 11)
+        deleteHint.textColor = .secondaryLabelColor
+        y -= 20
+        deleteHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
+        contentBox.addSubview(deleteHint)
+
         // Log section
         y -= 40
         let logTitle = makeLabel("ログ", bold: true)
@@ -317,6 +351,7 @@ class PreferencesWindow: NSWindow {
         hiraganaRecorders.forEach { $0.removeFromSuperview() }
         katakanaRecorders.forEach { $0.removeFromSuperview() }
         googleTransliterateRecorders.forEach { $0.removeFromSuperview() }
+        deleteCandidateRecorders.forEach { $0.removeFromSuperview() }
 
         var y = frame.height - 60
 
@@ -466,6 +501,36 @@ class PreferencesWindow: NSWindow {
         addGoogleBtn.bezelStyle = .rounded
         contentBox.addSubview(addGoogleBtn)
 
+        // Delete candidate section in rebuildLayout
+        y -= 40
+        let deleteTitle = makeLabel("候補削除（Shift+X）", bold: true)
+        deleteTitle.frame = NSRect(x: 20, y: y, width: 440, height: 24)
+        contentBox.addSubview(deleteTitle)
+
+        y -= 28
+        let deleteShortcutLabel = makeLabel("ショートカット:")
+        deleteShortcutLabel.frame = NSRect(x: 20, y: y, width: 120, height: 20)
+        contentBox.addSubview(deleteShortcutLabel)
+
+        for row in deleteCandidateRecorders {
+            y -= 32
+            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
+            contentBox.addSubview(row)
+        }
+
+        y -= 30
+        let addDeleteBtn = NSButton(title: "+ 追加", target: self, action: #selector(addDeleteCandidateShortcut))
+        addDeleteBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
+        addDeleteBtn.bezelStyle = .rounded
+        contentBox.addSubview(addDeleteBtn)
+
+        let deleteHint = makeLabel("候補表示中にShift+Xまたは上記ショートカットで学習/ユーザー辞書の候補を削除")
+        deleteHint.font = NSFont.systemFont(ofSize: 11)
+        deleteHint.textColor = .secondaryLabelColor
+        y -= 20
+        deleteHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
+        contentBox.addSubview(deleteHint)
+
         // Log section in rebuildLayout
         y -= 40
         let logTitle = makeLabel("ログ", bold: true)
@@ -524,10 +589,25 @@ class PreferencesWindow: NSWindow {
         rebuildLayout()
     }
 
+    @objc private func addDeleteCandidateShortcut() {
+        let row = ShortcutRecorderRow(frame: .zero)
+        row.onRemove = { [weak self] r in self?.removeDeleteCandidateRow(r) }
+        deleteCandidateRecorders.append(row)
+        contentBox.addSubview(row)
+        rebuildLayout()
+    }
+
+    private func removeDeleteCandidateRow(_ row: ShortcutRecorderRow) {
+        row.removeFromSuperview()
+        deleteCandidateRecorders.removeAll { $0 === row }
+        rebuildLayout()
+    }
+
     @objc private func saveAndClose() {
         KeyBindings.shared.hiragana = hiraganaRecorders.compactMap { $0.shortcut }
         KeyBindings.shared.katakana = katakanaRecorders.compactMap { $0.shortcut }
         KeyBindings.shared.googleTransliterate = googleTransliterateRecorders.compactMap { $0.shortcut }
+        KeyBindings.shared.deleteCandidate = deleteCandidateRecorders.compactMap { $0.shortcut }
         KeyBindings.shared.save()
 
         // Save Google Transliterate trigger suffix (single non-alphanumeric ASCII only)
@@ -550,9 +630,11 @@ class PreferencesWindow: NSWindow {
         hiraganaRecorders.forEach { $0.removeFromSuperview() }
         katakanaRecorders.forEach { $0.removeFromSuperview() }
         googleTransliterateRecorders.forEach { $0.removeFromSuperview() }
+        deleteCandidateRecorders.forEach { $0.removeFromSuperview() }
         hiraganaRecorders = []
         katakanaRecorders = []
         googleTransliterateRecorders = []
+        deleteCandidateRecorders = []
 
         for shortcut in KeyBindings.shared.hiragana {
             let row = ShortcutRecorderRow(frame: .zero)
