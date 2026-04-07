@@ -1,13 +1,24 @@
 import Foundation
 
+/// Identifies which dictionary a candidate originated from.
+enum CandidateSource: Equatable {
+    case study
+    case local
+    case connection
+    case external   // clipboard / selected text
+    case synthetic  // inputPat, hiragana, katakana, timestamp
+}
+
 /// A search result candidate.
 struct SearchCandidate: Equatable {
     let word: String
     let reading: String?
+    let source: CandidateSource
 
-    init(word: String, reading: String? = nil) {
+    init(word: String, reading: String? = nil, source: CandidateSource = .synthetic) {
         self.word = word
         self.reading = reading
+        self.source = source
     }
 }
 
@@ -120,7 +131,7 @@ class WordSearch {
             let range = NSRange(entry.reading.startIndex..., in: entry.reading)
             if regex.firstMatch(in: entry.reading, range: range) != nil {
                 if !candfound.contains(entry.word) {
-                    candidates.append(SearchCandidate(word: entry.word, reading: entry.reading))
+                    candidates.append(SearchCandidate(word: entry.word, reading: entry.reading, source: .study))
                     candfound.insert(entry.word)
                     if limit > 0, candidates.count >= limit { break }
                 }
@@ -136,7 +147,7 @@ class WordSearch {
                 let range = NSRange(yomi.startIndex..., in: yomi)
                 if regex.firstMatch(in: yomi, range: range) != nil {
                     if !candfound.contains(word) {
-                        candidates.append(SearchCandidate(word: word, reading: yomi))
+                        candidates.append(SearchCandidate(word: word, reading: yomi, source: .local))
                         candfound.insert(word)
                         if limit > 0, candidates.count >= limit { break }
                     }
@@ -151,7 +162,7 @@ class WordSearch {
             if w.hasSuffix("*") { return }
             w = w.replacingOccurrences(of: "*", with: "")
             if !candfound.contains(w) {
-                candidates.append(SearchCandidate(word: w, reading: pat))
+                candidates.append(SearchCandidate(word: w, reading: pat, source: .connection))
                 candfound.insert(w)
             }
         }
@@ -226,6 +237,35 @@ class WordSearch {
                 }
             }
         }
+    }
+
+    /// Delete a word from the study dictionary.
+    /// Returns true if the entry was found and removed.
+    @discardableResult
+    func deleteFromStudy(word: String, reading: String) -> Bool {
+        let before = studyDict.count
+        studyDict.removeAll { $0.reading == reading && $0.word == word }
+        if studyDict.count < before {
+            Self.saveStudyDict(dictFile: studyDictFile, dict: studyDict)
+            Log.dict.info("Deleted from study dict: \"\(word)\" (reading: \"\(reading)\")")
+            return true
+        }
+        return false
+    }
+
+    /// Delete a word from the local dictionary.
+    /// Returns true if the entry was found and removed.
+    @discardableResult
+    func deleteFromLocal(word: String, reading: String) -> Bool {
+        let before = localDict.count
+        localDict.removeAll { $0 == [reading, word] }
+        if localDict.count < before {
+            Self.saveDict(dictFile: localDictFile, dict: localDict)
+            localDictTime = Self.fileModTime(localDictFile)
+            Log.dict.info("Deleted from local dict: \"\(word)\" (reading: \"\(reading)\")")
+            return true
+        }
+        return false
     }
 
     func start() {
