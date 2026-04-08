@@ -90,7 +90,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（160テスト）
+# ユニットテスト（204テスト）
 xcodebuild -project Gyaim.xcodeproj -scheme GyaimTests -derivedDataPath .build test
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -101,14 +101,14 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 
 | スイート | ファイル | テスト数 | 内容 |
 |---------|---------|---------|------|
-| HandleEventTests | Tests/GyaimTests/ | 38 | `routeEvent` 静的メソッドによるキー入力分岐の全網羅 |
+| HandleEventTests | Tests/GyaimTests/ | 45 | `routeEvent` 静的メソッドによるキー入力分岐の全網羅 |
 | GoogleTransliterateTests | Tests/GyaimTests/ | 20 | フィルタ・候補ビルド・セグメント結合・トリガー設定・タイムアウト |
 | ExternalCandidateTests | Tests/GyaimTests/ | 22 | `isValidExternalCandidate` + `buildPrefixCandidates` |
 | PreferencesWindowTests | Tests/GyaimTests/ | 15 | 設定画面UIテスト（トグル存在・初期状態・クリック操作・表示モード切替・淘汰方式） |
 | CandidateWindowTests | Tests/GyaimTests/ | 5 | 表示モード（リスト/クラシック）の切替・描画・最大候補数 |
 | CopyTextTests | Tests/GyaimTests/ | 7 | CopyText ファイルI/O + NSPasteboard.changeCount |
 | RomaKanaTests | Tests/GyaimTests/ | 18 | ローマ字⇔かな変換の双方向テスト |
-| WordSearchTests | Tests/GyaimTests/ | 17 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction） |
+| WordSearchTests | Tests/GyaimTests/ | 34 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
 | StudyEntryTests | Tests/GyaimTests/ | 9 | StudyEntryスコア計算・EvictionMode・ファイルI/O |
 | CryptTests | Tests/GyaimTests/ | 6 | 暗号化/復号のラウンドトリップ |
 | ConnectionDictTests | Tests/GyaimTests/ | 3 | 連接辞書の検索 |
@@ -151,6 +151,7 @@ docs/adr/
 ├── 012-commit-preedit-on-deactivation.md
 ├── 013-three-tier-context-infrastructure.md
 ├── 014-score-based-study-dict-eviction.md
+├── 015-delete-candidate-from-dictionary.md
 └── 016-exact-reading-match-priority.md
 ```
 
