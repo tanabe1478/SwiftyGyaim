@@ -188,7 +188,7 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(erToggle)
         exactReadingMatchToggle = erToggle
 
-        let erHint = makeLabel("ONにすると「設定」が「設定画面」より先に表示されるようになります")
+        let erHint = makeLabel("入力と読みが完全に一致する候補を、前方一致の候補より上に表示します")
         erHint.font = NSFont.systemFont(ofSize: 11)
         erHint.textColor = .secondaryLabelColor
         y -= 18
@@ -483,7 +483,7 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(erToggle)
         exactReadingMatchToggle = erToggle
 
-        let erHint = makeLabel("ONにすると「設定」が「設定画面」より先に表示されるようになります")
+        let erHint = makeLabel("入力と読みが完全に一致する候補を、前方一致の候補より上に表示します")
         erHint.font = NSFont.systemFont(ofSize: 11)
         erHint.textColor = .secondaryLabelColor
         y -= 18
