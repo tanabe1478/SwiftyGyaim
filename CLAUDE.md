@@ -151,7 +151,8 @@ docs/adr/
 ├── 012-commit-preedit-on-deactivation.md
 ├── 013-three-tier-context-infrastructure.md
 ├── 014-score-based-study-dict-eviction.md
-└── 015-delete-candidate-from-dictionary.md
+├── 015-delete-candidate-from-dictionary.md
+└── 016-exact-reading-match-priority.md
 ```
 
 ## Logging & Monitoring
