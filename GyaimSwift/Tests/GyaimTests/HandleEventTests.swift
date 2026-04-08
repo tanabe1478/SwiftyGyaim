@@ -23,6 +23,8 @@ final class HandleEventTests: XCTestCase {
         matchesHiraganaShortcut: Bool = false,
         matchesKatakanaShortcut: Bool = false,
         matchesGoogleTransliterateShortcut: Bool = false,
+        matchesDeleteCandidateShortcut: Bool = false,
+        deleteCandidateChar: UInt8 = 0x58,
         inputPatEmpty: Bool = true,
         hasEventString: Bool = true
     ) -> Result {
@@ -41,6 +43,8 @@ final class HandleEventTests: XCTestCase {
             matchesHiraganaShortcut: matchesHiraganaShortcut,
             matchesKatakanaShortcut: matchesKatakanaShortcut,
             matchesGoogleTransliterateShortcut: matchesGoogleTransliterateShortcut,
+            matchesDeleteCandidateShortcut: matchesDeleteCandidateShortcut,
+            deleteCandidateChar: deleteCandidateChar,
             inputPatEmpty: inputPatEmpty,
             hasEventString: hasEventString
         )
@@ -485,5 +489,84 @@ final class HandleEventTests: XCTestCase {
             candidateCount: 3
         )
         XCTAssertEqual(result, Result(handled: true, action: .backspaceInputPat))
+    }
+
+    // MARK: - Delete candidate (Shift+X)
+
+    func testDeleteCandidateCharWhenCandidateVisible_returnsDeleteCandidate() {
+        // Shift+X (0x58 = 'X') when nthCand > 0
+        let result = route(
+            character: 0x58, // X
+            converting: true,
+            nthCand: 2,
+            candidateCount: 5
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .deleteCandidate))
+    }
+
+    func testDeleteCandidateCharWithSearchMode_returnsDeleteCandidate() {
+        // Shift+X when searchMode > 0 (even if nthCand == 0)
+        let result = route(
+            character: 0x58,
+            converting: true,
+            nthCand: 0,
+            candidateCount: 5,
+            searchMode: 1
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .deleteCandidate))
+    }
+
+    func testDeleteCandidateCharWhenNoCandidateVisible_treatedAsPrintable() {
+        // nthCand == 0 and searchMode == 0 → X is just a printable character
+        let result = route(
+            character: 0x58,
+            converting: true,
+            nthCand: 0,
+            candidateCount: 5,
+            searchMode: 0
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .searchAndShow))
+    }
+
+    func testDeleteCandidateCharWhenNotConverting_treatedAsPrintable() {
+        let result = route(
+            character: 0x58,
+            converting: false,
+            nthCand: 0,
+            candidateCount: 0
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .searchAndShow))
+    }
+
+    func testDeleteCandidateCharDisabled_treatedAsPrintable() {
+        // When deleteCandidateChar is 0 (disabled), X is printable
+        let result = route(
+            character: 0x58,
+            converting: true,
+            nthCand: 2,
+            candidateCount: 5,
+            deleteCandidateChar: 0
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .fixThenSearchAndShow))
+    }
+
+    func testDeleteCandidateShortcutWhenCandidateVisible_returnsDeleteCandidate() {
+        // Modifier-key based shortcut
+        let result = route(
+            converting: true,
+            nthCand: 2,
+            candidateCount: 5,
+            matchesDeleteCandidateShortcut: true
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .deleteCandidate))
+    }
+
+    func testDeleteCandidateShortcutWhenNotConverting_ignored() {
+        let result = route(
+            converting: false,
+            matchesDeleteCandidateShortcut: true,
+            hasEventString: false
+        )
+        XCTAssertNotEqual(result.action, .deleteCandidate)
     }
 }

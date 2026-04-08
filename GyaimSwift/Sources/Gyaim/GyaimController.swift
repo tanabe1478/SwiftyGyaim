@@ -208,6 +208,13 @@ class GyaimController: IMKInputController {
             return true
         }
 
+        // Delete candidate shortcut (modifier-key based)
+        if converting, KeyBindings.shared.matchesDeleteCandidate(event: event),
+           nthCand > 0 || searchMode > 0 {
+            deleteCurrentCandidate(client: sender)
+            return true
+        }
+
         guard let eventString = event.characters, !eventString.isEmpty else { return true }
 
         guard let c = eventString.utf8.first else { return true }
@@ -282,6 +289,14 @@ class GyaimController: IMKInputController {
                 handled = true
             }
         }
+        // Single-key delete candidate (e.g. Shift+X) when candidates are visible
+        else if converting, nthCand > 0 || searchMode > 0,
+                KeyBindings.shared.deleteCandidateChar != 0,
+                c == KeyBindings.shared.deleteCandidateChar,
+                modifierFlags.isDisjoint(with: [.control, .command, .option]) {
+            deleteCurrentCandidate(client: sender)
+            handled = true
+        }
         // Number keys 1-9: select candidate from list (only when list is visible)
         else if converting, nthCand > 0 || searchMode > 0,
                 c >= 0x31, c <= 0x39,
@@ -339,6 +354,7 @@ class GyaimController: IMKInputController {
             case undoAndSpace
             case undoThenInsertChar
             case googleTransliterate
+            case deleteCandidate
         }
     }
 
@@ -359,6 +375,8 @@ class GyaimController: IMKInputController {
         matchesHiraganaShortcut: Bool,
         matchesKatakanaShortcut: Bool,
         matchesGoogleTransliterateShortcut: Bool = false,
+        matchesDeleteCandidateShortcut: Bool = false,
+        deleteCandidateChar: UInt8 = 0x58,
         inputPatEmpty: Bool,
         hasEventString: Bool
     ) -> HandleResult {
@@ -381,6 +399,11 @@ class GyaimController: IMKInputController {
         // Google Transliterate shortcut (e.g. Ctrl+G)
         if converting, matchesGoogleTransliterateShortcut {
             return HandleResult(handled: true, action: .googleTransliterate)
+        }
+
+        // Delete candidate shortcut (modifier-key based, e.g. Ctrl+X)
+        if converting, matchesDeleteCandidateShortcut, nthCand > 0 || searchMode > 0 {
+            return HandleResult(handled: true, action: .deleteCandidate)
         }
 
         // No event string → handled (consumed, no action)
@@ -446,6 +469,13 @@ class GyaimController: IMKInputController {
                 }
             }
             return HandleResult(handled: false, action: .none)
+        }
+
+        // Single-key delete candidate (e.g. Shift+X) when candidates are visible
+        if converting, nthCand > 0 || searchMode > 0,
+           deleteCandidateChar != 0, c == deleteCandidateChar,
+           modifierFlags.isDisjoint(with: [.control, .command, .option]) {
+            return HandleResult(handled: true, action: .deleteCandidate)
         }
 
         // Number keys 1-9: select candidate from list (only when list is visible)
@@ -566,12 +596,12 @@ class GyaimController: IMKInputController {
 
         // Prepend selected text if available
         if let sel = selectedCandidate, isValidExternalCandidate(sel) {
-            candidates.insert(SearchCandidate(word: sel), at: 0)
+            candidates.insert(SearchCandidate(word: sel, source: .external), at: 0)
         }
 
         // Prepend clipboard text if available
         if let clip = clipboardCandidate, isValidExternalCandidate(clip) {
-            candidates.insert(SearchCandidate(word: clip), at: 0)
+            candidates.insert(SearchCandidate(word: clip, source: .external), at: 0)
         }
 
         // Input pattern itself as first candidate
@@ -787,6 +817,30 @@ class GyaimController: IMKInputController {
 
         resetState()
         hideWindow()
+    }
+
+    // MARK: - Delete Candidate
+
+    private func deleteCurrentCandidate(client sender: Any?) {
+        guard nthCand < candidates.count, nthCand > 0 || searchMode > 0 else { return }
+        let candidate = candidates[nthCand]
+        let reading = candidate.reading ?? inputPat
+
+        switch candidate.source {
+        case .study:
+            ws?.deleteFromStudy(word: candidate.word, reading: reading)
+        case .local:
+            ws?.deleteFromLocal(word: candidate.word, reading: reading)
+        case .connection, .external, .synthetic:
+            Log.dict.info("Cannot delete candidate: \"\(candidate.word)\" (source: \(candidate.source))")
+            return
+        }
+
+        // Re-search and adjust nthCand
+        let prevNth = nthCand
+        searchAndShowCands(client: sender)
+        nthCand = min(prevNth, max(candidates.count - 1, 0))
+        showCands(client: sender)
     }
 
     // MARK: - Window Management

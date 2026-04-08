@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-03-20
+> Last updated: 2026-04-08
 
 ## 概要
 
@@ -43,6 +43,7 @@ handle(_:client:) → routeEvent() → HandleResult
 | F6/`;` | `fixAsKana(hiragana: true)` | あり | ひらがな確定 |
 | F7/`q` | `fixAsKana(hiragana: false)` | あり | カタカナ確定 |
 | IME切替 | `fix(client:sender, skipStudy: true)` | **なし** | deactivation確定 |
+| Shift+X | `deleteCurrentCandidate(client:)` | - | 候補削除（ADR-015） |
 
 ## IMEライフサイクル
 
