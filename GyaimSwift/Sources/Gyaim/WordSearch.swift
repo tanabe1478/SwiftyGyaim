@@ -15,6 +15,20 @@ struct SearchCandidate: Equatable {
 /// Priority: study dict > local dict > connection dict.
 /// Ported from WordSearch.rb (Toshiyuki Masui, 2011-2015)
 class WordSearch {
+    // MARK: - Exact Reading Match Priority Setting
+
+    private static let exactReadingMatchPriorityKey = "exactReadingMatchPriority"
+
+    /// When enabled, candidates with exact reading match are prioritized over prefix-only matches.
+    /// Default: false (preserves existing MRU-only behavior).
+    static var isExactReadingMatchPriority: Bool {
+        UserDefaults.standard.bool(forKey: exactReadingMatchPriorityKey)
+    }
+
+    static func setExactReadingMatchPriority(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: exactReadingMatchPriorityKey)
+    }
+
     // MARK: - Study Hiragana Setting
 
     private static let studyHiraganaKey = "studyHiraganaEnabled"
@@ -115,30 +129,84 @@ class WordSearch {
         let pattern = searchMode > 0 ? "^\(escaped)$" : "^\(escaped)"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return candidates }
 
+        let exactPriority = searchMode == 0 && Self.isExactReadingMatchPriority
+
         // Search study dict
-        for entry in studyDict {
-            let range = NSRange(entry.reading.startIndex..., in: entry.reading)
-            if regex.firstMatch(in: entry.reading, range: range) != nil {
-                if !candfound.contains(entry.word) {
+        if exactPriority {
+            // Pass 1: exact reading matches first
+            for entry in studyDict {
+                if entry.reading == q, !candfound.contains(entry.word) {
                     candidates.append(SearchCandidate(word: entry.word, reading: entry.reading))
                     candfound.insert(entry.word)
                     if limit > 0, candidates.count >= limit { break }
+                }
+            }
+            // Pass 2: prefix-only matches
+            if limit == 0 || candidates.count < limit {
+                for entry in studyDict {
+                    let range = NSRange(entry.reading.startIndex..., in: entry.reading)
+                    if regex.firstMatch(in: entry.reading, range: range) != nil,
+                       !candfound.contains(entry.word) {
+                        candidates.append(SearchCandidate(word: entry.word, reading: entry.reading))
+                        candfound.insert(entry.word)
+                        if limit > 0, candidates.count >= limit { break }
+                    }
+                }
+            }
+        } else {
+            for entry in studyDict {
+                let range = NSRange(entry.reading.startIndex..., in: entry.reading)
+                if regex.firstMatch(in: entry.reading, range: range) != nil {
+                    if !candfound.contains(entry.word) {
+                        candidates.append(SearchCandidate(word: entry.word, reading: entry.reading))
+                        candfound.insert(entry.word)
+                        if limit > 0, candidates.count >= limit { break }
+                    }
                 }
             }
         }
 
         // Search local dict
         if limit == 0 || candidates.count < limit {
-            for entry in localDict {
-                guard entry.count >= 2 else { continue }
-                let yomi = entry[0]
-                let word = entry[1]
-                let range = NSRange(yomi.startIndex..., in: yomi)
-                if regex.firstMatch(in: yomi, range: range) != nil {
-                    if !candfound.contains(word) {
+            if exactPriority {
+                // Pass 1: exact reading matches first
+                for entry in localDict {
+                    guard entry.count >= 2 else { continue }
+                    let yomi = entry[0]
+                    let word = entry[1]
+                    if yomi == q, !candfound.contains(word) {
                         candidates.append(SearchCandidate(word: word, reading: yomi))
                         candfound.insert(word)
                         if limit > 0, candidates.count >= limit { break }
+                    }
+                }
+                // Pass 2: prefix-only matches
+                if limit == 0 || candidates.count < limit {
+                    for entry in localDict {
+                        guard entry.count >= 2 else { continue }
+                        let yomi = entry[0]
+                        let word = entry[1]
+                        let range = NSRange(yomi.startIndex..., in: yomi)
+                        if regex.firstMatch(in: yomi, range: range) != nil,
+                           !candfound.contains(word) {
+                            candidates.append(SearchCandidate(word: word, reading: yomi))
+                            candfound.insert(word)
+                            if limit > 0, candidates.count >= limit { break }
+                        }
+                    }
+                }
+            } else {
+                for entry in localDict {
+                    guard entry.count >= 2 else { continue }
+                    let yomi = entry[0]
+                    let word = entry[1]
+                    let range = NSRange(yomi.startIndex..., in: yomi)
+                    if regex.firstMatch(in: yomi, range: range) != nil {
+                        if !candfound.contains(word) {
+                            candidates.append(SearchCandidate(word: word, reading: yomi))
+                            candfound.insert(word)
+                            if limit > 0, candidates.count >= limit { break }
+                        }
                     }
                 }
             }
