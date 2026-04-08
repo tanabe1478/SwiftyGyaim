@@ -150,7 +150,8 @@ docs/adr/
 ├── 011-google-transliterate-integration.md
 ├── 012-commit-preedit-on-deactivation.md
 ├── 013-three-tier-context-infrastructure.md
-└── 014-score-based-study-dict-eviction.md
+├── 014-score-based-study-dict-eviction.md
+└── 016-exact-reading-match-priority.md
 ```
 
 ## Logging & Monitoring
