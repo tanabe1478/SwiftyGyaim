@@ -101,6 +101,16 @@ SearchCandidateに`source`フィールドを追加し、各候補の出自を追
 - `.study` / `.local` → 削除可能
 - `.connection` / `.external` / `.synthetic` → 削除不可
 
+## 完全一致reading優先（ADR-016）
+
+設定画面のトグルで有効/無効を切り替え可能。UserDefaultsキー `exactReadingMatchPriority`（Bool、デフォルトfalse）。
+
+有効時、前方一致検索（searchMode == 0）でstudy dict / local dictを2パスで走査:
+1. Pass 1: `entry.reading == query`（完全一致）
+2. Pass 2: prefix matchのみ（完全一致は既にcandfoundでスキップ）
+
+各パス内のMRU順序は維持。connection dictは対象外（静的辞書のため）。
+
 ## 既知の制約
 
 - studyDictは起動時に全件メモリ読み込み（10,000件で<1MB）

@@ -17,6 +17,7 @@ class PreferencesWindow: NSWindow {
     private var deleteCandidateRecorders: [ShortcutRecorderRow] = []
     private var evictionModeControl: NSSegmentedControl?
     private var studyHiraganaToggle: NSButton?
+    private var exactReadingMatchToggle: NSButton?
 
     static func show() {
         if shared == nil {
@@ -178,6 +179,21 @@ class PreferencesWindow: NSWindow {
         shToggle.state = WordSearch.isStudyHiraganaEnabled ? .on : .off
         contentBox.addSubview(shToggle)
         studyHiraganaToggle = shToggle
+
+        y -= 24
+        let erToggle = NSButton(checkboxWithTitle: "完全一致の読みを優先する",
+                                 target: self, action: #selector(toggleExactReadingMatchPriority(_:)))
+        erToggle.frame = NSRect(x: 20, y: y, width: 300, height: 20)
+        erToggle.state = WordSearch.isExactReadingMatchPriority ? .on : .off
+        contentBox.addSubview(erToggle)
+        exactReadingMatchToggle = erToggle
+
+        let erHint = makeLabel("ONにすると「設定」が「設定画面」より先に表示されるようになります")
+        erHint.font = NSFont.systemFont(ofSize: 11)
+        erHint.textColor = .secondaryLabelColor
+        y -= 18
+        erHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
+        contentBox.addSubview(erHint)
 
         // Google Transliterate section
         y -= 40
@@ -459,6 +475,21 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(shToggle)
         studyHiraganaToggle = shToggle
 
+        y -= 24
+        let erToggle = NSButton(checkboxWithTitle: "完全一致の読みを優先する",
+                                 target: self, action: #selector(toggleExactReadingMatchPriority(_:)))
+        erToggle.frame = NSRect(x: 20, y: y, width: 300, height: 20)
+        erToggle.state = WordSearch.isExactReadingMatchPriority ? .on : .off
+        contentBox.addSubview(erToggle)
+        exactReadingMatchToggle = erToggle
+
+        let erHint = makeLabel("ONにすると「設定」が「設定画面」より先に表示されるようになります")
+        erHint.font = NSFont.systemFont(ofSize: 11)
+        erHint.textColor = .secondaryLabelColor
+        y -= 18
+        erHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
+        contentBox.addSubview(erHint)
+
         // Google Transliterate section in rebuildLayout
         y -= 40
         let googleTitle = makeLabel("Google変換", bold: true)
@@ -669,6 +700,10 @@ class PreferencesWindow: NSWindow {
 
     @objc private func toggleStudyHiragana(_ sender: NSButton) {
         WordSearch.setStudyHiraganaEnabled(sender.state == .on)
+    }
+
+    @objc private func toggleExactReadingMatchPriority(_ sender: NSButton) {
+        WordSearch.setExactReadingMatchPriority(sender.state == .on)
     }
 
     @objc private func toggleClipboardCandidate(_ sender: NSButton) {

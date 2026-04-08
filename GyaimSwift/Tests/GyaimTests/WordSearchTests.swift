@@ -119,6 +119,7 @@ final class WordSearchTests: XCTestCase {
         super.tearDown()
         UserDefaults.standard.removeObject(forKey: "studyDictEvictionMode")
         UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
+        UserDefaults.standard.removeObject(forKey: "exactReadingMatchPriority")
     }
 
     func testStudyInsertsNewEntry() throws {
@@ -426,5 +427,98 @@ final class WordSearchTests: XCTestCase {
         let entries = WordSearch.loadDict(
             dictFile: tempDir.appendingPathComponent("localdict.txt").path)
         XCTAssertFalse(entries.contains(["tesutogo", "テスト語"]))
+    }
+
+    // MARK: - Exact Reading Match Priority
+
+    func testExactReadingMatchPrioritizedOverPrefix() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setExactReadingMatchPriority(true)
+        ws.study(word: "設定", reading: "settei")
+        ws.study(word: "設定画面", reading: "setteigamen")
+        let results = ws.search(query: "settei", searchMode: 0)
+        let words = results.map(\.word)
+        guard let idxSettei = words.firstIndex(of: "設定"),
+              let idxGamen = words.firstIndex(of: "設定画面") else {
+            XCTFail("Expected both 設定 and 設定画面 in results: \(words)")
+            return
+        }
+        XCTAssertLessThan(idxSettei, idxGamen,
+            "Exact reading match '設定' should come before prefix-only match '設定画面', got: \(words)")
+    }
+
+    func testExactMatchOrderPreservedWithinGroup() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setExactReadingMatchPriority(true)
+        ws.study(word: "設定", reading: "settei")
+        ws.study(word: "節程", reading: "settei")
+        let results = ws.search(query: "settei", searchMode: 0)
+        let words = results.map(\.word)
+        guard let idx1 = words.firstIndex(of: "節程"),
+              let idx2 = words.firstIndex(of: "設定") else {
+            XCTFail("Expected both words in results: \(words)")
+            return
+        }
+        XCTAssertLessThan(idx1, idx2,
+            "Within exact matches, MRU order should be preserved: 節程 before 設定")
+    }
+
+    func testPrefixMatchOrderPreservedWithinGroup() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setExactReadingMatchPriority(true)
+        ws.study(word: "設定時間", reading: "setteijikan")
+        ws.study(word: "設定画面", reading: "setteigamen")
+        let results = ws.search(query: "settei", searchMode: 0)
+        let words = results.map(\.word)
+        guard let idxGamen = words.firstIndex(of: "設定画面"),
+              let idxJikan = words.firstIndex(of: "設定時間") else {
+            XCTFail("Expected both words in results: \(words)")
+            return
+        }
+        XCTAssertLessThan(idxGamen, idxJikan,
+            "Within prefix matches, MRU order should be preserved: 設定画面 before 設定時間")
+    }
+
+    func testLocalDictExactReadingMatchPrioritized() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setExactReadingMatchPriority(true)
+        ws.register(word: "設定", reading: "settei")
+        ws.register(word: "設定画面", reading: "setteigamen")
+        let results = ws.search(query: "settei", searchMode: 0)
+        let words = results.map(\.word)
+        guard let idxSettei = words.firstIndex(of: "設定"),
+              let idxGamen = words.firstIndex(of: "設定画面") else {
+            XCTFail("Expected both words in results: \(words)")
+            return
+        }
+        XCTAssertLessThan(idxSettei, idxGamen,
+            "Local dict: exact reading match should come before prefix-only match")
+    }
+
+    func testDefaultDisabledPreservesExistingBehavior() throws {
+        try XCTSkipIf(ws == nil)
+        UserDefaults.standard.removeObject(forKey: "exactReadingMatchPriority")
+        ws.study(word: "設定", reading: "settei")
+        ws.study(word: "設定画面", reading: "setteigamen")
+        let results = ws.search(query: "settei", searchMode: 0)
+        let words = results.map(\.word)
+        guard let idxSettei = words.firstIndex(of: "設定"),
+              let idxGamen = words.firstIndex(of: "設定画面") else {
+            XCTFail("Expected both words in results: \(words)")
+            return
+        }
+        XCTAssertLessThan(idxGamen, idxSettei,
+            "Default OFF: MRU order should be preserved (設定画面 before 設定)")
+    }
+
+    func testExactMatchSearchModeUnchanged() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "設定", reading: "settei")
+        ws.study(word: "設定画面", reading: "setteigamen")
+        let results = ws.search(query: "settei", searchMode: 1)
+        let words = results.map(\.word)
+        XCTAssertTrue(words.contains("設定"))
+        XCTAssertFalse(words.contains("設定画面"),
+            "Exact search mode should not include prefix-only matches")
     }
 }
