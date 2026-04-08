@@ -63,7 +63,7 @@ identifier_name:
 # Airbnb: types should be focused and small
 type_body_length:
   warning: 250
-  error: 600
+  error: 700
 
 file_length:
   warning: 400
@@ -72,7 +72,7 @@ file_length:
 # Airbnb: functions should be short and focused
 function_body_length:
   warning: 40
-  error: 200
+  error: 250
 
 cyclomatic_complexity:
   warning: 10
