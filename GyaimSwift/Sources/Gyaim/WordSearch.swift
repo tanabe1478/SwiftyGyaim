@@ -286,6 +286,10 @@ class WordSearch {
         }
 
         evict()
+        // study() 呼び出しごとにファイル保存する。これをしないと、IMEプロセスが
+        // deactivateServer を経由せずに終了したとき（killall, クラッシュ等）に
+        // メモリ上の学習エントリがすべて失われる。
+        Self.saveStudyDict(dictFile: studyDictFile, dict: studyDict)
     }
 
     private static let maxStudyEntries = 10_000

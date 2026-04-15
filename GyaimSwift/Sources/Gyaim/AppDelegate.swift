@@ -15,6 +15,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         Log.config.info("Gyaim terminating")
+        // セーフティネット: study() が毎回保存するので通常は冗長だが、
+        // deactivateServer を経由しない終了ケースに備えて明示的に保存する
+        GyaimController.saveStudyDictIfNeeded()
         FileLogger.shared.flush()
         clipboardTimer?.invalidate()
     }
