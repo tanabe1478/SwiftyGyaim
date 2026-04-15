@@ -152,7 +152,8 @@ docs/adr/
 ├── 013-three-tier-context-infrastructure.md
 ├── 014-score-based-study-dict-eviction.md
 ├── 015-delete-candidate-from-dictionary.md
-└── 016-exact-reading-match-priority.md
+├── 016-exact-reading-match-priority.md (Superseded by ADR-017)
+└── 017-cross-dict-exact-priority.md
 ```
 
 ## Logging & Monitoring
