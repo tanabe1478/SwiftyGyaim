@@ -144,6 +144,33 @@ final class WordSearchTests: XCTestCase {
         XCTAssertEqual(tokyo?.frequency, 2)
     }
 
+    /// BUG: study() はメモリ上のstudyDictに追加するのみで、finish() を呼ぶまでファイルに保存されない。
+    /// IMEプロセスがdeactivateServerを経由せず終了すると、学習が失われる（例: Google変換で確定した「明示的」が消える）。
+    /// 修正後は study() 呼び出し後、finish() を呼ばずともファイルに永続化されること。
+    func testStudyPersistsToFileWithoutFinish() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "明示的", reading: "meijiteki")
+        // 意図的に finish() を呼ばない
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        XCTAssertTrue(entries.map(\.word).contains("明示的"),
+                      "study() should persist to disk immediately, without requiring finish()")
+    }
+
+    /// frequency インクリメントパスも同様に永続化されること
+    func testStudyFrequencyIncrementPersistsWithoutFinish() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "明示的", reading: "meijiteki")
+        ws.study(word: "明示的", reading: "meijiteki")
+        // 意図的に finish() を呼ばない
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        let entry = entries.first { $0.word == "明示的" }
+        XCTAssertNotNil(entry, "Entry should exist on disk after study()")
+        XCTAssertEqual(entry?.frequency, 2,
+                       "Frequency should be 2 after two study() calls, even without finish()")
+    }
+
     func testEvictMRU() throws {
         try XCTSkipIf(ws == nil)
         EvictionMode.setCurrent(.mru)

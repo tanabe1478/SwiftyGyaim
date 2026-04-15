@@ -132,6 +132,13 @@ class GyaimController: IMKInputController {
         ws?.finish()
     }
 
+    /// AppDelegate.applicationWillTerminate から呼ばれるセーフティネット。
+    /// study() 自体が毎回ファイル保存するので通常は冗長だが、deactivateServer が
+    /// 呼ばれずに終了するケース（プロセスkill等）への備えとして残す。
+    static func saveStudyDictIfNeeded() {
+        shared?.ws?.finish()
+    }
+
     private func resetState() {
         inputPat = ""
         candidates = []

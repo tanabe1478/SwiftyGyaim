@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-04-08
+> Last updated: 2026-04-15
 
 ## 概要
 
@@ -48,6 +48,7 @@ Connection: タブ区切り `romaji\tsurface\tinConnection\toutConnection`
 - 新規エントリ: `StudyEntry(lastAccessTime: now, frequency: 1)` を先頭に挿入
 - 上限超過時に淘汰方式に応じたevictionを実行
 - 同じ単語がstudyDictに既存かつconnectionDictに未登録の場合、localDictに昇格（`register()`）
+- **ファイル保存**: evict後に `saveStudyDict` を呼び即座に永続化する。これをしないと、IMEプロセスが `deactivateServer` を経由せず終了したとき（killall, クラッシュ等）に学習データがすべて失われる。保存は原子的（tempfile + rename）なのでクラッシュ耐性がある。
 
 ### 淘汰方式（EvictionMode）
 
