@@ -538,6 +538,87 @@ final class WordSearchTests: XCTestCase {
             "Default OFF: MRU order should be preserved (設定画面 before 設定)")
     }
 
+    // MARK: - Cross-Dict Exact Priority (BUG-004)
+
+    /// localDict の exact match が studyDict の prefix match より先に出ること。
+    /// 報告: ken → 件 が 検索/検討/検証/権限/けんげん/懸念 の後ろに埋もれていた。
+    func testLocalExactBeatsStudyPrefix() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setExactReadingMatchPriority(true)
+        // studyDict に prefix match を作る (kensaku は "ken" で前方一致)
+        ws.study(word: "検索", reading: "kensaku")
+        ws.study(word: "検討", reading: "kentou")
+        // localDict に exact match を作る (reading == "ken")
+        ws.register(word: "件", reading: "ken")
+
+        let results = ws.search(query: "ken", searchMode: 0)
+        let words = results.map(\.word)
+        guard let idxKen = words.firstIndex(of: "件"),
+              let idxKensaku = words.firstIndex(of: "検索") else {
+            XCTFail("Expected both 件 and 検索 in results: \(words)")
+            return
+        }
+        XCTAssertLessThan(idxKen, idxKensaku,
+            "localDict exact '件' should come before studyDict prefix '検索', got: \(words)")
+    }
+
+    /// studyDict の exact match は localDict の exact match より先に出ること（既存階層維持）。
+    func testStudyExactBeatsLocalExact() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setExactReadingMatchPriority(true)
+        // localDict にも studyDict にも reading == "abc" の語をそれぞれ別単語で登録
+        ws.register(word: "ローカル語", reading: "abc")
+        ws.study(word: "学習語", reading: "abc")
+
+        let results = ws.search(query: "abc", searchMode: 0)
+        let words = results.map(\.word)
+        guard let idxStudy = words.firstIndex(of: "学習語"),
+              let idxLocal = words.firstIndex(of: "ローカル語") else {
+            XCTFail("Expected both words in results: \(words)")
+            return
+        }
+        XCTAssertLessThan(idxStudy, idxLocal,
+            "studyDict exact should come before localDict exact, got: \(words)")
+    }
+
+    /// connection-only な単語は studyDict prefix より後に残ること（6バケット案を採用していないことの保証）。
+    /// "man" は connectionDict に複数 exact match (万, 萬等) が存在する。studyDict に prefix match の "manga"
+    /// を作ったとき、connection の単漢字が前に飛び出さないこと。
+    func testConnectionExactDoesNotJumpAheadOfStudyPrefix() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setExactReadingMatchPriority(true)
+        // studyDict に prefix match を作る
+        ws.study(word: "漫画", reading: "manga")
+
+        let results = ws.search(query: "man", searchMode: 0)
+        let words = results.map(\.word)
+        guard let idxManga = words.firstIndex(of: "漫画") else {
+            XCTFail("Expected 漫画 in results: \(words)")
+            return
+        }
+        // connection 由来の "万" が 漫画 より後にあるべき (前にあれば 6 バケット化 = 退行)
+        if let idxMan = words.firstIndex(of: "万") {
+            XCTAssertLessThan(idxManga, idxMan,
+                "studyDict prefix '漫画' should come before connectionDict exact '万', got: \(words)")
+        }
+    }
+
+    /// localDict と connectionDict 両方に存在する語は localDict 由来 (.local source) として返ること。
+    /// これにより Shift+X による候補削除（GyaimController.deleteCurrentCandidate）が機能する。
+    func testLocalExactSourcePreservedOverConnection() throws {
+        try XCTSkipIf(ws == nil)
+        WordSearch.setExactReadingMatchPriority(true)
+        // 件 は connectionDict (Resources/dict.txt) にも存在する。
+        // ユーザーが手動 register した場合、結果の source は .local であるべき。
+        ws.register(word: "件", reading: "ken")
+
+        let results = ws.search(query: "ken", searchMode: 0)
+        let kenCandidate = results.first { $0.word == "件" }
+        XCTAssertNotNil(kenCandidate, "Expected 件 in results")
+        XCTAssertEqual(kenCandidate?.source, .local,
+            "件 should be marked as .local (not .connection) so it can be deleted with Shift+X")
+    }
+
     func testExactMatchSearchModeUnchanged() throws {
         try XCTSkipIf(ws == nil)
         ws.study(word: "設定", reading: "settei")
