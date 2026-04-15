@@ -1,0 +1,30 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: GyaimSwift
+        run: xcodegen generate
+
+      - name: Run tests
+        working-directory: GyaimSwift
+        run: |
+          xcodebuild -project Gyaim.xcodeproj \
+            -scheme GyaimTests \
+            -derivedDataPath .build \
+            test

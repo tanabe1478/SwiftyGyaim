@@ -4,6 +4,16 @@ import XCTest
 
 final class CopyTextTests: XCTestCase {
 
+    /// CI環境では ~/.gyaim/ が存在せず CopyText.set() がファイル書き込みに失敗する。
+    /// ローカル開発環境では既にあるので影響なし。createDirectory は冪等。
+    override func setUp() {
+        super.setUp()
+        try? FileManager.default.createDirectory(
+            atPath: Config.gyaimDir,
+            withIntermediateDirectories: true
+        )
+    }
+
     // MARK: - CopyText file I/O
 
     func testGetReturnsSetContent() {
