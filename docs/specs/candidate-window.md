@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-03-21 (平仮名学習トグル追加)
+> Last updated: 2026-04-15 (完全一致reading優先トグル追加 ADR-016/017)
 
 ## 概要
 
@@ -51,6 +51,10 @@ NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackV
 - **平仮名学習**: チェックボックス「平仮名の確定を学習する」（デフォルトON）
 - UserDefaultsキー: `studyHiraganaEnabled` (Bool, デフォルトtrue)
 - `toggleStudyHiragana(_:)` アクションで即座にUserDefaultsに保存
+- **完全一致reading優先**: チェックボックス「完全一致の読みを優先する」（デフォルトOFF、ADR-016/017）
+- UserDefaultsキー: `exactReadingMatchPriority` (Bool, デフォルトfalse)
+- `toggleExactReadingMatchPriority(_:)` アクションで即座にUserDefaultsに保存
+- ON時は前方一致検索 (searchMode==0) で4バケット順序 (study-exact → local-exact → study-prefix → local-prefix → connection) で候補を並べる（詳細は dictionary-system.md）
 
 ## 既知の制約
 
