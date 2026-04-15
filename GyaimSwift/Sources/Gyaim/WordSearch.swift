@@ -142,9 +142,17 @@ class WordSearch {
 
         let exactPriority = searchMode == 0 && Self.isExactReadingMatchPriority
 
-        // Search study dict
         if exactPriority {
-            // Pass 1: exact reading matches first
+            // 4-bucket cross-dict ordering (BUG-004):
+            //   1. studyDict exact   2. localDict exact
+            //   3. studyDict prefix  4. localDict prefix
+            // connectionDict は最後 (元の位置を維持) — 静的辞書の単漢字が
+            // 学習済み prefix 候補を押し流さないようにするため。
+            // 同表記 word の dedup は先着勝ちなので、user-owned (study/local) が
+            // 必ず先に列挙されることで .source = .connection で上書きされず、
+            // Shift+X による削除（GyaimController.deleteCurrentCandidate）が機能する。
+
+            // Bucket 1: studyDict exact (reading == q)
             for entry in studyDict {
                 if entry.reading == q, !candfound.contains(entry.word) {
                     candidates.append(SearchCandidate(word: entry.word, reading: entry.reading, source: .study))
@@ -152,7 +160,20 @@ class WordSearch {
                     if limit > 0, candidates.count >= limit { break }
                 }
             }
-            // Pass 2: prefix-only matches
+            // Bucket 2: localDict exact (yomi == q)
+            if limit == 0 || candidates.count < limit {
+                for entry in localDict {
+                    guard entry.count >= 2 else { continue }
+                    let yomi = entry[0]
+                    let word = entry[1]
+                    if yomi == q, !candfound.contains(word) {
+                        candidates.append(SearchCandidate(word: word, reading: yomi, source: .local))
+                        candfound.insert(word)
+                        if limit > 0, candidates.count >= limit { break }
+                    }
+                }
+            }
+            // Bucket 3: studyDict prefix
             if limit == 0 || candidates.count < limit {
                 for entry in studyDict {
                     let range = NSRange(entry.reading.startIndex..., in: entry.reading)
@@ -164,7 +185,23 @@ class WordSearch {
                     }
                 }
             }
+            // Bucket 4: localDict prefix
+            if limit == 0 || candidates.count < limit {
+                for entry in localDict {
+                    guard entry.count >= 2 else { continue }
+                    let yomi = entry[0]
+                    let word = entry[1]
+                    let range = NSRange(yomi.startIndex..., in: yomi)
+                    if regex.firstMatch(in: yomi, range: range) != nil,
+                       !candfound.contains(word) {
+                        candidates.append(SearchCandidate(word: word, reading: yomi, source: .local))
+                        candfound.insert(word)
+                        if limit > 0, candidates.count >= limit { break }
+                    }
+                }
+            }
         } else {
+            // OFF: single-pass per dict (現状挙動を維持)
             for entry in studyDict {
                 let range = NSRange(entry.reading.startIndex..., in: entry.reading)
                 if regex.firstMatch(in: entry.reading, range: range) != nil {
@@ -175,38 +212,7 @@ class WordSearch {
                     }
                 }
             }
-        }
-
-        // Search local dict
-        if limit == 0 || candidates.count < limit {
-            if exactPriority {
-                // Pass 1: exact reading matches first
-                for entry in localDict {
-                    guard entry.count >= 2 else { continue }
-                    let yomi = entry[0]
-                    let word = entry[1]
-                    if yomi == q, !candfound.contains(word) {
-                        candidates.append(SearchCandidate(word: word, reading: yomi, source: .local))
-                        candfound.insert(word)
-                        if limit > 0, candidates.count >= limit { break }
-                    }
-                }
-                // Pass 2: prefix-only matches
-                if limit == 0 || candidates.count < limit {
-                    for entry in localDict {
-                        guard entry.count >= 2 else { continue }
-                        let yomi = entry[0]
-                        let word = entry[1]
-                        let range = NSRange(yomi.startIndex..., in: yomi)
-                        if regex.firstMatch(in: yomi, range: range) != nil,
-                           !candfound.contains(word) {
-                            candidates.append(SearchCandidate(word: word, reading: yomi, source: .local))
-                            candfound.insert(word)
-                            if limit > 0, candidates.count >= limit { break }
-                        }
-                    }
-                }
-            } else {
+            if limit == 0 || candidates.count < limit {
                 for entry in localDict {
                     guard entry.count >= 2 else { continue }
                     let yomi = entry[0]

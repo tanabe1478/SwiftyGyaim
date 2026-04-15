@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR-017 (辞書をまたいだ4バケット順序に拡張)
 
 ## Decision
 

@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-04-15
+> Last updated: 2026-04-15 (ADR-017対応)
 
 ## 概要
 
@@ -102,15 +102,25 @@ SearchCandidateに`source`フィールドを追加し、各候補の出自を追
 - `.study` / `.local` → 削除可能
 - `.connection` / `.external` / `.synthetic` → 削除不可
 
-## 完全一致reading優先（ADR-016）
+## 完全一致reading優先（ADR-016 → ADR-017）
 
 設定画面のトグルで有効/無効を切り替え可能。UserDefaultsキー `exactReadingMatchPriority`（Bool、デフォルトfalse）。
 
-有効時、前方一致検索（searchMode == 0）でstudy dict / local dictを2パスで走査:
-1. Pass 1: `entry.reading == query`（完全一致）
-2. Pass 2: prefix matchのみ（完全一致は既にcandfoundでスキップ）
+有効時、前方一致検索（searchMode == 0）で**辞書をまたいだ4バケット順序**で走査（ADR-017）:
 
-各パス内のMRU順序は維持。connection dictは対象外（静的辞書のため）。
+```
+1. studyDict exact   (entry.reading == query)
+2. localDict exact   (yomi == query)
+3. studyDict prefix  (regex prefix match)
+4. localDict prefix
+5. connectionDict    (single pass, 現状の挙動)
+```
+
+各バケット内のMRU順序は維持。connection dictは単一バケット維持（静的辞書の単漢字exactで予測候補が押し流されるのを避けるため）。
+
+dedup は `word` 単位の先着勝ちなので、user-owned dict (study/local) が先に列挙されることで `source = .connection` で上書きされず、Shift+X による候補削除（`GyaimController.deleteCurrentCandidate`）が機能する。
+
+OFF時は単一パス（study → local → connection）で従来どおり MRU 順。
 
 ## 既知の制約
 
