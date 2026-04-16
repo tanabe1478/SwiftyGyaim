@@ -61,22 +61,38 @@ class WordSearch {
 
     private let connectionDict: ConnectionDict
     private let localDictFile: String
-    private let studyDictFile: String
     private var localDict: [[String]]   // [[yomi, word], ...]
-    private var studyDict: [StudyEntry]
     private var localDictTime: Date
     private var searchMode: Int = 0
 
+    // MARK: - Shared Study Dict (process-wide singleton)
+    // IMKInputControllerはクライアントアプリごとにインスタンスを生成するため、
+    // studyDictをインスタンス変数にすると、あるインスタンスのsaveStudyDictが
+    // 別インスタンスの学習データを上書きして消す（BUG-005）。
+    // プロセス全体で1つのstudyDictを共有することでこの問題を解決する。
+    private(set) static var studyDict: [StudyEntry] = []
+    private(set) static var studyDictFile: String = ""
+
+    /// テスト用: static studyDict をリセットして次の init() で再読み込みさせる。
+    static func resetStudyDict() {
+        studyDict = []
+        studyDictFile = ""
+    }
+
     init(connectionDictFile: String, localDictFile: String, studyDictFile: String) {
         self.localDictFile = localDictFile
-        self.studyDictFile = studyDictFile
         self.connectionDict = PerfLog.measure("ConnectionDict load", logger: Log.dict) {
             ConnectionDict(dictFile: connectionDictFile)
         }
         self.localDict = Self.loadDict(dictFile: localDictFile)
         self.localDictTime = Self.fileModTime(localDictFile)
-        self.studyDict = Self.loadStudyDict(dictFile: studyDictFile)
-        Log.dict.info("WordSearch initialized: local=\(localDict.count), study=\(studyDict.count) entries")
+        // studyDict はプロセス内で1回だけロードする。
+        // ファイルパスが変わった場合（テスト等）は再ロード。
+        if Self.studyDictFile != studyDictFile {
+            Self.studyDictFile = studyDictFile
+            Self.studyDict = Self.loadStudyDict(dictFile: studyDictFile)
+        }
+        Log.dict.info("WordSearch initialized: local=\(localDict.count), study=\(Self.studyDict.count) entries")
     }
 
     /// Main search method.
@@ -153,7 +169,7 @@ class WordSearch {
             // Shift+X による削除（GyaimController.deleteCurrentCandidate）が機能する。
 
             // Bucket 1: studyDict exact (reading == q)
-            for entry in studyDict {
+            for entry in Self.studyDict {
                 if entry.reading == q, !candfound.contains(entry.word) {
                     candidates.append(SearchCandidate(word: entry.word, reading: entry.reading, source: .study))
                     candfound.insert(entry.word)
@@ -175,7 +191,7 @@ class WordSearch {
             }
             // Bucket 3: studyDict prefix
             if limit == 0 || candidates.count < limit {
-                for entry in studyDict {
+                for entry in Self.studyDict {
                     let range = NSRange(entry.reading.startIndex..., in: entry.reading)
                     if regex.firstMatch(in: entry.reading, range: range) != nil,
                        !candfound.contains(entry.word) {
@@ -202,7 +218,7 @@ class WordSearch {
             }
         } else {
             // OFF: single-pass per dict (現状挙動を維持)
-            for entry in studyDict {
+            for entry in Self.studyDict {
                 let range = NSRange(entry.reading.startIndex..., in: entry.reading)
                 if regex.firstMatch(in: entry.reading, range: range) != nil {
                     if !candfound.contains(entry.word) {
@@ -274,20 +290,20 @@ class WordSearch {
             }
             if !registered {
                 // If in study dict but not connection dict, promote to local dict
-                if studyDict.contains(where: { $0.reading == reading && $0.word == word }) {
+                if Self.studyDict.contains(where: { $0.reading == reading && $0.word == word }) {
                     register(word: word, reading: reading)
                 }
             }
         }
 
         let now = Date().timeIntervalSince1970
-        if let idx = studyDict.firstIndex(where: { $0.reading == reading && $0.word == word }) {
-            var entry = studyDict.remove(at: idx)
+        if let idx = Self.studyDict.firstIndex(where: { $0.reading == reading && $0.word == word }) {
+            var entry = Self.studyDict.remove(at: idx)
             entry.lastAccessTime = now
             entry.frequency += 1
-            studyDict.insert(entry, at: 0)
+            Self.studyDict.insert(entry, at: 0)
         } else {
-            studyDict.insert(StudyEntry(reading: reading, word: word,
+            Self.studyDict.insert(StudyEntry(reading: reading, word: word,
                                          lastAccessTime: now, frequency: 1), at: 0)
         }
 
@@ -295,7 +311,7 @@ class WordSearch {
         // study() 呼び出しごとにファイル保存する。これをしないと、IMEプロセスが
         // deactivateServer を経由せずに終了したとき（killall, クラッシュ等）に
         // メモリ上の学習エントリがすべて失われる。
-        Self.saveStudyDict(dictFile: studyDictFile, dict: studyDict)
+        Self.saveStudyDict(dictFile: Self.studyDictFile, dict: Self.studyDict)
     }
 
     private static let maxStudyEntries = 10_000
@@ -303,15 +319,15 @@ class WordSearch {
     private func evict() {
         switch EvictionMode.current {
         case .mru, .none:
-            if studyDict.count > Self.maxStudyEntries {
-                studyDict = Array(studyDict.prefix(Self.maxStudyEntries))
+            if Self.studyDict.count > Self.maxStudyEntries {
+                Self.studyDict = Array(Self.studyDict.prefix(Self.maxStudyEntries))
             }
         case .scoreBased:
-            if studyDict.count > Self.maxStudyEntries {
-                let protectedCount = min(100, studyDict.count)
-                let range = protectedCount..<studyDict.count
-                if let minIdx = range.min(by: { studyDict[$0].score() < studyDict[$1].score() }) {
-                    studyDict.remove(at: minIdx)
+            if Self.studyDict.count > Self.maxStudyEntries {
+                let protectedCount = min(100, Self.studyDict.count)
+                let range = protectedCount..<Self.studyDict.count
+                if let minIdx = range.min(by: { Self.studyDict[$0].score() < Self.studyDict[$1].score() }) {
+                    Self.studyDict.remove(at: minIdx)
                 }
             }
         }
@@ -321,10 +337,10 @@ class WordSearch {
     /// Returns true if the entry was found and removed.
     @discardableResult
     func deleteFromStudy(word: String, reading: String) -> Bool {
-        let before = studyDict.count
-        studyDict.removeAll { $0.reading == reading && $0.word == word }
-        if studyDict.count < before {
-            Self.saveStudyDict(dictFile: studyDictFile, dict: studyDict)
+        let before = Self.studyDict.count
+        Self.studyDict.removeAll { $0.reading == reading && $0.word == word }
+        if Self.studyDict.count < before {
+            Self.saveStudyDict(dictFile: Self.studyDictFile, dict: Self.studyDict)
             Log.dict.info("Deleted from study dict: \"\(word)\" (reading: \"\(reading)\")")
             return true
         }
@@ -351,7 +367,7 @@ class WordSearch {
     }
 
     func finish() {
-        Self.saveStudyDict(dictFile: studyDictFile, dict: studyDict)
+        Self.saveStudyDict(dictFile: Self.studyDictFile, dict: Self.studyDict)
     }
 
     // MARK: - File I/O

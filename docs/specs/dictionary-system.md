@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-04-15 (ADR-017対応)
+> Last updated: 2026-04-16 (BUG-005: studyDict static化)
 
 ## 概要
 
@@ -121,6 +121,14 @@ SearchCandidateに`source`フィールドを追加し、各候補の出自を追
 dedup は `word` 単位の先着勝ちなので、user-owned dict (study/local) が先に列挙されることで `source = .connection` で上書きされず、Shift+X による候補削除（`GyaimController.deleteCurrentCandidate`）が機能する。
 
 OFF時は単一パス（study → local → connection）で従来どおり MRU 順。
+
+## studyDict のプロセス内共有（BUG-005）
+
+`studyDict` と `studyDictFile` は `WordSearch` の **static 変数**（プロセス全体で共有）。InputMethodKitはクライアントアプリごとに別の `GyaimController`/`WordSearch` インスタンスを生成するため、インスタンス変数にすると各インスタンスが独立したメモリを持ち、ある インスタンスの `saveStudyDict` が他インスタンスの学習データを上書きして消す。
+
+- init() は `studyDictFile` パスが変わった場合のみファイルから再読み込み
+- `resetStudyDict()` はテスト専用（テスト間のアイソレーション）
+- `localDict` はインスタンス変数のまま（mtime ホットリロードがあり、マルチインスタンスでの上書き問題は `register()` 頻度が低いため実害なし）
 
 ## 既知の制約
 
