@@ -14,6 +14,9 @@ final class WordSearchTests: XCTestCase {
         try "".write(to: localDict, atomically: true, encoding: .utf8)
         try "".write(to: studyDict, atomically: true, encoding: .utf8)
 
+        // static studyDict をリセットして各テストが独立した状態で始まるようにする
+        WordSearch.resetStudyDict()
+
         // Find dict.txt
         let projectDir = URL(fileURLWithPath: #file)
             .deletingLastPathComponent() // GyaimTests
@@ -228,6 +231,8 @@ final class WordSearchTests: XCTestCase {
         WordSearch.saveStudyDict(dictFile: studyPath, dict: entries)
 
         // 新しいWordSearchインスタンスで読み込み直し
+        // static studyDict をリセットしてファイルから再読み込みさせる
+        WordSearch.resetStudyDict()
         let projectDir = URL(fileURLWithPath: #file)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let dictPath = projectDir.appendingPathComponent("Resources/dict.txt").path
@@ -281,6 +286,8 @@ final class WordSearchTests: XCTestCase {
 
         WordSearch.saveStudyDict(dictFile: studyPath, dict: entries)
 
+        // static studyDict をリセットしてファイルから再読み込みさせる
+        WordSearch.resetStudyDict()
         let projectDir = URL(fileURLWithPath: #file)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let dictPath = projectDir.appendingPathComponent("Resources/dict.txt").path
@@ -628,5 +635,68 @@ final class WordSearchTests: XCTestCase {
         XCTAssertTrue(words.contains("設定"))
         XCTAssertFalse(words.contains("設定画面"),
             "Exact search mode should not include prefix-only matches")
+    }
+
+    // MARK: - Multi-Instance Study Dict Sharing (BUG-005)
+
+    /// BUG: 複数の GyaimController インスタンスがそれぞれ独自の WordSearch/studyDict を持つため、
+    /// あるインスタンスで study した語が、別インスタンスの saveStudyDict で上書きされて消える。
+    /// 修正後は全インスタンスが同一の studyDict メモリを共有すること。
+    func testStudyVisibleAcrossInstances() throws {
+        try XCTSkipIf(ws == nil)
+        let projectDir = URL(fileURLWithPath: #file)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let dictPath = projectDir.appendingPathComponent("Resources/dict.txt").path
+        guard FileManager.default.fileExists(atPath: dictPath) else {
+            throw XCTSkip("dict.txt not found")
+        }
+
+        // ws (from setUp) と同じ studyDictFile を共有する別インスタンスを作成
+        let ws2 = WordSearch(connectionDictFile: dictPath,
+                             localDictFile: tempDir.appendingPathComponent("localdict.txt").path,
+                             studyDictFile: tempDir.appendingPathComponent("studydict.txt").path)
+
+        // ws で「乖離」を学習
+        ws.study(word: "乖離", reading: "kairi")
+        // ws2 で「修正」を学習
+        ws2.study(word: "修正", reading: "syuusei")
+
+        // ws2 の search で「乖離」が見えること（共有メモリ）
+        let results2 = ws2.search(query: "kairi", searchMode: 1)
+        XCTAssertTrue(results2.map(\.word).contains("乖離"),
+            "ws2 should see ws's studied word '乖離' via shared studyDict")
+
+        // ws の search で「修正」が見えること
+        let results1 = ws.search(query: "syuusei", searchMode: 1)
+        XCTAssertTrue(results1.map(\.word).contains("修正"),
+            "ws should see ws2's studied word '修正' via shared studyDict")
+    }
+
+    /// 別インスタンスの study が saveStudyDict で上書きされないこと。
+    func testStudySurvivesOtherInstanceSave() throws {
+        try XCTSkipIf(ws == nil)
+        let projectDir = URL(fileURLWithPath: #file)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let dictPath = projectDir.appendingPathComponent("Resources/dict.txt").path
+        guard FileManager.default.fileExists(atPath: dictPath) else {
+            throw XCTSkip("dict.txt not found")
+        }
+
+        let ws2 = WordSearch(connectionDictFile: dictPath,
+                             localDictFile: tempDir.appendingPathComponent("localdict.txt").path,
+                             studyDictFile: tempDir.appendingPathComponent("studydict.txt").path)
+
+        // ws で「乖離」を学習（ファイルに保存される）
+        ws.study(word: "乖離", reading: "kairi")
+        // ws2 で「海里」を学習（ファイルに保存される）
+        ws2.study(word: "海里", reading: "kairi")
+
+        // ファイルをリロードして「乖離」が残っていること
+        let entries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        XCTAssertTrue(entries.map(\.word).contains("乖離"),
+            "乖離 should survive in file after ws2.study() — must not be overwritten")
+        XCTAssertTrue(entries.map(\.word).contains("海里"),
+            "海里 should also be in file")
     }
 }
