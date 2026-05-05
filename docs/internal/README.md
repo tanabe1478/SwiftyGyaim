@@ -4,13 +4,14 @@
 
 ## 読む順番
 
-1. [全体アーキテクチャ](architecture.md)
-2. [Swift / InputMethodKit で作る IME の概要](ime-api.md)
-3. [入力・変換・確定フロー](input-flow.md)
-4. [辞書・学習システム](dictionary-system.md)
-5. [候補ウィンドウとUI](candidate-window-and-ui.md)
-6. [機能別実装ガイド](feature-guide.md)
-7. [テスト・ビルド・運用](testing-and-operations.md)
+1. [ソースコードを読む: 実装ウォークスルー](source-walkthrough.md)
+2. [全体アーキテクチャ](architecture.md)
+3. [Swift / InputMethodKit で作る IME の概要](ime-api.md)
+4. [入力・変換・確定フロー](input-flow.md)
+5. [辞書・学習システム](dictionary-system.md)
+6. [候補ウィンドウとUI](candidate-window-and-ui.md)
+7. [機能別実装ガイド](feature-guide.md)
+8. [テスト・ビルド・運用](testing-and-operations.md)
 
 ## ソースコードの主な場所
 
@@ -40,4 +41,4 @@ GyaimSwift/
 - `docs/specs/`: 実装と同期する領域別仕様
 - `docs/adr/`: 設計判断の記録
 
-この `docs/internal/` は、上記よりも「初めて読む人が理解する」ことを重視した解説です。
+この `docs/internal/` は、上記よりも「初めて読む人が理解する」ことを重視した解説です。Swiftでアプリ開発をしたことがある人が、InputMethodKit固有の文脈とSwiftyGyaimの実装を追える粒度を目指しています。

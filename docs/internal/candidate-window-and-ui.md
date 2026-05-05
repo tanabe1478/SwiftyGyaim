@@ -1,170 +1,319 @@
 # 候補ウィンドウとUI
 
-## 中心ファイル
+このドキュメントでは `CandidateWindow.swift` と `GyaimController.showWindow()` を実装寄りに読みます。IMEのUIで最も重要なのは「入力先アプリのフォーカスを奪わない」ことです。
 
-- `CandidateWindow.swift`
-- `GyaimController.swift`
-- `PreferencesWindow.swift`
-- `DictEditorWindow.swift`
-
-## CandidateWindow の役割
-
-`CandidateWindow` は変換候補を表示する `NSPanel` です。
-
-重要な設定:
+## 1. `CandidateWindow` は `NSPanel`
 
 ```swift
-styleMask: [.borderless, .nonactivatingPanel]
+class CandidateWindow: NSPanel {
+    static var shared: CandidateWindow?
+    ...
+}
+```
+
+初期化では `.nonactivatingPanel` を指定しています。
+
+```swift
+super.init(contentRect: frame,
+           styleMask: [.borderless, .nonactivatingPanel],
+           backing: .buffered,
+           defer: false)
+
+becomesKeyOnlyIfNeeded = true
 level = .statusBar
-backgroundColor = .clear
 isOpaque = false
+hasShadow = true
+hidesOnDeactivate = false
 ```
 
-`.nonactivatingPanel` により、入力先アプリのフォーカスを奪わずに候補を表示できます。
+通常の `NSWindow` やactivateするpanelを使うと、候補表示のたびに入力先アプリからフォーカスを奪う可能性があります。IMEの候補ウィンドウではこれが致命的です。
 
-## 表示モード
-
-`CandidateDisplayMode` は2種類です。
-
-| モード | 値 | 表示数 | 見た目 |
-|---|---:|---:|---|
-| `.list` | 0 | 9 | 縦リスト、番号付き、ハイライト行 |
-| `.classic` | 1 | 11 | オリジナルGyaim風、`candwin.png` 背景、横並び |
-
-現在の設定は `UserDefaults` の `candidateDisplayMode` から読みます。デフォルトは `.classic` です。
-
-## view構成
-
-```text
-CandidateWindow(NSPanel)
-└─ containerView
-   ├─ list mode
-   │  └─ NSStackView
-   │     └─ NSTextField labels
-   │
-   └─ classic mode
-      ├─ ClassicBackgroundView
-      └─ classicContentView
-         └─ NSScrollView
-            └─ NSTextView
-```
-
-`applyDisplayMode()` でlist用制約とclassic用制約を切り替えます。
-
-## 候補更新
-
-`GyaimController.showCands()` が表示対象候補をページングし、`CandidateWindow.updateCandidates()` に渡します。
+## 2. 表示モードは enum と UserDefaults
 
 ```swift
-func updateCandidates(_ words: [String], selectedIndex: Int,
-                      hasMore: Bool = false, hasPrev: Bool = false)
+enum CandidateDisplayMode: Int {
+    case list = 0
+    case classic = 1
+
+    static var current: CandidateDisplayMode {
+        let raw = UserDefaults.standard.object(forKey: "candidateDisplayMode") as? Int ?? 1
+        return CandidateDisplayMode(rawValue: raw) ?? .classic
+    }
+}
 ```
 
-`hasMore` がtrueなら、末尾に `▼` を表示します。
+デフォルトは `.classic` です。表示数もenumに持たせています。
 
-- list: indicator labelを追加
-- classic: テキスト末尾に `▼`
+```swift
+var maxVisible: Int {
+    switch self {
+    case .list: return 9
+    case .classic: return 11
+    }
+}
+```
 
-`hasPrev` は将来拡張用で、現在のUIでは表示に使いません。
+この値は `GyaimController.showCands()` のページングにも使われます。UIクラスだけでなく入力フローにも影響する設定です。
 
-## ページング
+## 3. view階層
 
-`nthCand` は全候補配列上の選択位置です。候補ウィンドウには `nthCand + 1` から最大表示数ぶんの候補を渡します。
+`CandidateWindow` はlistとclassicの両方のviewを持ち、表示モードごとに hidden と制約を切り替えます。
 
 ```text
-candidates: [0, 1, 2, 3, 4, ...]
-selected nthCand = 3
-window receives candidates[4..<4+maxVisible]
+containerView
+├─ stackView                  # list mode
+├─ ClassicBackgroundView       # classic mode background
+└─ classicContentView
+   └─ classicScrollView
+      └─ classicTextView
 ```
 
-この設計では、0番目候補を「入力そのもの」や補助候補として扱いつつ、スペースで次候補へ進む動きになります。
+`setupListMode()` と `setupClassicMode()` は起動時に両方呼ばれます。その後 `applyDisplayMode()` で片方だけ有効化します。
 
-## 位置計算
+```swift
+NSLayoutConstraint.deactivate(listConstraints)
+NSLayoutConstraint.deactivate(classicConstraints)
 
-位置計算は `CandidateWindowPositioner` に分離され、ユニットテスト可能です。
+stackView.isHidden = !isList
+classicBackgroundView?.isHidden = isList
+...
 
-主な関数:
+if isList {
+    NSLayoutConstraint.activate(listConstraints)
+} else {
+    NSLayoutConstraint.activate(classicConstraints)
+}
+```
 
-| 関数 | 役割 |
+毎回viewを作り直さず、制約セットを切り替える実装です。
+
+## 4. list mode の実装
+
+list mode は `NSStackView` に `NSTextField` を並べます。
+
+```swift
+private func updateListMode(_ words: [String], selectedIndex: Int, hasMore: Bool, hasPrev: Bool) {
+    candidateLabels.forEach { $0.removeFromSuperview() }
+    candidateLabels.removeAll()
+
+    let count = min(words.count, CandidateDisplayMode.list.maxVisible)
+    for i in 0..<count {
+        let label = makeLabel(index: i, word: words[i], isSelected: i == selectedIndex)
+        stackView.addArrangedSubview(label)
+        candidateLabels.append(label)
+    }
+}
+```
+
+`makeLabel` で番号や選択ハイライトを作ります。`hasMore` がtrueなら `▼` indicatorを末尾に追加します。
+
+## 5. classic mode の実装
+
+classic mode はオリジナルGyaim風の吹き出し画像 `candwin.png` を背景に使います。
+
+```swift
+private var classicBackgroundView: ClassicBackgroundView?
+private var classicScrollView: NSScrollView?
+private var classicTextView: NSTextView?
+```
+
+候補は横並びのテキストとして `NSTextView` に入れます。背景は `ClassicBackgroundView.draw(_:)` で9-slice的に描画し、角やtailを壊さず中央を伸ばします。
+
+classicは見た目のためにウィンドウshadowを切ります。
+
+```swift
+hasShadow = false
+```
+
+`candwin.png` 自体に影があるため、NSWindowのshadowを重ねると二重になります。
+
+## 6. 候補ウィンドウに渡される候補は「次候補」
+
+`GyaimController.showCands()` は、現在選択中の候補を入力先アプリの marked text に出し、候補ウィンドウにはその次から渡します。
+
+```swift
+let maxCandList = CandidateDisplayMode.current.maxVisible
+var candList: [String] = []
+for i in 0..<maxCandList {
+    let idx = nthCand + 1 + i
+    guard idx < words.count else { break }
+    candList.append(words[idx])
+}
+
+candWindow?.updateCandidates(candList, selectedIndex: -1, hasMore: hasMore, hasPrev: hasPrev)
+```
+
+そのため、候補ウィンドウ内の `1` は `candidates[nthCand + 1]` に対応します。数字キー選択でも `targetIndex = nthCand + num` としているのはこのためです。
+
+## 7. 位置計算は `CandidateWindowPositioner`
+
+位置計算は `CandidateWindowPositioner` に集約されています。
+
+```swift
+struct CandidateWindowPositioner {
+    static func resolveLineRect(...)
+    static func isUsableReportedLineRect(...)
+    static func calculate(...)
+}
+```
+
+これはUI部品そのものから位置計算を切り出して、ユニットテストしやすくするためです。
+
+## 8. `showWindow()` の実装
+
+`GyaimController.showWindow()` は、まず入力先アプリからキャレット位置を取ります。
+
+```swift
+var reportedLineRect = NSRect.zero
+client.attributes(forCharacterIndex: 0, lineHeightRectangle: &reportedLineRect)
+```
+
+次に、この値を検証します。
+
+```swift
+let resolution = CandidateWindowPositioner.resolveLineRect(
+    reportedLineRect: reportedLineRect,
+    previousValidLineRect: lastValidCandidateLineRect,
+    mouseLocation: NSEvent.mouseLocation)
+```
+
+`resolution.source` は次のいずれかです。
+
+| source | 意味 |
 |---|---|
-| `resolveLineRect()` | IMKが返したlineRectの妥当性検証とfallback |
-| `isUsableReportedLineRect()` | 原点付近の怪しいrectを検出 |
-| `calculate()` | rect, window size, screen frameから表示originを計算 |
+| `.reported` | IMKが返した値をそのまま使用 |
+| `.previousValid` | 前回正常値へfallback |
+| `.mouseLocation` | マウス位置へfallback |
 
-### 位置決定の流れ
+`.reported` の場合だけ次回用に保存します。
 
-```text
-GyaimController.showWindow()
-  │
-  ├─ client.attributes(... lineHeightRectangle: &reportedLineRect)
-  │
-  ├─ CandidateWindowPositioner.resolveLineRect()
-  │   ├─ 正常なら reportedLineRect
-  │   ├─ 不正なら lastValidCandidateLineRect
-  │   └─ それも無ければ NSEvent.mouseLocation
-  │
-  ├─ 対象スクリーンの visibleFrame を決定
-  │
-  ├─ CandidateWindowPositioner.calculate()
-  │   ├─ 基本はカーソル下
-  │   ├─ 下に収まらなければ上へflip
-  │   └─ visibleFrame内にclamp
-  │
-  └─ cw.setFrameOrigin(origin)
+```swift
+if resolution.source == .reported {
+    lastValidCandidateLineRect = resolution.lineRect
+}
 ```
 
-### lineRect fallback
+## 9. 不正な lineRect の判定
 
-一部のブラウザ/Webアプリでは、`attributes(forCharacterIndex:lineHeightRectangle:)` がスクリーン座標ではなくビュー原点付近のローカル座標を返します。
-
-観測例:
+Webアプリでは次のような値が返ることがあります。
 
 ```text
 (34.0, 10.0, 1.0, 14.0)
 (60.0, 10.0, 1.0, 14.0)
 ```
 
-この値をそのまま使うと候補ウィンドウが画面左下付近に表示されます。現在は「原点付近・1px幅・通常行高程度」を疑わしいrectとして扱います。
+これはスクリーン座標ではなく、入力要素内のローカル座標に見えます。実装では次の特徴を持つrectを疑わしいものとして扱います。
 
-## Mozc実装との対応
+```swift
+let looksLikeClientLocalOriginRect = lineRect.minX >= 0
+    && lineRect.minY >= 0
+    && lineRect.minX < 64
+    && lineRect.minY < 64
+    && lineRect.width <= 2
+    && lineRect.height >= 8
+    && lineRect.height <= 40
+```
 
-Mozc の候補ウィンドウ位置決定も、preedit rect / target point と対象モニタの working area を使います。
+「原点付近」「caretらしい1px幅」「通常の行高程度」の組み合わせです。
 
-- 下に収まらなければ上へ逃がす
-- それでも収まらなければworking area内にクランプ
-- 対象displayを選ぶ
+## 10. スクリーン選択
 
-SwiftyGyaim も `NSScreen.visibleFrame` を使って同様にクランプします。ただし IMKクライアントがローカル座標を返す問題があるため、Mozcより一段前で `lineRect` 検証を追加しています。
+位置計算に使うscreen frameは `NSScreen.main` 固定ではありません。
 
-## PreferencesWindow
+```swift
+let screenFrame = NSScreen.screens.first { $0.frame.intersects(resolution.lineRect) }?.visibleFrame
+    ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.visibleFrame
+    ?? NSScreen.main?.visibleFrame
+    ?? .zero
+```
 
-`PreferencesWindow` は設定画面です。
+優先順:
 
-設定項目:
+1. 解決後lineRectと交差するscreen
+2. マウス位置を含むscreen
+3. main screen
 
-| セクション | 内容 |
-|---|---|
-| キーボードショートカット | ひらがな/カタカナ確定、Google変換、候補削除 |
-| 候補 | 表示スタイル、クリップボード候補、選択テキスト候補 |
-| 学習辞書 | 淘汰方式、平仮名学習、完全一致reading優先 |
-| Google変換 | トリガー文字、ショートカット |
-| ログ | ログ有効化、削除、Finder表示 |
+`visibleFrame` を使うので、メニューバーやDock領域を避けやすくなります。
 
-`PreferencesWindow.show()` では `.accessory` に切り替えて前面表示し、`close()` で `.prohibited` に戻します。
+## 11. `calculate()` の挙動
 
-## DictEditorWindow
+```swift
+var y = lineRect.origin.y - winSize.height - gap
 
-`DictEditorWindow` は `~/.gyaim/localdict.txt` の編集UIです。
+if y < screenFrame.minY {
+    y = lineRect.origin.y + lineRect.height + gap
+}
 
-- `NSTableView` で reading / word を編集
-- 追加・削除・保存・再読込ボタン
-- 保存時は `WordSearch.saveDict()` を使う
-- `WordSearch.search()` はmtime hot reloadするため、保存後は変換候補に反映されます
+if y + winSize.height > screenFrame.maxY {
+    y = screenFrame.maxY - winSize.height
+}
+if y < screenFrame.minY {
+    y = screenFrame.minY
+}
+```
 
-## UI実装の注意点
+基本はカーソルの下に出します。下に収まらなければ上に出します。それでも収まらなければscreen内にclampします。
 
-- 候補ウィンドウはフォーカスを奪わないことが最優先
-- 設定系ウィンドウだけ activation policy を切り替える
-- 候補表示モード切替では制約のactivate/deactivateを正しく行う
-- 候補ウィンドウ位置は `NSScreen.main` 固定ではなく、対象rect/マウス位置のスクリーンを使う
-- `lineRect` は取得できても正しいとは限らない
+x方向も同じようにclampします。
+
+```swift
+var x = lineRect.origin.x - (mode == .list ? 5 : 0)
+if x + winSize.width > screenFrame.maxX {
+    x = screenFrame.maxX - winSize.width
+}
+if x < screenFrame.minX {
+    x = screenFrame.minX
+}
+```
+
+## 12. PreferencesWindow の実装
+
+設定画面は通常の `NSWindow` です。ただしIMEは `LSBackgroundOnly` なので、表示時だけactivation policyを変えます。
+
+```swift
+static func show() {
+    ...
+    NSApp.setActivationPolicy(.accessory)
+    NSApp.activate(ignoringOtherApps: true)
+}
+
+override func close() {
+    super.close()
+    NSApp.setActivationPolicy(.prohibited)
+}
+```
+
+UIはコードで組み立てています。各設定は対応する型のstatic setterに流れます。
+
+例:
+
+- 表示モード → `CandidateDisplayMode.setCurrent()`
+- Google suffix → `GoogleTransliterate.setTriggerSuffix()`
+- 学習設定 → `WordSearch.setStudyHiraganaEnabled()`
+- 淘汰方式 → `EvictionMode.setCurrent()`
+
+## 13. DictEditorWindow の実装
+
+ユーザー辞書エディタは `NSTableViewDataSource` / `NSTableViewDelegate` を実装した `NSWindow` です。
+
+内部状態:
+
+```swift
+private var entries: [(reading: String, word: String)] = []
+```
+
+保存時は `entries` から空白をtrimし、空行を除いて `WordSearch.saveDict()` に渡します。
+
+```swift
+var dict: [[String]] = []
+for e in entries {
+    let r = e.reading.trimmingCharacters(in: .whitespaces)
+    let w = e.word.trimmingCharacters(in: .whitespaces)
+    if !r.isEmpty, !w.isEmpty {
+        dict.append([r, w])
+    }
+}
+WordSearch.saveDict(dictFile: Config.localDictFile, dict: dict)
+```
+
+`WordSearch.search()` はmtimeを見てlocal辞書をreloadするので、保存後すぐに変換候補へ反映されます。

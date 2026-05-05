@@ -1,130 +1,214 @@
 # Swift / InputMethodKit で作る IME の概要
 
-## InputMethodKit の基本構造
+このドキュメントでは、Swift/AppKit開発者向けに、macOS IME を作る時に出てくるAPIと、SwiftyGyaimでの具体的な使い方を説明します。
 
-macOS の IME は InputMethodKit を使って実装できます。SwiftyGyaim では以下のクラス/APIが中心です。
+## 1. 通常のmacOSアプリとの違い
 
-| API | SwiftyGyaimでの使い方 |
+IMEも `.app` ですが、ユーザーがDockから起動してウィンドウを操作するタイプのアプリではありません。入力ソースとしてmacOSに登録され、選択された時にキーイベントを受け取ります。
+
+SwiftyGyaimの `Info.plist` には、通常アプリに加えてIME用のキーが入っています。
+
+| キー | 役割 |
 |---|---|
-| `IMKServer` | `main.swift` で1つ作成し、IMEサーバとして起動 |
-| `IMKInputController` | `GyaimController` が継承。キーイベント・ライフサイクルを処理 |
-| `IMKTextInput` | 入力先アプリへの marked text / committed text の反映に使う |
-| `NSEvent` | `handle(_:client:)` に渡されるキーイベント |
-| `NSPanel` | 候補ウィンドウを非アクティブに表示 |
+| `InputMethodConnectionName` | `IMKServer` の名前 |
+| `InputMethodServerControllerClass` | `IMKInputController` サブクラス名 |
+| `InputMethodServerDelegateClass` | delegate class名 |
+| `ComponentInputModeDict` | 入力ソース定義 |
+| `LSBackgroundOnly` | バックグラウンドプロセスとして動作 |
 
-## 起動
+`LSBackgroundOnly` があるため、普通のCocoaアプリのように前面化するとフォーカス問題が起きます。
 
-`main.swift` は非常に小さく、`IMKServer` を作って `NSApplication` を実行します。
+## 2. `IMKServer`
+
+`main.swift` では `IMKServer` を作ります。
 
 ```swift
 let server = IMKServer(name: "Gyaim_Connection",
                        bundleIdentifier: Bundle.main.bundleIdentifier!)
-
-let delegate = AppDelegate()
-NSApplication.shared.delegate = delegate
-NSApplication.shared.run()
 ```
 
-`name` は `Resources/Info.plist` の `InputMethodConnectionName` と対応します。ここがずれると macOS 側から IME サーバに接続できません。
+この `name` は `Info.plist` の `InputMethodConnectionName` と一致している必要があります。
 
-## Info.plist の役割
+`IMKServer` は、macOSの入力メソッド機構とアプリプロセスを接続するサーバです。Swiftコードから直接メソッドを呼び続けるというより、作ってrun loopに入ると、InputMethodKitがcontrollerを生成してイベントを配送します。
 
-IMEとして認識されるには、通常アプリとは異なるキーが必要です。
+## 3. `IMKInputController`
 
-代表例:
+IMEの中核は `IMKInputController` のサブクラスです。
 
-| キー | 意味 |
-|---|---|
-| `InputMethodConnectionName` | `IMKServer` の connection name |
-| `InputMethodServerControllerClass` | `IMKInputController` サブクラス名 |
-| `InputMethodServerDelegateClass` | delegate class名 |
-| `LSBackgroundOnly` | バックグラウンドアプリとして動作 |
-| `ComponentInputModeDict` | 入力ソースとしての定義 |
-
-SwiftyGyaim のアプリ識別子は `com.pitecan.inputmethod.SwiftyGyaim` です。
-
-## IMKInputController のライフサイクル
-
-`GyaimController` は `IMKInputController` を継承します。
-
-主な override:
-
-| メソッド | 呼ばれるタイミング | 実装内容 |
-|---|---|---|
-| `init(server:delegate:client:)` | controller生成時 | 候補ウィンドウ、辞書、状態初期化 |
-| `activateServer(_:)` | IMEが有効化された時 | 辞書start、クリップボード取得、候補表示更新 |
-| `deactivateServer(_:)` | IMEが無効化された時 | 未確定テキストを確定、辞書finish |
-| `handle(_:client:)` | キー入力時 | 入力処理の中心 |
-| `menu()` | 入力メニュー表示時 | 設定・辞書エディタメニューを返す |
-| `showPreferences(_:)` | 設定表示 | `PreferencesWindow.show()` |
-
-## 入力先アプリとのやり取り
-
-入力先アプリは `IMKTextInput` として渡されます。SwiftyGyaim では主に以下を使います。
-
-| メソッド | 用途 |
-|---|---|
-| `setMarkedText(_:selectionRange:replacementRange:)` | 未確定テキストを表示 |
-| `insertText(_:replacementRange:)` | 確定テキストを挿入 |
-| `attributes(forCharacterIndex:lineHeightRectangle:)` | キャレット行矩形を取得し候補ウィンドウ位置に使う |
-| `selectedRange()` / `attributedSubstring(from:)` | 選択テキスト候補の取得に使う |
-
-### marked text と committed text
-
-IMEは通常、入力中の文字を「未確定テキスト」として表示し、Enterや候補選択で「確定テキスト」として挿入します。
-
-```text
-入力中:
-  setMarkedText("かな", ...)
-
-確定:
-  insertText("仮名", ...)
+```swift
+@objc(GyaimController)
+class GyaimController: IMKInputController {
+    override func handle(_ event: NSEvent!, client sender: Any!) -> Bool { ... }
+}
 ```
 
-`insertText` を呼ぶと、多くのクライアントでは marked text は自動的に消えます。
+`@objc(GyaimController)` は重要です。`Info.plist` からObjective-C runtime経由で参照されるため、Swiftのmodule名に依存しない名前を付けています。
 
-## クライアント取得の注意
+## 4. `init(server:delegate:client:)`
 
-`deactivateServer(_:)` などライフサイクルメソッドでは `sender` が常に `IMKTextInput` とは限りません。そのため SwiftyGyaim では次のパターンを使います。
+```swift
+override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
+    super.init(server: server, delegate: delegate, client: inputClient)
+    ...
+}
+```
+
+`client` は入力先アプリを表します。ただし型は `Any!` です。実際にテキスト操作する時は `IMKTextInput` にcastします。
+
+```swift
+if let client = inputClient as? (IMKTextInput & NSObjectProtocol) {
+    CopyText.set(NSPasteboard.general.string(forType: .string))
+}
+```
+
+SwiftyGyaimではこのinitで候補ウィンドウと辞書を初期化します。
+
+## 5. `activateServer` / `deactivateServer`
+
+```swift
+override func activateServer(_ sender: Any!) {
+    CopyText.set(NSPasteboard.general.string(forType: .string))
+    ws?.start()
+    showWindow()
+}
+```
+
+IMEが有効になった時に呼ばれます。辞書の開始処理やクリップボード更新を行います。
+
+```swift
+override func deactivateServer(_ sender: Any!) {
+    hideWindow()
+    fix(client: sender, skipStudy: true)
+    ws?.finish()
+}
+```
+
+IMEが無効になった時は、未確定テキストを確定します。これはMozc/Google日本語入力などと同じく、IME切替で入力が消えないようにするためです。
+
+`skipStudy: true` が重要です。IME切替による自動確定はユーザーが候補を選んだわけではないので、学習辞書には入れません。
+
+## 6. `handle(_:client:)`
+
+キー入力イベントの入口です。
+
+```swift
+override func handle(_ event: NSEvent!, client sender: Any!) -> Bool
+```
+
+- `event`: `NSEvent`。キーコード、文字、修飾キーを持つ
+- `sender`: 入力先クライアント。多くの場合 `IMKTextInput`
+- 戻り値: IMEが処理したら `true`
+
+SwiftyGyaimではASCII文字を中心に処理します。
+
+```swift
+guard let eventString = event.characters, !eventString.isEmpty else { return true }
+guard let c = eventString.utf8.first else { return true }
+```
+
+`NSEvent.keyCode` は物理キー、`event.characters` は修飾キーを反映した文字です。ショートカットの信頼性を上げるため、`KeyShortcut` は `keyCode` と `charCode` の両方を持ちます。
+
+## 7. `IMKTextInput`
+
+入力先アプリとのやり取りは `IMKTextInput` で行います。
+
+### 未確定テキスト
+
+```swift
+client.setMarkedText(attrStr,
+    selectionRange: NSRange(location: word.count, length: 0),
+    replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
+```
+
+`setMarkedText` は、入力中の下線付きテキストを更新します。`selectionRange` はmarked text内のカーソル位置です。
+
+### 確定テキスト
+
+```swift
+client.insertText(word,
+    replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
+```
+
+`insertText` で確定文字列を挿入します。通常、marked text はこれで消えます。
+
+### キャレット位置
+
+```swift
+var reportedLineRect = NSRect.zero
+client.attributes(forCharacterIndex: 0, lineHeightRectangle: &reportedLineRect)
+```
+
+候補ウィンドウ位置に使う矩形を取得します。ただし、これはクライアント実装依存です。WebView系ではスクリーン座標でない値が返ることがあるため、SwiftyGyaimでは妥当性検証を挟みます。
+
+### 選択テキスト
+
+```swift
+let range = client.selectedRange()
+if range.length > 0 {
+    let attrStr = client.attributedSubstring(from: range)
+}
+```
+
+選択テキスト候補のために使います。アプリによって `NSNotFound` や不正なrangeを返すことがあるので、防御的に扱います。
+
+## 8. `sender` を信用しすぎない
+
+InputMethodKit の罠として、`deactivateServer(_:)` などで渡ってくる `sender` が期待通りの `IMKTextInput` でないことがあります。
+
+そのため確定処理では必ずfallbackします。
 
 ```swift
 let resolvedClient = (sender as? IMKTextInput) ?? (self.client() as? IMKTextInput)
 ```
 
-これは過去に「IME切替時に未確定テキストが消える」バグを防ぐための重要パターンです。
+`self.client()` は `IMKInputController` が保持しているクライアントです。これを使わないと、IME切替時に未確定テキストが消えるバグになります。
 
-## 候補ウィンドウ位置API
+## 9. 候補ウィンドウで使う AppKit API
 
-候補ウィンドウは `IMKTextInput.attributes(forCharacterIndex:lineHeightRectangle:)` で得た `lineRect` を基準に表示します。
+候補ウィンドウは `NSPanel` です。
 
 ```swift
-var lineRect = NSRect.zero
-client.attributes(forCharacterIndex: 0, lineHeightRectangle: &lineRect)
+styleMask: [.borderless, .nonactivatingPanel]
 ```
 
-ただし一部のWebアプリはスクリーン座標ではなくローカル座標を返すことがあります。そのため現在は `CandidateWindowPositioner.resolveLineRect()` で妥当性を検証し、前回正常値やマウス位置へフォールバックします。
+`orderFront(nil)` で表示し、`NSApp.activate` はしません。
 
-## NSApplication activation policy
+```swift
+cw.setFrameOrigin(origin)
+cw.orderFront(nil)
+```
 
-SwiftyGyaim は `LSBackgroundOnly` なので通常は前面アプリになりません。
-
-- 候補ウィンドウ: `orderFront(nil)` のみ。アプリをアクティブ化しない
-- 設定画面/辞書エディタ: 一時的に `.accessory`
-- 閉じる時: `.prohibited`
+設定画面や辞書エディタは入力先からフォーカスを移してよいUIなので、一時的にactivation policyを変えます。
 
 ```swift
 NSApp.setActivationPolicy(.accessory)
 NSApp.activate(ignoringOtherApps: true)
 ```
 
-## ターミナルの Ctrl+key 問題
+閉じる時は `.prohibited` に戻します。
 
-Terminal.app や iTerm2 は Ctrl+key を IME より先に処理する場合があります。そのため SwiftyGyaim では、Ctrl+Shift+U などの修飾キーショートカットに加えて、`;` や `q` の単キー確定も用意しています。
+## 10. IME開発で起きやすい問題
 
-## InputMethodKit 実装時の設計方針
+### フォーカスを奪う
 
-1. 入力先アプリのフォーカスを奪わない
-2. `sender` を過信せず `self.client()` でフォールバックする
-3. クライアントが返す座標・選択範囲は信用しすぎない
-4. ライフサイクルメソッドではテキスト消失を最優先で防ぐ
-5. 複数 `GyaimController` インスタンスを前提に共有状態を設計する
+通常の `NSWindow` を表示したり `NSApp.unhide(nil)` を呼ぶと、入力先アプリがフォーカスを失うことがあります。候補ウィンドウでは絶対に避けます。
+
+### クライアント座標が信用できない
+
+`lineRect` や `selectedRange` はアプリ依存です。取得に成功しても意味が正しいとは限りません。
+
+### controllerが複数できる
+
+クライアントごとに `GyaimController` が生成され得ます。学習辞書のような共有状態はstaticや外部保存を含めて設計します。
+
+### ターミナルがCtrlキーを奪う
+
+Terminal.app/iTerm2では Ctrl+key がIMEに届かないことがあります。SwiftyGyaimでは `;` / `q` など単キー操作を併用しています。
+
+## 11. Swift実装としての特徴
+
+- InputMethodKitはObjective-C由来APIなので `Any!` やIUOが多い
+- `@objc` 名、Info.plist、runtime参照の整合が必要
+- `NSRange(location: NSNotFound, length: NSNotFound)` のようなCocoa慣習が残る
+- UIはAppKitでコード生成しており、SwiftUIは使っていない
+- 非同期Google変換は `URLSession` → main queue callback でUI更新する
