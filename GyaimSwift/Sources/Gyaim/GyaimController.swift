@@ -89,6 +89,8 @@ class GyaimController: IMKInputController {
     private var ws: WordSearch?
     private var rk = RomaKana()
     private var candWindow: CandidateWindow?
+    /// Last IMK-reported cursor rect that looked like a valid screen-coordinate rect.
+    private var lastValidCandidateLineRect: NSRect?
     /// Tracks the in-flight Google Transliterate query to discard stale results.
     private var pendingGoogleQuery: String?
 
@@ -859,20 +861,35 @@ class GyaimController: IMKInputController {
         }
         guard let cw = candWindow,
               let client = client() as? IMKTextInput else { return }
-        var lineRect = NSRect.zero
-        client.attributes(forCharacterIndex: 0, lineHeightRectangle: &lineRect)
+        var reportedLineRect = NSRect.zero
+        client.attributes(forCharacterIndex: 0, lineHeightRectangle: &reportedLineRect)
+
+        let resolution = CandidateWindowPositioner.resolveLineRect(
+            reportedLineRect: reportedLineRect,
+            previousValidLineRect: lastValidCandidateLineRect,
+            mouseLocation: NSEvent.mouseLocation)
+        if resolution.source == .reported {
+            lastValidCandidateLineRect = resolution.lineRect
+        }
 
         let winSize = cw.frame.size
         let mode = CandidateDisplayMode.current
-        let screenFrame = NSScreen.main?.frame ?? .zero
+        let screenFrame = NSScreen.screens.first { $0.frame.intersects(resolution.lineRect) }?.visibleFrame
+            ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? .zero
 
         let origin = CandidateWindowPositioner.calculate(
-            lineRect: lineRect,
+            lineRect: resolution.lineRect,
             winSize: winSize,
             screenFrame: screenFrame,
             mode: mode)
 
-        Log.ui.info("showWindow: lineRect=\(lineRect) winSize=\(winSize) mode=\(mode == .classic ? "classic" : "list") -> origin=\(origin)")
+        let sourceDescription = String(describing: resolution.source)
+        let modeDescription = mode == .classic ? "classic" : "list"
+        Log.ui.info("showWindow: reportedLineRect=\(reportedLineRect) "
+            + "resolvedLineRect=\(resolution.lineRect) source=\(sourceDescription) "
+            + "winSize=\(winSize) mode=\(modeDescription) -> origin=\(origin)")
         cw.setFrameOrigin(origin)
         cw.orderFront(nil)
     }
