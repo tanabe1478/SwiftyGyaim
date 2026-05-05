@@ -36,6 +36,8 @@ UserDefaultsキー: `candidateDisplayMode` (Int, 0=list, 1=classic, デフォル
 
 `CandidateWindowPositioner`: クライアントから取得した`lineRect`（カーソル位置）を基準に表示位置を計算。画面境界でクランプ。対象スクリーンは `lineRect` と交差する `NSScreen.visibleFrame` を優先し、見つからない場合はマウス位置のスクリーンにフォールバックする。
 
+Mozc の `renderer/window_util.cc` も、preedit rect / target point と対象モニタの working area を入力に、候補ウィンドウを反対側へ逃がし、それでも収まらない場合は working area 内へクランプする設計になっている。本実装もこの方針に合わせ、`visibleFrame` 内に収めることを優先する。ただし SwiftyGyaim では IMK クライアントがローカル座標を返す実ログがあるため、Mozc の working area クランプに加えて `lineRect` 妥当性検証を行う。
+
 ### lineRect検証とフォールバック（Issue #10）
 
 一部のブラウザ/Webアプリは `IMKTextInput.attributes(forCharacterIndex:lineHeightRectangle:)` でスクリーン座標ではなく、`(13.75, 12.0, 1.0, 17.5)` やログで観測された `(34.0, 10.0, 1.0, 14.0)`, `(60.0, 10.0, 1.0, 14.0)` のようなビュー原点付近のローカル座標を返すことがある。この値をそのまま使うと候補ウィンドウが画面左下付近に出る。

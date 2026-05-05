@@ -33,6 +33,17 @@ lineRect=(60.0, 10.0, 1.0, 14.0) -> origin=(60.0, 24.0)
 
 ## Consideration
 
+### Mozc実装からの確認
+
+Mozc も候補ウィンドウを自前レンダラで表示しており、位置決定は `renderer/window_util.cc` に集約されている。主な方針は以下。
+
+- preedit/caret に相当する target point と preedit rect を基準に候補ウィンドウを配置する
+- `working_area`（対象モニタの利用可能領域）を渡し、はみ出す場合は反対側へ配置し、それでも収まらなければ working area 内へクランプする
+- macOS 側の `renderer/mac/CandidateController.mm` では preedit rect に近い display rect を選び、`WindowUtil::GetWindowRectForMainWindowFromTargetPointAndPreedit()` に渡している
+- Windows 側でも `exclude_region` / `target_point` から候補ウィンドウ位置を決め、対象点を含む working area を使っている
+
+この設計は、今回の修正で `NSScreen.visibleFrame` を使って対象スクリーン内へクランプする方針を裏付ける。一方で Mozc はアプリから渡された preedit/caret rect が有効なスクリーン座標である前提に近く、今回観測された「Webアプリがローカル座標を返す」ケースには SwiftyGyaim 側で追加の妥当性検証が必要と判断した。
+
 ### 案1: `lineRect` を常にそのまま使う
 
 実装は最も単純だが、現在の不具合を解決できない。
@@ -75,5 +86,8 @@ lineRect=(60.0, 10.0, 1.0, 14.0) -> origin=(60.0, 24.0)
 
 - Issue #10: https://github.com/tanabe1478/SwiftyGyaim/issues/10
 - Scrapbox: https://scrapbox.io/swifty-gyaim/候補ウィンドウの表示位置がおかしい時がある
+- Mozc `renderer/window_util.cc`
+- Mozc `renderer/mac/CandidateController.mm`
+- Mozc `renderer/win32/win32_renderer_util.cc`
 - `docs/specs/candidate-window.md`
 - `docs/specs/bug-memory.md` BUG-006
