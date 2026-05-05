@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> Shared-agent note: `AGENTS.md` contains a pi/agent-compatible summary of the same repository rules so non-Claude agents can recognize the project conventions too.
+
 ## CRITICAL: PR作成ルール
 
 PRは必ず `--repo tanabe1478/SwiftyGyaim` を指定して作成すること。`--repo` を省略すると `gh` がフォーク元（masui/GyaimMotion）に向けてPRを作成してしまう。
