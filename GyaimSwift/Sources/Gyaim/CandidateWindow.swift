@@ -415,6 +415,68 @@ private class ClassicBackgroundView: NSView {
 // MARK: - Testable Position Calculator
 
 struct CandidateWindowPositioner {
+    enum LineRectSource: Equatable {
+        case reported
+        case previousValid
+        case mouseLocation
+    }
+
+    struct LineRectResolution: Equatable {
+        let lineRect: NSRect
+        let source: LineRectSource
+    }
+
+    /// Resolve an IMK-reported cursor rect into a usable screen-coordinate rect.
+    ///
+    /// Some clients (notably browser-based editors) return a local view coordinate near
+    /// the window origin, such as `(13.75, 12.0, 1.0, 17.5)`, instead of a screen rect.
+    /// Treat those origin-like tiny rects as suspicious and fall back to the last known
+    /// good rect, or finally the current mouse location.
+    static func resolveLineRect(
+        reportedLineRect: NSRect,
+        previousValidLineRect: NSRect?,
+        mouseLocation: NSPoint,
+        defaultLineHeight: CGFloat = 20
+    ) -> LineRectResolution {
+        if isUsableReportedLineRect(reportedLineRect) {
+            return LineRectResolution(lineRect: reportedLineRect, source: .reported)
+        }
+
+        if let previousValidLineRect {
+            return LineRectResolution(lineRect: previousValidLineRect, source: .previousValid)
+        }
+
+        let height = reportedLineRect.height.isFinite && reportedLineRect.height > 0
+            ? reportedLineRect.height
+            : defaultLineHeight
+        let fallbackRect = NSRect(x: mouseLocation.x, y: mouseLocation.y, width: 1, height: height)
+        return LineRectResolution(lineRect: fallbackRect, source: .mouseLocation)
+    }
+
+    static func isUsableReportedLineRect(_ lineRect: NSRect) -> Bool {
+        guard lineRect.origin.x.isFinite,
+              lineRect.origin.y.isFinite,
+              lineRect.size.width.isFinite,
+              lineRect.size.height.isFinite,
+              !lineRect.isEmpty,
+              lineRect.height > 0 else {
+            return false
+        }
+
+        // Browser/WebView clients can report local coordinates near the origin instead
+        // of screen coordinates. A 1px-wide caret rect at the lower-left origin is the
+        // signature observed in Issue #10.
+        let looksLikeClientLocalOriginRect = lineRect.minX >= 0
+            && lineRect.minY >= 0
+            && lineRect.minX < 64
+            && lineRect.minY < 64
+            && lineRect.width <= 2
+            && lineRect.height >= 8
+            && lineRect.height <= 40
+
+        return !looksLikeClientLocalOriginRect
+    }
+
     /// Calculate the window origin given cursor rect, window size, screen bounds, and display mode.
     ///
     /// - Parameters:
@@ -437,6 +499,14 @@ struct CandidateWindowPositioner {
         // Flip above cursor if window would go below screen bottom
         if y < screenFrame.minY {
             y = lineRect.origin.y + lineRect.height + gap
+        }
+
+        // Keep the window vertically on the target screen as much as possible.
+        if y + winSize.height > screenFrame.maxY {
+            y = screenFrame.maxY - winSize.height
+        }
+        if y < screenFrame.minY {
+            y = screenFrame.minY
         }
 
         // X position: align with cursor, offset slightly for list mode

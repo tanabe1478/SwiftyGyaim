@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-04-15 (完全一致reading優先トグル追加 ADR-016/017)
+> Last updated: 2026-05-05 (Issue #10: lineRect検証とフォールバック追加)
 
 ## 概要
 
@@ -34,7 +34,19 @@ UserDefaultsキー: `candidateDisplayMode` (Int, 0=list, 1=classic, デフォル
 
 ## 位置計算
 
-`CandidateWindowPositioner`: クライアントから取得した`lineRect`（カーソル位置）を基準に表示位置を計算。画面境界でクランプ。
+`CandidateWindowPositioner`: クライアントから取得した`lineRect`（カーソル位置）を基準に表示位置を計算。画面境界でクランプ。対象スクリーンは `lineRect` と交差する `NSScreen.visibleFrame` を優先し、見つからない場合はマウス位置のスクリーンにフォールバックする。
+
+### lineRect検証とフォールバック（Issue #10）
+
+一部のブラウザ/Webアプリは `IMKTextInput.attributes(forCharacterIndex:lineHeightRectangle:)` でスクリーン座標ではなく、`(13.75, 12.0, 1.0, 17.5)` やログで観測された `(34.0, 10.0, 1.0, 14.0)`, `(60.0, 10.0, 1.0, 14.0)` のようなビュー原点付近のローカル座標を返すことがある。この値をそのまま使うと候補ウィンドウが画面左下付近に出る。
+
+`CandidateWindowPositioner.resolveLineRect()` で以下の順に表示位置用のrectを決定する:
+
+1. 正常そうな `reportedLineRect` はそのまま使用し、`GyaimController.lastValidCandidateLineRect` に保存
+2. 原点付近かつ1px幅のような疑わしいrectは、前回の正常rectを使用
+3. 前回正常rectがない場合は `NSEvent.mouseLocation` から1px幅のフォールバックrectを作る
+
+`showWindow()` のログには `reportedLineRect`, `resolvedLineRect`, `source` を出し、フォールバック発生時の調査を容易にする。
 
 ## モード切替の実装
 
