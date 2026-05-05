@@ -155,7 +155,8 @@ docs/adr/
 ├── 014-score-based-study-dict-eviction.md
 ├── 015-delete-candidate-from-dictionary.md
 ├── 016-exact-reading-match-priority.md (Superseded by ADR-017)
-└── 017-cross-dict-exact-priority.md
+├── 017-cross-dict-exact-priority.md
+└── 018-candidate-window-position-fallback.md
 ```
 
 ## Logging & Monitoring
