@@ -28,7 +28,7 @@ gh pr create --title ... --body ...
 ```bash
 xcodegen generate
 xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Debug -derivedDataPath .build build
-xcodebuild -project Gyaim.xcodeproj -scheme GyaimTests -derivedDataPath .build test
+./Scripts/run-unit-tests.sh
 ```
 
 E2Eテスト:
