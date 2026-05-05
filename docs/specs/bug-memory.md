@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-04-16 (BUG-005追加)
+> Last updated: 2026-05-05 (BUG-006追加)
 
 ## 概要
 
@@ -78,6 +78,25 @@
   - IMKInputController はクライアントアプリごとにインスタンスが生成される。共有状態（学習辞書等）をインスタンス変数にすると、マルチインスタンス間で不整合が起きる
   - BUG-003（保存タイミング）の修正は必要条件だったが十分条件ではなかった。「保存しても消える」場合は、別インスタンスによる上書きを疑うべき
   - ファイルを介した間接的な共有（各インスタンスが read → modify → write）は write-write 競合の温床。メモリ上で単一の真実を共有すべき
+
+### BUG-006: 候補ウィンドウが画面左下付近に表示される
+
+- **Issue**: #10
+- **発見日**: 2026-05-05
+- **症状**: Cosense/Scrapbox などブラウザ上のWebアプリで候補ウィンドウがキャレット位置ではなく画面左下付近に表示されることがある
+- **影響**: 変換候補が入力位置から大きく離れ、候補選択が困難になる
+- **原因**: `IMKTextInput.attributes(forCharacterIndex:lineHeightRectangle:)` がスクリーン座標ではなく、`(13.75, 12.0, 1.0, 17.5)` やログで観測された `(34.0, 10.0, 1.0, 14.0)`, `(60.0, 10.0, 1.0, 14.0)` のようなビュー原点付近のローカル座標を返すクライアントがある。`GyaimController.showWindow()` は妥当性チェックなしでこの `lineRect` を使用していた
+- **修正**:
+  - `CandidateWindowPositioner.resolveLineRect()` を追加し、原点付近かつ1px幅の疑わしい `lineRect` を検出
+  - 正常な `lineRect` を `GyaimController.lastValidCandidateLineRect` として保持し、疑わしい値では前回正常値にフォールバック
+  - 前回正常値がない場合は `NSEvent.mouseLocation` からフォールバックrectを作成
+  - `lineRect` と交差するスクリーンの `visibleFrame` を使い、マルチディスプレイ/画面端でのクランプを改善
+  - ログに `reportedLineRect`, `resolvedLineRect`, `source` を出力
+- **検証**: `testSuspiciousOriginLineRectFallsBackToPreviousValidRect`, `testSuspiciousOriginLineRectFallsBackToMouseWhenNoPreviousRect`, `testValidReportedLineRectIsUsedAsIs` を追加
+- **教訓**:
+  - IMKTextInputが返す座標はクライアント依存で、常にスクリーン座標とは限らない
+  - UI位置計算では「取得できた」だけでなく「スクリーン座標として妥当か」を検証する
+  - フォールバック発生時にログで元値・解決後の値・選択元を確認できるようにする
 
 ## パターン集
 

@@ -288,6 +288,61 @@ final class CandidateWindowTests: XCTestCase {
                                   "ウィンドウが画面右端からはみ出さない")
     }
 
+    func testPositionClampsToScreenTopAfterFlip() {
+        let lineRect = NSRect(x: 100, y: 10, width: 1, height: 20)
+        let winSize = NSSize(width: 300, height: 1000)
+        let screenFrame = NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        let origin = CandidateWindowPositioner.calculate(
+            lineRect: lineRect, winSize: winSize,
+            screenFrame: screenFrame, mode: .classic)
+
+        XCTAssertEqual(origin.y, screenFrame.minY,
+                       "上下どちらにも収まらない場合も画面下端より下には出さない")
+    }
+
+    func testValidReportedLineRectIsUsedAsIs() {
+        let reported = NSRect(x: 300, y: 400, width: 1, height: 18)
+        let previous = NSRect(x: 700, y: 600, width: 1, height: 20)
+
+        let resolution = CandidateWindowPositioner.resolveLineRect(
+            reportedLineRect: reported,
+            previousValidLineRect: previous,
+            mouseLocation: NSPoint(x: 900, y: 800))
+
+        XCTAssertEqual(resolution.source, .reported)
+        XCTAssertEqual(resolution.lineRect, reported)
+    }
+
+    func testSuspiciousOriginLineRectFallsBackToPreviousValidRect() {
+        // Issue #10: Web apps can report local coordinates like this instead of screen coordinates.
+        let suspicious = NSRect(x: 13.75, y: 12.0, width: 1.0, height: 17.5)
+        let previous = NSRect(x: 700, y: 600, width: 1, height: 20)
+
+        let resolution = CandidateWindowPositioner.resolveLineRect(
+            reportedLineRect: suspicious,
+            previousValidLineRect: previous,
+            mouseLocation: NSPoint(x: 900, y: 800))
+
+        XCTAssertEqual(resolution.source, .previousValid)
+        XCTAssertEqual(resolution.lineRect, previous)
+    }
+
+    func testSuspiciousOriginLineRectFallsBackToMouseWhenNoPreviousRect() {
+        let suspicious = NSRect(x: 13.75, y: 12.0, width: 1.0, height: 17.5)
+        let mouse = NSPoint(x: 900, y: 800)
+
+        let resolution = CandidateWindowPositioner.resolveLineRect(
+            reportedLineRect: suspicious,
+            previousValidLineRect: nil,
+            mouseLocation: mouse)
+
+        XCTAssertEqual(resolution.source, .mouseLocation)
+        XCTAssertEqual(resolution.lineRect.origin, mouse)
+        XCTAssertEqual(resolution.lineRect.width, 1)
+        XCTAssertEqual(resolution.lineRect.height, suspicious.height)
+    }
+
     // MARK: - Classic layout containment
 
     func testClassicScrollViewIsContainedInBackground() {
