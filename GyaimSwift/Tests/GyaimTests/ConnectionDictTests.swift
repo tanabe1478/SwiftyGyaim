@@ -52,4 +52,22 @@ final class ConnectionDictTests: XCTestCase {
         XCTAssertTrue(words.contains { $0.contains("言") },
                       "Expected compound containing '言' in results: \(words)")
     }
+
+    func testSearchMigratedTechnicalTerms() throws {
+        let expectations = [
+            ("ripojitori", "リポジトリ"),
+            ("zeijakuseisiken", "脆弱性試験"),
+            ("so-suko-do", "ソースコード"),
+            ("saitankeiro", "最短経路")
+        ]
+
+        for (pat, expectedWord) in expectations {
+            var words: [String] = []
+            dict.search(pat: pat, searchMode: 1) { word, _, _ in
+                words.append(word)
+            }
+            XCTAssertTrue(words.contains(expectedWord),
+                          "Expected '\(expectedWord)' for '\(pat)' in results: \(words)")
+        }
+    }
 }
