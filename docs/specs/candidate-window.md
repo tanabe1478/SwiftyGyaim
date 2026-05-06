@@ -30,7 +30,9 @@ UserDefaultsキー: `candidateDisplayMode` (Int, 0=list, 1=classic, デフォル
 
 ## Classic背景の描画
 
-`ClassicBackgroundView`: candwin.pngを9スライス描画（上部/中央/下部をストレッチ）。候補数に応じて幅を可変。
+`ClassicBackgroundView`: candwin.pngを9スライス描画（上部/中央/下部をストレッチ）。候補数に応じて高さを可変。
+
+Classic表示は `NSScrollView` + `NSTextView` で候補文字列を表示する。長い候補列が折り返される場合、`layoutManager.usedRect(for:)` で必要な高さを計算した後、`NSTextView.frame` を `documentWidth x scrollHeight` に明示更新する。`documentView` のframeがゼロのままだと、白いcontent areaだけが表示され候補文字が見えないため、回帰テストで `textView.frame.width > 0` を確認する。
 
 ## 位置計算
 

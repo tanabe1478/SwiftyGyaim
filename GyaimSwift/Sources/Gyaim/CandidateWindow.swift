@@ -259,16 +259,22 @@ class CandidateWindow: NSPanel {
               let textContainer = textView.textContainer,
               let layoutManager = textView.layoutManager else { return }
 
-        let textWidth = classicMetrics.bubbleSize.width
+        let documentWidth = classicMetrics.bubbleSize.width
             - classicMetrics.contentInsets.left
             - classicMetrics.contentInsets.right
-            - textView.textContainerInset.width * 2
+        let textWidth = documentWidth - textView.textContainerInset.width * 2
         textContainer.size = NSSize(width: textWidth, height: .greatestFiniteMagnitude)
         layoutManager.ensureLayout(for: textContainer)
         let textHeight = layoutManager.usedRect(for: textContainer).height
             + textView.textContainerInset.height * 2
 
         let scrollHeight = max(textHeight, classicMetrics.minimumContentHeight)
+        textView.frame = NSRect(x: 0, y: 0, width: documentWidth, height: scrollHeight)
+        classicScrollView?.contentView.scroll(to: .zero)
+        if let clipView = classicScrollView?.contentView {
+            classicScrollView?.reflectScrolledClipView(clipView)
+        }
+
         let windowHeight = scrollHeight
             + classicMetrics.contentInsets.top
             + classicMetrics.contentInsets.bottom
