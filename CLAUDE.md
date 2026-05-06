@@ -156,7 +156,8 @@ docs/adr/
 ├── 015-delete-candidate-from-dictionary.md
 ├── 016-exact-reading-match-priority.md (Superseded by ADR-017)
 ├── 017-cross-dict-exact-priority.md
-└── 018-candidate-window-position-fallback.md
+├── 018-candidate-window-position-fallback.md
+└── 019-gictionary-connection-dict-import.md
 ```
 
 ## Logging & Monitoring
