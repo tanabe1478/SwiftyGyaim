@@ -18,6 +18,9 @@ class PreferencesWindow: NSWindow {
     private var evictionModeControl: NSSegmentedControl?
     private var studyHiraganaToggle: NSButton?
     private var exactReadingMatchToggle: NSButton?
+    private var connectionDictURLField: NSTextField?
+    private var connectionDictStatusLabel: NSTextField?
+    private var connectionDictImportButton: NSButton?
 
     static func show() {
         if shared == nil {
@@ -272,6 +275,8 @@ class PreferencesWindow: NSWindow {
         y -= 20
         deleteHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
         contentBox.addSubview(deleteHint)
+
+        addConnectionDictionarySection(y: &y)
 
         // Log section
         y -= 40
@@ -562,6 +567,8 @@ class PreferencesWindow: NSWindow {
         deleteHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
         contentBox.addSubview(deleteHint)
 
+        addConnectionDictionarySection(y: &y)
+
         // Log section in rebuildLayout
         y -= 40
         let logTitle = makeLabel("ログ", bold: true)
@@ -786,6 +793,97 @@ class PreferencesWindow: NSWindow {
         }
         return label
     }
+}
+
+private extension PreferencesWindow {
+    private func addConnectionDictionarySection(y: inout CGFloat) {
+        y -= 40
+        let title = makeLabel("接続辞書", bold: true)
+        title.frame = NSRect(x: 20, y: y, width: 440, height: 24)
+        contentBox.addSubview(title)
+
+        y -= 28
+        let urlLabel = makeLabel("URL:")
+        urlLabel.frame = NSRect(x: 20, y: y, width: 40, height: 20)
+        contentBox.addSubview(urlLabel)
+
+        let urlField = NSTextField(frame: NSRect(x: 60, y: y - 2, width: 300, height: 24))
+        urlField.placeholderString = "https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt"
+        urlField.stringValue = GictionaryConnectionImporter.sourceURLString
+        contentBox.addSubview(urlField)
+        connectionDictURLField = urlField
+
+        let importBtn = NSButton(title: "インポート", target: self, action: #selector(importConnectionDictionary))
+        importBtn.frame = NSRect(x: 370, y: y - 2, width: 90, height: 24)
+        importBtn.bezelStyle = .rounded
+        contentBox.addSubview(importBtn)
+        connectionDictImportButton = importBtn
+
+        y -= 24
+        let hint = makeLabel("Gictionaryのdict2.txt形式を指定できます。成功後すぐに変換へ反映します")
+        hint.font = NSFont.systemFont(ofSize: 11)
+        hint.textColor = .secondaryLabelColor
+        hint.frame = NSRect(x: 20, y: y, width: 440, height: 18)
+        contentBox.addSubview(hint)
+
+        y -= 22
+        let statusLabel = makeLabel(connectionDictionaryStatusText())
+        statusLabel.font = NSFont.systemFont(ofSize: 11)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.frame = NSRect(x: 20, y: y, width: 340, height: 18)
+        contentBox.addSubview(statusLabel)
+        connectionDictStatusLabel = statusLabel
+
+        let restoreBtn = NSButton(title: "内蔵辞書に戻す", target: self, action: #selector(restoreBundledConnectionDictionary))
+        restoreBtn.frame = NSRect(x: 340, y: y - 2, width: 120, height: 24)
+        restoreBtn.bezelStyle = .rounded
+        contentBox.addSubview(restoreBtn)
+    }
+
+    @objc private func importConnectionDictionary() {
+        let raw = connectionDictURLField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let url = URL(string: raw), let scheme = url.scheme, ["http", "https", "file"].contains(scheme) else {
+            connectionDictStatusLabel?.stringValue = "URLが正しくありません"
+            return
+        }
+
+        connectionDictImportButton?.isEnabled = false
+        connectionDictStatusLabel?.stringValue = "インポート中..."
+        GictionaryConnectionImporter.importFromURL(url) { [weak self] result in
+            DispatchQueue.main.async {
+                self?.connectionDictImportButton?.isEnabled = true
+                switch result {
+                case .success(let importResult):
+                    GyaimController.reloadConnectionDictionary()
+                    self?.connectionDictStatusLabel?.stringValue = "インポート済み: \(importResult.entryCount)件"
+                case .failure(let error):
+                    self?.connectionDictStatusLabel?.stringValue = "失敗: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    @objc private func restoreBundledConnectionDictionary() {
+        do {
+            try GictionaryConnectionImporter.removeImportedDictionary()
+            GyaimController.reloadConnectionDictionary()
+            connectionDictURLField?.stringValue = ""
+            connectionDictStatusLabel?.stringValue = connectionDictionaryStatusText()
+        } catch {
+            connectionDictStatusLabel?.stringValue = "失敗: \(error.localizedDescription)"
+        }
+    }
+
+    private func connectionDictionaryStatusText() -> String {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: Config.importedConnectionDictFile),
+              let size = (try? fm.attributesOfItem(atPath: Config.importedConnectionDictFile)[.size] as? NSNumber)?.intValue,
+              size > 0 else {
+            return "現在: 内蔵辞書"
+        }
+        return "現在: インポート辞書 (\(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)))"
+    }
+
 }
 
 /// A single row: [shortcut display] [Record button] [Remove button]

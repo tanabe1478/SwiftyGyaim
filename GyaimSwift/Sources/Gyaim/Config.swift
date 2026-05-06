@@ -22,6 +22,19 @@ enum Config {
         "\(gyaimDir)/studydict.txt"
     }()
 
+    static let importedConnectionDictFile: String = {
+        "\(gyaimDir)/connectiondict.txt"
+    }()
+
+    static func activeConnectionDictFile(bundleDictPath: String) -> String {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: importedConnectionDictFile),
+           (try? fm.attributesOfItem(atPath: importedConnectionDictFile)[.size] as? NSNumber)?.intValue ?? 0 > 0 {
+            return importedConnectionDictFile
+        }
+        return bundleDictPath
+    }
+
     static let copyTextFile: String = {
         "\(gyaimDir)/copytext"
     }()
