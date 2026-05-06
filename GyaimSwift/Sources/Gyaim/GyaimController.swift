@@ -102,13 +102,7 @@ class GyaimController: IMKInputController {
         }
 
         if ws == nil {
-            if let dictPath = Bundle.main.path(forResource: "dict", ofType: "txt") {
-                ws = WordSearch(connectionDictFile: dictPath,
-                                localDictFile: Config.localDictFile,
-                                studyDictFile: Config.studyDictFile)
-            } else {
-                Log.input.error("dict.txt not found in bundle")
-            }
+            reloadConnectionDictionary()
         }
         Log.input.info("GyaimController initialized")
 
@@ -139,6 +133,22 @@ class GyaimController: IMKInputController {
     /// 呼ばれずに終了するケース（プロセスkill等）への備えとして残す。
     static func saveStudyDictIfNeeded() {
         shared?.ws?.finish()
+    }
+
+    static func reloadConnectionDictionary() {
+        shared?.reloadConnectionDictionary()
+    }
+
+    private func reloadConnectionDictionary() {
+        guard let bundleDictPath = Bundle.main.path(forResource: "dict", ofType: "txt") else {
+            Log.input.error("dict.txt not found in bundle")
+            return
+        }
+        let dictPath = Config.activeConnectionDictFile(bundleDictPath: bundleDictPath)
+        ws = WordSearch(connectionDictFile: dictPath,
+                        localDictFile: Config.localDictFile,
+                        studyDictFile: Config.studyDictFile)
+        Log.dict.info("Connection dictionary activated: \(dictPath)")
     }
 
     private func resetState() {

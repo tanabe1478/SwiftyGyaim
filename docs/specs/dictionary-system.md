@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-04-16 (BUG-005: studyDict static化)
+> Last updated: 2026-05-06 (Gictionary接続辞書インポート)
 
 ## 概要
 
@@ -13,13 +13,40 @@
 |--------|------|---------|---------|------|
 | 1 (最高) | Study | ~/.gyaim/studydict.txt | 10,000 (設定可能) | MRU淘汰（デフォルト） |
 | 2 | Local | ~/.gyaim/localdict.txt | 無制限 | ユーザー手動登録 |
-| 3 | Connection | Resources/dict.txt | ~40K | 形態素解析辞書 |
+| 3 | Connection | Resources/dict.txt または ~/.gyaim/connectiondict.txt | ~40K | 形態素解析辞書。インポート済み辞書があれば優先 |
 
 ## ファイル形式
 
 Study: タブ区切り `reading\tword\ttimestamp\tfrequency`（旧2カラム形式も読み込み可能）
 Local: タブ区切り `reading\tword`
 Connection: タブ区切り `romaji\tsurface\tinConnection\toutConnection`
+
+## 接続辞書インポート
+
+設定画面の「接続辞書」セクションからURLを指定し、Gictionaryリポジトリの `dict2.txt` 形式（接続辞書TSV）を `~/.gyaim/connectiondict.txt` にインポートできる。`Gictionary.json` も読み込み可能だが、リポジトリ同梱の現行辞書と完全一致させたい場合は `dict2.txt` を指定する。
+
+- UserDefaultsキー: `connectionDictSourceURL`（最後に成功したインポート元URL）
+- 保存先: `Config.importedConnectionDictFile` = `~/.gyaim/connectiondict.txt`
+- 起動時/再読み込み時は `Config.activeConnectionDictFile(bundleDictPath:)` で、インポート済みファイルが存在し非空ならそれを使用し、なければbundle内 `Resources/dict.txt` を使用する
+- インポート成功後は `GyaimController.reloadConnectionDictionary()` で現在の `WordSearch` を作り直し、再起動せずに反映する
+- 「内蔵辞書に戻す」で `~/.gyaim/connectiondict.txt` とURL設定を削除し、bundle辞書を再ロードする
+
+### Gictionary JSON の解釈
+
+元リポジトリ: https://github.com/masui/Gictionary
+
+`Gictionary.json` の各pageを1語として扱い、`page.title` を表記、`page.lines` の先頭から以下の形の行を接続辞書エントリとして読む。
+
+```
+読み 単語カテゴリ 次カテゴリ
+読み 単語カテゴリ
+```
+
+- JSON exportでは `lines[0]` にtitle行が含まれるため、`line == page.title` はスキップする
+- 空行、`[[...]]` を含む行、2〜3フィールド以外の行に到達したら、そのpageのエントリ読み取りを終了する（Gictionaryの `programs/getdict` と同様に、説明文以降を辞書エントリとして扱わない）
+- `#` コメント行はスキップし、行末の空白+`#`以降はコメントとして削除する
+- 読みがひらがなで始まる場合は `RomaKana.hiragana2roma()` でローマ字候補に展開する。ひらがな以外で始まる場合は元の読みをそのままpatternにする
+- 単語カテゴリ/次カテゴリには出現順で1始まりのconnection番号を割り当て、次カテゴリなしは `outConnection = 0` とする
 
 ## 検索モード
 
