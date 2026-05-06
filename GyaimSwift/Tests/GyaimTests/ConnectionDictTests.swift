@@ -61,13 +61,30 @@ final class ConnectionDictTests: XCTestCase {
             ("saitankeiro", "最短経路")
         ]
 
+        assertExactMatches(expectations)
+    }
+
+    func testSearchMozcManualTerms() throws {
+        let expectations = [
+            ("ki-bo-dosho-tokatto", "キーボードショートカット"),
+            ("kaigokannsei", "下位互換性"),
+            ("tayousoninnshou", "多要素認証"),
+            ("reiwa", "令和")
+        ]
+
+        assertExactMatches(expectations)
+    }
+
+    private func assertExactMatches(_ expectations: [(String, String)], file: StaticString = #filePath, line: UInt = #line) {
         for (pat, expectedWord) in expectations {
             var words: [String] = []
             dict.search(pat: pat, searchMode: 1) { word, _, _ in
                 words.append(word)
             }
             XCTAssertTrue(words.contains(expectedWord),
-                          "Expected '\(expectedWord)' for '\(pat)' in results: \(words)")
+                          "Expected '\(expectedWord)' for '\(pat)' in results: \(words)",
+                          file: file,
+                          line: line)
         }
     }
 }
