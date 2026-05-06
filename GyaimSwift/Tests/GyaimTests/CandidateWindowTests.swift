@@ -76,6 +76,26 @@ final class CandidateWindowTests: XCTestCase {
         CandidateWindow.shared = nil
     }
 
+    func testClassicModeSizesTextViewForWrappedLongCandidates() {
+        CandidateDisplayMode.setCurrent(.classic)
+        let window = CandidateWindow()
+        let words = [
+            "sitei", "指定", "しているの？", "しているところはない？", "していますか？",
+            "しているところないの？", "していないよね？", "していませんか？", "している",
+            "しているのかを", "しているよね"
+        ]
+        window.updateCandidates(words, selectedIndex: 0, hasMore: true)
+
+        let textView = findClassicTextView(in: window)
+        XCTAssertNotNil(textView)
+        XCTAssertFalse(textView!.string.isEmpty)
+        XCTAssertGreaterThan(textView!.frame.width, 0)
+        XCTAssertGreaterThanOrEqual(textView!.frame.height, 79)
+        XCTAssertGreaterThanOrEqual(window.frame.height, 126)
+
+        CandidateWindow.shared = nil
+    }
+
     func testApplyDisplayModeSwitches() {
         CandidateDisplayMode.setCurrent(.list)
         let window = CandidateWindow()
