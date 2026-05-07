@@ -48,6 +48,7 @@ enum GictionaryConnectionImporter {
     }
 
     static let sourceURLDefaultsKey = "connectionDictSourceURL"
+    static let recommendedDict2URLString = "https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt"
 
     static var sourceURLString: String {
         UserDefaults.standard.string(forKey: sourceURLDefaultsKey) ?? ""
@@ -60,11 +61,12 @@ enum GictionaryConnectionImporter {
     static func importFromURL(_ url: URL,
                               outputPath: String = Config.importedConnectionDictFile,
                               completion: @escaping (Result<ImportResult, Error>) -> Void) {
-        if url.isFileURL {
+        let sourceURL = normalizedSourceURL(from: url)
+        if sourceURL.isFileURL {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    let result = try importData(Data(contentsOf: url), outputPath: outputPath)
-                    setSourceURLString(url.absoluteString)
+                    let result = try importData(Data(contentsOf: sourceURL), outputPath: outputPath)
+                    setSourceURLString(sourceURL.absoluteString)
                     completion(.success(result))
                 } catch {
                     completion(.failure(error))
@@ -73,7 +75,7 @@ enum GictionaryConnectionImporter {
             return
         }
 
-        URLSession.shared.dataTask(with: url) { data, _, error in
+        URLSession.shared.dataTask(with: sourceURL) { data, _, error in
             if let error {
                 completion(.failure(error))
                 return
@@ -84,12 +86,40 @@ enum GictionaryConnectionImporter {
             }
             do {
                 let result = try importData(data, outputPath: outputPath)
-                setSourceURLString(url.absoluteString)
+                setSourceURLString(sourceURL.absoluteString)
                 completion(.success(result))
             } catch {
                 completion(.failure(error))
             }
         }.resume()
+    }
+
+    static func normalizedSourceURL(from url: URL) -> URL {
+        guard url.scheme == "https" || url.scheme == "http",
+              url.host == "github.com" else {
+            return url
+        }
+
+        let pathParts = url.path.split(separator: "/").map(String.init)
+        guard pathParts.count >= 2 else { return url }
+        let owner = pathParts[0]
+        let repo = pathParts[1]
+
+        if pathParts.count == 2 {
+            return rawGitHubURL(owner: owner, repo: repo, branch: "master", filePath: "dict2.txt")
+        }
+
+        if pathParts.count >= 5, pathParts[2] == "blob" {
+            let branch = pathParts[3]
+            let filePath = pathParts.dropFirst(4).joined(separator: "/")
+            return rawGitHubURL(owner: owner, repo: repo, branch: branch, filePath: filePath)
+        }
+
+        return url
+    }
+
+    private static func rawGitHubURL(owner: String, repo: String, branch: String, filePath: String) -> URL {
+        URL(string: "https://raw.githubusercontent.com/\(owner)/\(repo)/\(branch)/\(filePath)")!
     }
 
     @discardableResult

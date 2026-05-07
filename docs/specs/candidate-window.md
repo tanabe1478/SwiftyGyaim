@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-05-06 (接続辞書インポートUI追加)
+> Last updated: 2026-05-07 (接続辞書インポートURL説明更新)
 
 ## 概要
 
@@ -60,7 +60,7 @@ NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackV
 
 設定画面に「接続辞書」セクションを追加。
 
-- URL入力欄: Gictionary `dict2.txt` 形式（接続辞書TSV）のURLを指定
+- URL入力欄: GictionaryリポジトリURLまたは `dict2.txt` raw URLを指定。空欄の場合は推奨raw URLを使う
 - 「インポート」ボタン: URLからダウンロードし、`~/.gyaim/connectiondict.txt` に変換・保存する
 - ステータス表示: 内蔵辞書/インポート辞書の利用状態、インポート件数、エラーを表示
 - 「内蔵辞書に戻す」ボタン: インポート済みファイルとURL設定を削除し、bundle内 `Resources/dict.txt` を再ロードする
