@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-05-06 (Gictionary接続辞書インポート)
+> Last updated: 2026-05-07 (Gictionary接続辞書インポートURL正規化)
 
 ## 概要
 
@@ -24,6 +24,17 @@ Connection: タブ区切り `romaji\tsurface\tinConnection\toutConnection`
 ## 接続辞書インポート
 
 設定画面の「接続辞書」セクションからURLを指定し、Gictionaryリポジトリの `dict2.txt` 形式（接続辞書TSV）を `~/.gyaim/connectiondict.txt` にインポートできる。`Gictionary.json` も読み込み可能だが、リポジトリ同梱の現行辞書と完全一致させたい場合は `dict2.txt` を指定する。
+
+### 使い方
+
+推奨URLは以下のいずれか。
+
+```text
+https://github.com/masui/Gictionary
+https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt
+```
+
+`https://github.com/masui/Gictionary` のようなGitHubリポジトリURLを指定した場合は、自動的に `https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt` として扱う。`/blob/<branch>/dict2.txt` URLもraw URLへ正規化する。未入力でインポートした場合も推奨raw URLを使用する。
 
 - UserDefaultsキー: `connectionDictSourceURL`（最後に成功したインポート元URL）
 - 保存先: `Config.importedConnectionDictFile` = `~/.gyaim/connectiondict.txt`

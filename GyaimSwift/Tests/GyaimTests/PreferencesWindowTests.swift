@@ -51,6 +51,23 @@ final class PreferencesWindowTests: XCTestCase {
         return nil
     }
 
+    private func findLabel(containing text: String) -> NSTextField? {
+        guard let contentView = window.contentView else { return nil }
+        return findTextField(in: contentView) { $0.stringValue.contains(text) }
+    }
+
+    private func findTextField(in view: NSView, matching predicate: (NSTextField) -> Bool) -> NSTextField? {
+        for subview in view.subviews {
+            if let textField = subview as? NSTextField, predicate(textField) {
+                return textField
+            }
+            if let found = findTextField(in: subview, matching: predicate) {
+                return found
+            }
+        }
+        return nil
+    }
+
     private func findButton(in view: NSView, titled title: String) -> NSButton? {
         for subview in view.subviews {
             if let button = subview as? NSButton, button.title == title {
@@ -78,6 +95,11 @@ final class PreferencesWindowTests: XCTestCase {
     func testLogToggleExists() {
         let toggle = findCheckbox(titled: "ロギングを有効にする")
         XCTAssertNotNil(toggle, "ログトグルが見つからない")
+    }
+
+    func testConnectionDictionaryImportUsageHintExists() {
+        let hint = findLabel(containing: "リポジトリURLまたは raw の dict2.txt URL")
+        XCTAssertNotNil(hint, "接続辞書インポートで指定すべきURLの説明が見つからない")
     }
 
     // MARK: - Default state (both ON when UserDefaults unset)
