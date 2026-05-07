@@ -808,7 +808,7 @@ private extension PreferencesWindow {
         contentBox.addSubview(urlLabel)
 
         let urlField = NSTextField(frame: NSRect(x: 60, y: y - 2, width: 300, height: 24))
-        urlField.placeholderString = "https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt"
+        urlField.placeholderString = GictionaryConnectionImporter.recommendedDict2URLString
         urlField.stringValue = GictionaryConnectionImporter.sourceURLString
         contentBox.addSubview(urlField)
         connectionDictURLField = urlField
@@ -820,7 +820,7 @@ private extension PreferencesWindow {
         connectionDictImportButton = importBtn
 
         y -= 24
-        let hint = makeLabel("Gictionaryのdict2.txt形式を指定できます。成功後すぐに変換へ反映します")
+        let hint = makeLabel("推奨: masui/Gictionary のリポジトリURLまたは raw の dict2.txt URL。成功後すぐ反映します")
         hint.font = NSFont.systemFont(ofSize: 11)
         hint.textColor = .secondaryLabelColor
         hint.frame = NSRect(x: 20, y: y, width: 440, height: 18)
@@ -841,7 +841,8 @@ private extension PreferencesWindow {
     }
 
     @objc private func importConnectionDictionary() {
-        let raw = connectionDictURLField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rawInput = connectionDictURLField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let raw = rawInput.isEmpty ? GictionaryConnectionImporter.recommendedDict2URLString : rawInput
         guard let url = URL(string: raw), let scheme = url.scheme, ["http", "https", "file"].contains(scheme) else {
             connectionDictStatusLabel?.stringValue = "URLが正しくありません"
             return
