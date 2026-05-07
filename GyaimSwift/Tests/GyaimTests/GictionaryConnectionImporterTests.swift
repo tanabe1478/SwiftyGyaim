@@ -76,6 +76,22 @@ final class GictionaryConnectionImporterTests: XCTestCase {
         XCTAssertEqual(imported, original)
     }
 
+    func testGitHubRepositoryURLNormalizesToRecommendedDict2RawURL() throws {
+        let url = try XCTUnwrap(URL(string: "https://github.com/masui/Gictionary"))
+
+        let normalized = GictionaryConnectionImporter.normalizedSourceURL(from: url)
+
+        XCTAssertEqual(normalized.absoluteString, GictionaryConnectionImporter.recommendedDict2URLString)
+    }
+
+    func testGitHubBlobURLNormalizesToRawURL() throws {
+        let url = try XCTUnwrap(URL(string: "https://github.com/masui/Gictionary/blob/master/dict2.txt"))
+
+        let normalized = GictionaryConnectionImporter.normalizedSourceURL(from: url)
+
+        XCTAssertEqual(normalized.absoluteString, GictionaryConnectionImporter.recommendedDict2URLString)
+    }
+
     func testImportAlreadyConvertedTSVNormalizesRows() throws {
         let tsv = """
         # comment
