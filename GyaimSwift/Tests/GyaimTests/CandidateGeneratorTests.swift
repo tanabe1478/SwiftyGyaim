@@ -69,4 +69,25 @@ final class CandidateGeneratorTests: XCTestCase {
         XCTAssertEqual(generated.first { $0.word == "今回でした" }?.kind, .completion)
         XCTAssertFalse(words.contains("konkaiでした"), "raw romaji candidate should not receive Japanese suffixes")
     }
+
+    func testCompoundScoringPenalizesUnnaturalScriptTransitions() throws {
+        let wordSearch = try XCTUnwrap(wordSearch)
+        wordSearch.register(word: "追う", reading: "ou")
+        wordSearch.register(word: "集", reading: "syuu")
+        wordSearch.register(word: "押収", reading: "ousyuu")
+        wordSearch.register(word: "する", reading: "suru")
+
+        let generator = CandidateGenerator(compoundLimit: 12, completionLimit: 0)
+        let generated = generator.generate(inputPat: "ousyuusuru",
+                                           context: "",
+                                           baseCandidates: [SearchCandidate(word: "ousyuusuru", kind: .raw)],
+                                           wordSearch: wordSearch)
+        let compoundWords = generated.filter { $0.kind == .compound }.map(\.word)
+
+        XCTAssertTrue(compoundWords.contains("押収する"), "Expected natural compound in \(compoundWords)")
+        if let naturalIndex = compoundWords.firstIndex(of: "押収する"),
+           let unnaturalIndex = compoundWords.firstIndex(of: "追う集する") {
+            XCTAssertLessThan(naturalIndex, unnaturalIndex)
+        }
+    }
 }

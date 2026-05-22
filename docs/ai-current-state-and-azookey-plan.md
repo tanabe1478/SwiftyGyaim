@@ -229,9 +229,9 @@ enum CandidateKind {
 
 これにより、source と kind を分けて順位制御する。
 
-### Phase C: Lattice / beam search を強化
+### Phase C: Lattice / beam search を強化（着手）
 
-現状の簡易 beam search を、以下に発展させる。
+現状の簡易 beam search に、segment cost / source bias / 不自然表記 penalty を追加した。特に「ひらがな終端 + 漢字開始」「カタカナ + ひらがな」のような不自然な script transition と、1文字漢字segmentを下げる。今後さらに以下へ発展させる。
 
 - 任意分割
 - N-best path

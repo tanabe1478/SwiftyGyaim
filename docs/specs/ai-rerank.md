@@ -85,6 +85,19 @@ External command は stdout に JSON を返す。
 - `google`: Google Input Tools 候補
 - `kana`: ひらがな/カタカナ候補
 
+## CandidateGenerator scoring
+
+複合候補は beam search で生成し、以下を暫定的に score へ反映する。
+
+- segment reading length（長い一致を優先）
+- segment count penalty（細切れ分割を下げる）
+- source bias（study/local/connection）
+- 1文字漢字segment penalty
+- 不自然な script transition penalty（例: ひらがな終端 + 漢字開始、カタカナ + ひらがな）
+- `漢字語 + する` bonus
+
+これにより `追う集する` / `追う集スる` のような単純連結候補を下げ、`押収する` のようなまとまりのある候補を優先する。
+
 ## Validation
 
 SwiftyGyaim 本体は `order` を必ず検証する。
