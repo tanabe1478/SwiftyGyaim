@@ -2,26 +2,28 @@ import Foundation
 
 /// First-choice reranker that runs inside the IME process.
 ///
-/// Today it uses the Swift heuristic scorer while ensuring the bundled GGUF
-/// model is resident. The type is intentionally separated from `GyaimController`
-/// so the scoring backend can be replaced by llama.cpp token inference without
-/// changing the IME input flow.
+/// It tries backends in priority order. The bundled Zenz/GGUF backend currently
+/// validates and keeps the model resident, then uses Swift heuristic scoring;
+/// the backend boundary is where llama.cpp token inference will be connected.
 final class InProcessAIReranker {
     static let shared = InProcessAIReranker()
 
-    private let model: BundledAIRerankModel
-    private let bundle: Bundle
+    private let backends: [AIRerankBackend]
 
-    init(model: BundledAIRerankModel = .shared, bundle: Bundle = .main) {
-        self.model = model
-        self.bundle = bundle
+    convenience init(model: BundledAIRerankModel = .shared, bundle: Bundle = .main) {
+        self.init(backends: [
+            BundledZenzAIRerankBackend(model: model, bundle: bundle),
+            HeuristicAIRerankBackend()
+        ])
+    }
+
+    init(backends: [AIRerankBackend]) {
+        precondition(!backends.isEmpty, "InProcessAIReranker requires at least one backend")
+        self.backends = backends
     }
 
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse {
-        let modelLoaded = model.loadIfAvailable(bundle: bundle)
-        let modelName = modelLoaded
-            ? "swift-local-heuristic+bundled-zenz-v3.1-xsmall-mapped"
-            : "swift-local-heuristic"
-        return AIReranker.localRerank(request, model: modelName)
+        let backend = backends.first { $0.canRun() } ?? HeuristicAIRerankBackend()
+        return backend.rerank(request)
     }
 }
