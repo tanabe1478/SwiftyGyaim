@@ -92,4 +92,23 @@ final class AIRerankerTests: XCTestCase {
 
         XCTAssertEqual(AIReranker.localRerank(request).order.first, 1)
     }
+
+    func testLocalRerankModelLabelCanBeOverridden() {
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "rerank",
+            inputPat: "henkan",
+            hiragana: "へんかん",
+            context: nil,
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "変換",
+                                  reading: "henkan",
+                                  source: "connection",
+                                  kind: "exact")
+            ]
+        )
+
+        XCTAssertEqual(AIReranker.localRerank(request, model: "test-model").model, "test-model")
+    }
 }

@@ -44,6 +44,7 @@ Tab
 | ファイル | 役割 |
 | --- | --- |
 | `Sources/Gyaim/AIReranker.swift` | AI rerank request/response、Swift in-process heuristic、HTTP/external command client |
+| `Sources/Gyaim/InProcessAIReranker.swift` | IMEプロセス内rerank入口。同梱モデル保持とSwift heuristicを束ねる |
 | `Sources/Gyaim/BundledAIRerankModel.swift` | 同梱 GGUF モデルの bundle 解決・memory-map 保持 |
 | `Sources/Gyaim/CandidateGenerator.swift` | Tab時のローカル複合候補・補完候補生成 |
 | `Sources/Gyaim/GyaimController.swift` | Tab起動、文脈保持、Google後追い、rerank適用 |
@@ -245,7 +246,7 @@ enum CandidateKind {
 
 ### Phase D: scoring を構造化（着手）
 
-Swift in-process heuristic reranker を追加し、Tab直後の候補順補正は Swift プロセス内で完結するようにした。また `zenz-v3.1-xsmall-gguf` を app bundle に同梱し、`BundledAIRerankModel` で memory-map してIMEプロセス内に保持する。GPT-2 server / 単発reranker は `CandidateKind` を受け取り、暫定的な kind bias を score に加える。まだ GGUF token inference には接続していないため、今後は Swift 側 feature と LM score の分離、および llama.cpp 接続を進める。
+`InProcessAIReranker` を追加し、Tab直後の候補順補正は Swift プロセス内の単一入口に集約した。また `zenz-v3.1-xsmall-gguf` を app bundle に同梱し、`BundledAIRerankModel` で memory-map してIMEプロセス内に保持する。現時点の `InProcessAIReranker` は Swift heuristic score を使うが、呼び出し元からは backend を隠しているため、次に llama.cpp / GGUF token inference へ差し替えやすい。GPT-2 server / 単発reranker は `CandidateKind` を受け取り、暫定的な kind bias を score に加える。
 
 最終 score 例:
 
