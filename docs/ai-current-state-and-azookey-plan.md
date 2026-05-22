@@ -43,7 +43,7 @@ Tab
 
 | ファイル | 役割 |
 | --- | --- |
-| `Sources/Gyaim/AIReranker.swift` | AI rerank request/response、HTTP/external command client |
+| `Sources/Gyaim/AIReranker.swift` | AI rerank request/response、Swift in-process heuristic、HTTP/external command client |
 | `Sources/Gyaim/CandidateGenerator.swift` | Tab時のローカル複合候補・補完候補生成 |
 | `Sources/Gyaim/GyaimController.swift` | Tab起動、文脈保持、Google後追い、rerank適用 |
 | `Sources/Gyaim/WordSearch.swift` | 候補 source に `.google` を追加 |
@@ -244,7 +244,7 @@ enum CandidateKind {
 
 ### Phase D: scoring を構造化（着手）
 
-GPT-2 server / 単発reranker は `CandidateKind` を受け取り、暫定的な kind bias を score に加える。まだヒューリスティックは Python 側に混在しているため、今後は Swift 側 feature と LM score の分離を進める。
+Swift in-process heuristic reranker を追加し、Tab直後の候補順補正は Swift プロセス内で完結するようにした。GPT-2 server / 単発reranker は `CandidateKind` を受け取り、暫定的な kind bias を score に加える。まだヒューリスティックは Swift / Python 側に分散しているため、今後は Swift 側 feature と LM score の分離を進める。
 
 最終 score 例:
 

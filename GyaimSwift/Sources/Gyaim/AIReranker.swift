@@ -42,6 +42,92 @@ enum AIReranker {
     static func apply(order proposedOrder: [Int], to candidates: [SearchCandidate]) -> [SearchCandidate] {
         validatedOrder(proposedOrder, candidateCount: candidates.count).map { candidates[$0] }
     }
+
+    static func localRerank(_ request: AIRerankRequest) -> AIRerankResponse {
+        var scores: [String: Double] = [:]
+        let scored = request.candidates.map { candidate in
+            let score = localScore(candidate: candidate, request: request)
+            scores[String(candidate.index)] = score
+            return (index: candidate.index, score: score)
+        }
+        let order = scored
+            .sorted {
+                if $0.score == $1.score { return $0.index < $1.index }
+                return $0.score > $1.score
+            }
+            .map(\.index)
+        return AIRerankResponse(order: order, scores: scores, model: "swift-local-heuristic")
+    }
+
+    private static func localScore(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
+        var score = 0.0
+        score -= Double(candidate.index) * 0.03
+        score += sourceBias(candidate.source)
+        score += kindBias(candidate.kind)
+        if candidate.reading == request.inputPat {
+            score += 0.20
+        }
+        if candidate.text.contains(where: isKanji) {
+            score += 0.10
+        }
+        if candidate.text == request.inputPat && candidate.text.allSatisfy(\.isASCII) {
+            score -= 8.0
+        }
+        score -= unnaturalScriptTransitionPenalty(candidate.text)
+        return score
+    }
+
+    private static func sourceBias(_ source: String) -> Double {
+        switch source {
+        case "study": return 0.40
+        case "local": return 0.30
+        case "connection": return 0.10
+        case "google": return 0.60
+        case "external": return -0.10
+        case "synthetic": return -0.30
+        default: return 0.0
+        }
+    }
+
+    private static func kindBias(_ kind: String) -> Double {
+        switch kind {
+        case "google": return 0.35
+        case "exact": return 0.25
+        case "compound": return 0.20
+        case "prefix": return -0.10
+        case "completion": return -0.20
+        case "kana": return -0.25
+        case "raw": return -1.00
+        default: return 0.0
+        }
+    }
+
+    private static func unnaturalScriptTransitionPenalty(_ text: String) -> Double {
+        let chars = Array(text)
+        guard chars.count >= 2 else { return 0 }
+        var penalty = 0.0
+        for index in 1..<chars.count {
+            if isHiragana(chars[index - 1]) && isKanji(chars[index]) {
+                penalty += 1.50
+            }
+            if isKatakana(chars[index - 1]) && isHiragana(chars[index]) {
+                penalty += 1.00
+            }
+        }
+        return penalty
+    }
+
+    private static func isHiragana(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { 0x3040...0x309F ~= $0.value }
+    }
+
+    private static func isKatakana(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { 0x30A0...0x30FF ~= $0.value }
+    }
+
+    private static func isKanji(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { 0x4E00...0x9FFF ~= $0.value }
+    }
 }
 
 final class HTTPAIReranker {

@@ -42,4 +42,54 @@ final class AIRerankerTests: XCTestCase {
         let candidates = object?["candidates"] as? [[String: Any]]
         XCTAssertEqual(candidates?.first?["kind"] as? String, "kana")
     }
+
+    func testLocalRerankPenalizesRawAndPrefersJapaneseCandidate() {
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "rerank",
+            inputPat: "ousyuusuru",
+            hiragana: "おうしゅうする",
+            context: nil,
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "ousyuusuru",
+                                  reading: "ousyuusuru",
+                                  source: "synthetic",
+                                  kind: "raw"),
+                AIRerankCandidate(index: 1,
+                                  text: "押収する",
+                                  reading: "ousyuusuru",
+                                  source: "synthetic",
+                                  kind: "compound")
+            ]
+        )
+
+        let response = AIReranker.localRerank(request)
+        XCTAssertEqual(response.order.first, 1)
+        XCTAssertEqual(response.model, "swift-local-heuristic")
+    }
+
+    func testLocalRerankUsesKindBias() {
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "rerank",
+            inputPat: "henkan",
+            hiragana: "へんかん",
+            context: nil,
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "へんかん",
+                                  reading: "henkan",
+                                  source: "synthetic",
+                                  kind: "kana"),
+                AIRerankCandidate(index: 1,
+                                  text: "変換",
+                                  reading: "henkan",
+                                  source: "connection",
+                                  kind: "exact")
+            ]
+        )
+
+        XCTAssertEqual(AIReranker.localRerank(request).order.first, 1)
+    }
 }
