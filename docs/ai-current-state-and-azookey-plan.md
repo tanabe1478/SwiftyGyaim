@@ -1,0 +1,280 @@
+# AI変換プロトタイプ現状と azooKey 的候補生成への移行計画
+
+> Status: Draft
+> Last updated: 2026-05-22
+
+## 背景
+
+SwiftyGyaim では、まず `ku-nlp/gpt2-small-japanese-char` を使ったローカル GPT-2 reranker を導入し、既存候補の並び替えから AI 活用を開始した。その後、Tab 明示起動の候補強化パイプラインとして、以下を追加した。
+
+- 直前確定テキストを文脈として保持
+- Tab 時だけ AI rerank を起動
+- ローカル複合候補生成（beam search）
+- 語尾補完候補生成
+- Google Input Tools 候補の取り込み
+- GPT-2 による文脈付き rerank
+- raw input を候補 0 に残し、未確定本文をローマ字のまま維持
+
+この結果、`henkankouho` → `変換候補`、`ousyuusuru` → `押収する` のような候補は出せるようになった。一方で、2候補目以降の品質、候補の多様性、接続の自然さ、速度にはまだ課題がある。
+
+## 現在の Tab パイプライン
+
+通常入力時は AI / Google を呼ばない。候補表示中に Tab を押した時だけ以下を実行する。
+
+```text
+Tab
+  1. 既存候補 snapshot を取得
+  2. ローカル複合候補を生成
+  3. 語尾補完候補を生成
+  4. まずローカル候補だけで GPT-2 rerank
+  5. Google Input Tools 候補が返ったら候補集合へ追加
+  6. Google込みでもう一度 GPT-2 rerank
+  7. raw input を候補0に戻し、候補一覧へ反映
+```
+
+狙い:
+
+- 通常入力の軽さを守る
+- Tab直後はローカル候補で早く反応する
+- Google は遅れて返っても候補強化として使う
+- raw input を先頭に残し、Enter誤確定を避ける
+
+## 現在の実装ファイル
+
+| ファイル | 役割 |
+| --- | --- |
+| `Sources/Gyaim/AIReranker.swift` | AI rerank request/response、HTTP/external command client |
+| `Sources/Gyaim/GyaimController.swift` | Tab起動、候補拡張、文脈保持、rerank適用 |
+| `Sources/Gyaim/WordSearch.swift` | 候補 source に `.google` を追加 |
+| `Tools/ai-rerank/gyaim-gpt2-char-rerank-server.py` | resident GPT-2 scoring server |
+| `Tools/ai-rerank/evaluate-reranker.py` | ログベース評価 runner |
+| `Tools/ai-rerank/extract-gyaim-log-training-data.py` | 確定ログから評価データ抽出 |
+
+## 現在見えている課題
+
+### 1. 2候補目以降の品質が弱い
+
+1位候補は Google / GPT-2 / raw input 制御で改善してきたが、候補リスト全体としてはまだ弱い。
+
+例:
+
+```text
+ousyuusuru
+```
+
+期待:
+
+```text
+押収する
+応酬する
+押収
+おうしゅうする
+```
+
+現状ではローカル複合候補が以下のような弱い候補を作ることがある。
+
+```text
+追う集する
+追う集スる
+追う集擦る
+```
+
+これは「単語をつなげているだけ」で、品詞・接続・表記自然性を十分に見ていないため。
+
+### 2. Google 依存を減らしたい
+
+Google Input Tools は `houmatsu` → `泡沫`、`ousyuusuru` → `押収する` のような候補生成に強い。一方で、最終的にはローカル完結を目指したい。
+
+Google は当面:
+
+- 候補生成の補助輪
+- 辞書改善の teacher
+- fallback source
+
+として使う。azooKey 的なローカル候補生成が成熟したら、通常パイプラインから外せる状態を目指す。
+
+### 3. 速度
+
+Tab は明示起動なので通常入力には影響しないが、体感速度はまだ改善余地がある。
+
+主な遅延要因:
+
+- Google API のネットワーク待ち
+- 候補数過多による GPT-2 scoring
+- torch/MPS inference
+
+対応方針:
+
+- ローカル候補で先に表示、Google は後追い反映
+- AI scoring 対象候補数を制限
+- 将来的に Core ML / MLX / 軽量LM化を検討
+
+## azooKey から取り込みたいエッセンス
+
+azooKey / AzooKeyKanaKanjiConverter をそのまま移植するのではなく、候補生成思想を取り込む。
+
+### 1. Lattice / graph による候補生成
+
+入力読み全体を、候補語のグラフとして扱う。
+
+```text
+henkankouho
+  henkan -> 変換 / 返還
+  kouho  -> 候補 / こうほ
+  henkankouho -> 変換候補
+```
+
+これにより、1本の分割だけでなく複数の分割経路を保持できる。
+
+### 2. N-best 経路
+
+目標は1位だけを当てることではなく、妥当な候補集合を複数出すこと。
+
+```text
+変換候補
+返還候補
+変換こうほ
+へんかん候補
+変換候補です
+```
+
+のような候補リストを作る。
+
+### 3. コスト設計
+
+候補順位を以下の合成で決める。
+
+- word cost
+- connection cost
+- exact / prefix cost
+- source bias
+- user frequency
+- recency
+- context language model score
+- 表記自然性 penalty
+
+### 4. 接続制約
+
+単純連結ではなく、接続の自然さを見る。
+
+例:
+
+- 名詞 + 名詞
+- 名詞 + する
+- 動詞連用形 + 助動詞
+- 形容詞 + です
+
+不自然な候補は下げる/落とす。
+
+例:
+
+```text
+追う集する
+追う集スる
+追う集擦る
+```
+
+### 5. 候補多様性
+
+似た候補や表記ゆれが上位を占有しないようにする。
+
+悪い例:
+
+```text
+追う集する
+追う集スる
+追う集擦る
+追うしゅうする
+```
+
+候補リストとしては、意味・表記・文節分割が違うものを残したい。
+
+## 次に実装する方針
+
+### Phase A: CandidateGenerator を分離
+
+`GyaimController` から Tab候補生成ロジックを切り出す。
+
+```text
+Sources/Gyaim/CandidateGenerator.swift
+```
+
+責務:
+
+```swift
+generate(
+  inputPat: String,
+  context: String,
+  baseCandidates: [SearchCandidate],
+  wordSearch: WordSearch
+) -> [SearchCandidate]
+```
+
+### Phase B: CandidateKind を導入
+
+`CandidateSource` だけでは候補の性質を表しきれない。
+
+```swift
+enum CandidateKind {
+    case raw
+    case exact
+    case prefix
+    case compound
+    case completion
+    case google
+    case kana
+}
+```
+
+これにより、source と kind を分けて順位制御する。
+
+### Phase C: Lattice / beam search を強化
+
+現状の簡易 beam search を、以下に発展させる。
+
+- 任意分割
+- N-best path
+- segment候補上限
+- beam width
+- exact優先
+- prefix completionの別扱い
+- 不自然表記 penalty
+- duplicate / near-duplicate 除去
+
+### Phase D: scoring を構造化
+
+現在の GPT-2 server 側 score はヒューリスティックが混ざっている。Swift側で候補 feature を作り、Python側は LM score を返すだけに近づける。
+
+最終 score 例:
+
+```text
+finalScore =
+  sourceBias
+  + kindBias
+  + userFrequency
+  + recency
+  + connectionScore
+  + lmScore * weight
+  - unnaturalPenalty
+  - duplicatePenalty
+```
+
+### Phase E: Google を fallback / teacher 化
+
+Google候補が選ばれたら local/study に取り込む。十分なローカル候補がある場合は Google を呼ばない、または Tab 2回目だけにする。
+
+## 当面の成功条件
+
+- `hokankouho` で `補完候補` が出る
+- `henkankouho` で `変換候補` が上位に出る
+- `ousyuusuru` で `押収する` が上位に出る
+- `konkaihakanaritaihenndesita` で `今回はかなり大変でした` が候補に出る
+- raw input は候補0に残り、誤確定しない
+- Tab通常時の初回反応が軽い
+- 2候補目以降に不自然な混在候補が並びにくい
+
+## 参考
+
+- https://knowledge.sakura.ad.jp/42901/
+- https://github.com/azooKey/azooKey
+- https://github.com/azooKey/AzooKeyKanaKanjiConverter

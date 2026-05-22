@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-04-08
+> Last updated: 2026-05-22 (prefix modeのraw input先頭維持とAI rerank明示起動)
 
 ## 概要
 
@@ -28,7 +28,8 @@ handle(_:client:) → routeEvent() → HandleResult
             ├─ Enter → fix() で確定
             ├─ ESC → resetState()
             ├─ BS → inputPat末尾削除
-            └─ F6/F7/shortcut → fixAsKana()
+            ├─ F6/F7/shortcut → fixAsKana()
+            └─ Tab → AI rerankを明示起動
 ```
 
 ## routeEvent() の設計意図
@@ -39,11 +40,15 @@ handle(_:client:) → routeEvent() → HandleResult
 
 | パス | メソッド | 学習 | 用途 |
 |------|---------|------|------|
-| Enter/数字キー | `fix(client:)` | あり | 通常確定 |
+| Enter/数字キー | `fix(client:)` | あり | 通常確定（prefix mode の先頭候補が raw `inputPat` の場合のみ Enter は完全一致検索へ遷移） |
 | F6/`;` | `fixAsKana(hiragana: true)` | あり | ひらがな確定 |
 | F7/`q` | `fixAsKana(hiragana: false)` | あり | カタカナ確定 |
 | IME切替 | `fix(client:sender, skipStudy: true)` | **なし** | deactivation確定 |
 | Shift+X | `deleteCurrentCandidate(client:)` | - | 候補削除（ADR-015） |
+
+## AI rerank
+
+AI rerank は通常入力・候補生成時には自動実行しない。変換中に Tab を押した時だけ `requestAIRerankIfAvailable()` を呼び、設定済みの HTTP server / external command があれば非同期に候補を並べ替える。server 未起動・未設定・timeout 時は元順位のまま fallback する。
 
 ## IMEライフサイクル
 
@@ -63,6 +68,8 @@ deactivateServer(_:) → hideWindow, fix(skipStudy: true), 辞書finish
 - `hasPrev = nthCand > 0`
 
 ひらがなフォールバック: 候補数が `CandidateDisplayMode.current.maxVisible` 未満の場合、ひらがなを候補に追加。
+
+Prefix mode の候補順: `buildPrefixCandidates()` は raw `inputPat` を先頭に保ち、その後に辞書検索結果、外部候補（クリップボード、選択テキスト）、ひらがなフォールバックを並べる。raw `inputPat` を先頭にすることで、短い prefix 入力や完全一致前の入力で `gu` → `具体的`、`maeno` → `前のめり` のような長い prefix 候補が Enter / deactivate で誤確定されるのを防ぐ。
 
 ## 既知の制約
 

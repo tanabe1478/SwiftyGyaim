@@ -29,3 +29,11 @@ docs/gyaim-learning-roadmap.md
 docs/gyaim-learning-curriculum.md
 docs/gyaim-week1-tasklist.md
 docs/gyaim-weekly-tasklist-template.md
+# pi project-local package installs/cache (keep .pi/settings.json and .pi/extensions tracked)
+.pi/git/
+.pi/npm/
+.pi/sessions/
+
+# Python cache
+__pycache__/
+*.pyc
