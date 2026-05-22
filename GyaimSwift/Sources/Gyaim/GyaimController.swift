@@ -806,8 +806,9 @@ class GyaimController: IMKInputController {
                             modeLabel: "generated-local",
                             client: sender)
 
-        // Stage 2: add Google candidates when they arrive, then rerank again. Google is
-        // used only on explicit Tab so normal typing stays local and light.
+        guard UserDefaults.standard.bool(forKey: "aiRerankUseGoogle") else { return }
+
+        // Stage 2: add Google candidates when explicitly enabled, then rerank again.
         GoogleTransliterate.searchCands(query) { [weak self] googleWords in
             guard let self else { return }
             guard self.pendingAIRerankQuery == query,
