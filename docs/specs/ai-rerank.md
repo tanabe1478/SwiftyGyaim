@@ -161,7 +161,7 @@ ku-nlp/gpt2-small-japanese-char
 - 約90M parameters
 - 候補生成ではなく language model scoring に使う
 - 各候補について `読み + 変換:` に続く自然さを score する
-- source bias を少し加え、synthetic/raw input が勝ちすぎないようにする
+- source bias / kind bias を少し加え、synthetic/raw input や prefix/completion が勝ちすぎないようにする
 
 依存:
 

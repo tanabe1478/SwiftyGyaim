@@ -242,9 +242,9 @@ enum CandidateKind {
 - 不自然表記 penalty
 - duplicate / near-duplicate 除去
 
-### Phase D: scoring を構造化
+### Phase D: scoring を構造化（着手）
 
-現在の GPT-2 server 側 score はヒューリスティックが混ざっている。Swift側で候補 feature を作り、Python側は LM score を返すだけに近づける。
+GPT-2 server / 単発reranker は `CandidateKind` を受け取り、暫定的な kind bias を score に加える。まだヒューリスティックは Python 側に混在しているため、今後は Swift 側 feature と LM score の分離を進める。
 
 最終 score 例:
 
