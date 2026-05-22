@@ -100,10 +100,29 @@ final class BundledZenzRuntime: ZenzRuntime {
         #endif
     }
 
-    private static func prompt(for request: AIRerankRequest) -> String {
-        let contextPrefix = request.context?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .appending("\n") ?? ""
-        return "\(contextPrefix)読み: \(request.hiragana)\n変換:"
+    static func prompt(for request: AIRerankRequest) -> String {
+        var prompt = ""
+        if let context = request.context?.trimmingCharacters(in: .whitespacesAndNewlines), !context.isEmpty {
+            prompt += ZenzPrompt.contextTag + context
+        }
+        prompt += ZenzPrompt.inputTag + inputForZenz(request)
+        prompt += ZenzPrompt.outputTag
+        return prompt
+    }
+
+    private static func inputForZenz(_ request: AIRerankRequest) -> String {
+        let katakana = RomaKana().roma2katakana(request.inputPat)
+        if !katakana.isEmpty { return katakana }
+        return hiraganaToKatakana(request.hiragana)
+    }
+
+    private static func hiraganaToKatakana(_ text: String) -> String {
+        String(text.unicodeScalars.map { scalar in
+            if 0x3041...0x3096 ~= scalar.value,
+               let converted = UnicodeScalar(scalar.value + 0x60) {
+                return Character(converted)
+            }
+            return Character(scalar)
+        })
     }
 }
