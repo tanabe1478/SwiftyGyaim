@@ -12,6 +12,7 @@ struct CandidateGenerator {
         let reading: String
         let segments: Int
         let score: Double
+        let lastWord: String?
     }
 
     var compoundLimit = 12
@@ -68,7 +69,7 @@ struct CandidateGenerator {
         guard let wordSearch, query.count >= 4 else { return [] }
         let chars = Array(query)
         var beams: [[CompoundBeam]] = Array(repeating: [], count: chars.count + 1)
-        beams[0] = [CompoundBeam(word: "", reading: "", segments: 0, score: 0)]
+        beams[0] = [CompoundBeam(word: "", reading: "", segments: 0, score: 0, lastWord: nil)]
 
         for pos in 0..<chars.count where !beams[pos].isEmpty {
             for end in (pos + 1)...min(chars.count, pos + maxSegmentLength) {
@@ -80,11 +81,16 @@ struct CandidateGenerator {
                 for beam in beams[pos] {
                     for candidate in segmentCandidates where candidate.word != reading {
                         let word = beam.word + candidate.word
-                        let score = beam.score + Double(reading.count) - Double(beam.segments) * 0.15
+                        let score = beam.score
+                            + scoreSegment(candidate,
+                                           reading: reading,
+                                           previousWord: beam.lastWord,
+                                           segmentIndex: beam.segments)
                         beams[end].append(CompoundBeam(word: word,
                                                        reading: beam.reading + reading,
                                                        segments: beam.segments + 1,
-                                                       score: score))
+                                                       score: score,
+                                                       lastWord: candidate.word))
                     }
                 }
                 beams[end].sort { $0.score > $1.score }
@@ -97,11 +103,94 @@ struct CandidateGenerator {
         var seen = Set<String>()
         return beams[chars.count]
             .filter { $0.segments >= 2 && $0.word != query && seen.insert($0.word).inserted }
-            .sorted { $0.score > $1.score }
+            .sorted { adjustedCompoundScore($0) > adjustedCompoundScore($1) }
             .prefix(limit)
             .map { SearchCandidate(word: $0.word,
                                     reading: $0.reading,
                                     source: .synthetic,
                                     kind: .compound) }
+    }
+
+    private func adjustedCompoundScore(_ beam: CompoundBeam) -> Double {
+        beam.score - unnaturalScriptTransitionPenalty(beam.word)
+    }
+
+    private func scoreSegment(_ candidate: SearchCandidate,
+                              reading: String,
+                              previousWord: String?,
+                              segmentIndex: Int) -> Double {
+        var score = Double(reading.count)
+        score -= Double(segmentIndex) * 0.35
+        score += sourceBias(candidate.source)
+        score -= shortSegmentPenalty(word: candidate.word, reading: reading)
+        if let previousWord {
+            score -= transitionPenalty(previous: previousWord, next: candidate.word)
+            if previousWord.allSatisfy(isKanji) && candidate.word == "する" {
+                score += 0.80
+            }
+        }
+        return score
+    }
+
+    private func sourceBias(_ source: CandidateSource) -> Double {
+        switch source {
+        case .study:
+            return 0.30
+        case .local:
+            return 0.20
+        case .connection:
+            return 0.05
+        case .google, .external, .synthetic:
+            return 0.0
+        }
+    }
+
+    private func shortSegmentPenalty(word: String, reading: String) -> Double {
+        var penalty = 0.0
+        if word.count == 1 && word.contains(where: isKanji) {
+            penalty += 1.20
+        }
+        if reading.count <= 2 && word.count <= 1 {
+            penalty += 0.60
+        }
+        return penalty
+    }
+
+    private func transitionPenalty(previous: String, next: String) -> Double {
+        guard let previousLast = previous.last, let nextFirst = next.first else { return 0 }
+        if isHiragana(previousLast) && isKanji(nextFirst) {
+            return 2.00
+        }
+        if isKatakana(previousLast) && (isHiragana(nextFirst) || isKanji(nextFirst)) {
+            return 1.50
+        }
+        return 0
+    }
+
+    private func unnaturalScriptTransitionPenalty(_ word: String) -> Double {
+        let chars = Array(word)
+        guard chars.count >= 2 else { return 0 }
+        var penalty = 0.0
+        for index in 1..<chars.count {
+            if isHiragana(chars[index - 1]) && isKanji(chars[index]) {
+                penalty += 1.50
+            }
+            if isKatakana(chars[index - 1]) && isHiragana(chars[index]) {
+                penalty += 1.00
+            }
+        }
+        return penalty
+    }
+
+    private func isHiragana(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { 0x3040...0x309F ~= $0.value }
+    }
+
+    private func isKatakana(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { 0x30A0...0x30FF ~= $0.value }
+    }
+
+    private func isKanji(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { 0x4E00...0x9FFF ~= $0.value }
     }
 }
