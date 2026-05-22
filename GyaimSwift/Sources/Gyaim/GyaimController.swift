@@ -806,10 +806,11 @@ class GyaimController: IMKInputController {
                             modeLabel: "generated-local",
                             client: sender)
 
-        let googleEnabled = UserDefaults.standard.object(forKey: "aiRerankUseGoogle") as? Bool ?? true
+        let googleEnabled = UserDefaults.standard.object(forKey: "aiRerankUseGoogle") as? Bool ?? false
         guard googleEnabled else { return }
 
-        // Stage 2: add Google candidates when explicitly enabled, then rerank again.
+        // Stage 2: optional Google live update. Disabled by default because a second
+        // candidate-window update is visually disruptive during conversion.
         Log.input.info("AI rerank Google request: input=\"\(query)\"")
         let googleStart = CFAbsoluteTimeGetCurrent()
         GoogleTransliterate.searchCands(query) { [weak self] googleWords in

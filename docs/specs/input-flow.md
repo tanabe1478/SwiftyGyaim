@@ -49,7 +49,7 @@ handle(_:client:) → routeEvent() → HandleResult
 
 ## AI rerank
 
-AI rerank は通常入力・候補生成時には自動実行しない。変換中に Tab を押した時だけ `requestAIRerankIfAvailable()` を呼び、ローカル複合候補・補完候補・Google候補を追加する。候補追加後は Swift in-process heuristic / 同梱 Zenz で即 rerank し、server 未起動でも候補順を補正する。GPT-2 server / external command は legacy 比較用で、`aiRerankUseLegacyExternalReranker=true` の明示 opt-in 時だけ後追い rerank する。Shift+Tab または `` ` `` は `requestAIRerankOnlyIfAvailable()` を呼び、候補追加を行わず現在の候補リストだけを同様に rerank する。単体の Google Transliterate suffix/shortcut は廃止し、Google Input Tools は Tab のAI候補生成 pipeline 内だけで使う。
+AI rerank は通常入力・候補生成時には自動実行しない。変換中に Tab を押した時だけ `requestAIRerankIfAvailable()` を呼び、ローカル複合候補・補完候補を追加する。候補追加後は Swift in-process heuristic / 同梱 Zenz で即 rerank し、server 未起動でも候補順を補正する。Google Input Tools は `aiRerankUseGoogle=true` の明示 opt-in 時だけ後追い候補追加に使う（2回目の候補更新が発生するため既定OFF）。GPT-2 server / external command は legacy 比較用で、`aiRerankUseLegacyExternalReranker=true` の明示 opt-in 時だけ後追い rerank する。Shift+Tab または `` ` `` は `requestAIRerankOnlyIfAvailable()` を呼び、候補追加を行わず現在の候補リストだけを同様に rerank する。単体の Google Transliterate suffix/shortcut は廃止済み。
 
 ## IMEライフサイクル
 

@@ -30,7 +30,7 @@ Resources/Models/zenz-v3.1-xsmall-gguf/ggml-model-Q5_K_M.gguf
 
 `InProcessAIReranker` は `AIRerankBackend` を優先順に試す。既定では `BundledZenzAIRerankBackend` が `BundledZenzRuntime` を通じて `BundledAIRerankModel` を prepare し、同梱GGUFを memory-map してIMEプロセス内で保持する。`llama` module が link されている場合は `LlamaZenzContext` が model/context/vocab を resident にし、Zenz v3 control tag prompt に続く candidate text の token 平均 log probability を Swift heuristic score に小さく加算する。`aiRerankUseBundledZenz=false` で Zenz を明示無効化できる。
 
-Google Input Tools は後追い補助として使う。Google込みの2段階更新は `aiRerankUseGoogle=false` で明示無効化できる。GPT-2 resident server への直接HTTP接続、または external command は legacy 比較用で、`aiRerankUseLegacyExternalReranker=true` を明示した場合だけ Swift/Zenz の後に追加で非同期実行される。
+Google Input Tools は後追い補助として optional に使う。Google込みの2段階更新は候補ウィンドウの再描画が目立つため既定では無効で、`aiRerankUseGoogle=true` を明示した場合だけ実行する。GPT-2 resident server への直接HTTP接続、または external command は legacy 比較用で、`aiRerankUseLegacyExternalReranker=true` を明示した場合だけ Swift/Zenz の後に追加で非同期実行される。
 
 - legacy opt-in UserDefaults: `aiRerankUseLegacyExternalReranker=true`
 - legacy HTTP UserDefaults: `aiRerankServerURL`
@@ -137,8 +137,8 @@ Tab while converting
        -> InProcessAIReranker（AIRerankBackend: 同梱Zenz保持 + Swift heuristic）で即 rerank
        -> raw input を候補0に戻して候補一覧へ反映
        -> `aiRerankUseLegacyExternalReranker=true` なら GPT-2 server / external command で後追い再rerank
-       -> `aiRerankUseGoogle != false` の場合 Google Input Tools API が返ったら候補集合へ追加
-       -> Google込みでも InProcessAIReranker で即 rerank
+       -> `aiRerankUseGoogle=true` の場合だけ Google Input Tools API が返ったら候補集合へ追加
+       -> Google込みでも InProcessAIReranker で即 rerank（明示 opt-in 時のみ2回目の候補更新が発生）
        -> `aiRerankUseLegacyExternalReranker=true` なら GPT-2 server / external command で後追い再rerank
        -> response order を検証
        -> stale guard / revision guard
