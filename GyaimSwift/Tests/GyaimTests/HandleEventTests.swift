@@ -25,6 +25,7 @@ final class HandleEventTests: XCTestCase {
         matchesGoogleTransliterateShortcut: Bool = false,
         matchesDeleteCandidateShortcut: Bool = false,
         deleteCandidateChar: UInt8 = 0x58,
+        currentCandidateIsRawInput: Bool = true,
         inputPatEmpty: Bool = true,
         hasEventString: Bool = true
     ) -> Result {
@@ -45,6 +46,7 @@ final class HandleEventTests: XCTestCase {
             matchesGoogleTransliterateShortcut: matchesGoogleTransliterateShortcut,
             matchesDeleteCandidateShortcut: matchesDeleteCandidateShortcut,
             deleteCandidateChar: deleteCandidateChar,
+            currentCandidateIsRawInput: currentCandidateIsRawInput,
             inputPatEmpty: inputPatEmpty,
             hasEventString: hasEventString
         )
@@ -226,6 +228,19 @@ final class HandleEventTests: XCTestCase {
             searchMode: 0
         )
         XCTAssertEqual(result, Result(handled: true, action: .setSearchModeAndSearch))
+    }
+
+    func testEnterWhenFirstCandidateIsDictionaryResult_returnsFix() {
+        let result = route(
+            character: 0x0D,
+            keyCode: 36,
+            converting: true,
+            nthCand: 0,
+            candidateCount: 3,
+            searchMode: 0,
+            currentCandidateIsRawInput: false
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .fix))
     }
 
     // MARK: - 11. Enter when converting, nthCand > 0
@@ -476,6 +491,28 @@ final class HandleEventTests: XCTestCase {
         )
         // Not converting → shortcut check skipped, falls through
         XCTAssertNotEqual(result.action, .googleTransliterate)
+    }
+
+    // MARK: - Manual AI rerank shortcut
+
+    func testTabWhenConverting_returnsAIRerank() {
+        let result = route(
+            character: 0x09,
+            keyCode: 48,
+            converting: true,
+            hasEventString: true
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .aiRerank))
+    }
+
+    func testTabWhenNotConverting_ignored() {
+        let result = route(
+            character: 0x09,
+            keyCode: 48,
+            converting: false,
+            hasEventString: true
+        )
+        XCTAssertNotEqual(result.action, .aiRerank)
     }
 
     // MARK: - Edge: 0x08 (backspace alt) treated same as 0x7F

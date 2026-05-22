@@ -50,11 +50,10 @@ final class ExternalCandidateTests: XCTestCase {
             hiragana: "まん"
         )
         let words = result.map(\.word)
-        // First candidate should be the input pattern itself
-        XCTAssertEqual(words.first, "man")
-        // Search results should follow
-        XCTAssertTrue(words.contains("万"))
-        XCTAssertTrue(words.contains("漫"))
+        // Raw input stays first in prefix mode to avoid accidental commit of long prefix matches.
+        XCTAssertEqual(words[0], "man")
+        XCTAssertEqual(words[1], "万")
+        XCTAssertEqual(words[2], "漫")
         // Hiragana appended (total < 8)
         XCTAssertTrue(words.contains("まん"))
     }
@@ -71,10 +70,10 @@ final class ExternalCandidateTests: XCTestCase {
             hiragana: "まん"
         )
         let words = result.map(\.word)
-        // Order: inputPat, clipboard, search results, hiragana
+        // Order: inputPat, search results, clipboard, hiragana
         XCTAssertEqual(words[0], "man")
-        XCTAssertEqual(words[1], "クリップボード")
-        XCTAssertTrue(words.contains("万"))
+        XCTAssertEqual(words[1], "万")
+        XCTAssertEqual(words[2], "クリップボード")
     }
 
     func testBuildWithSelectedCandidate() {
@@ -90,7 +89,8 @@ final class ExternalCandidateTests: XCTestCase {
         )
         let words = result.map(\.word)
         XCTAssertEqual(words[0], "man")
-        XCTAssertEqual(words[1], "選択テキスト")
+        XCTAssertEqual(words[1], "万")
+        XCTAssertEqual(words[2], "選択テキスト")
     }
 
     func testBuildWithBothExternalCandidates() {
@@ -105,11 +105,11 @@ final class ExternalCandidateTests: XCTestCase {
             hiragana: "まん"
         )
         let words = result.map(\.word)
-        // Order: inputPat, clipboard, selected, search results...
+        // Order: inputPat, search results, clipboard, selected...
         XCTAssertEqual(words[0], "man")
-        XCTAssertEqual(words[1], "コピー済み")
-        XCTAssertEqual(words[2], "選択中")
-        XCTAssertTrue(words.contains("万"))
+        XCTAssertEqual(words[1], "万")
+        XCTAssertEqual(words[2], "コピー済み")
+        XCTAssertEqual(words[3], "選択中")
     }
 
     func testBuildRejectInvalidClipboard() {
@@ -173,7 +173,7 @@ final class ExternalCandidateTests: XCTestCase {
 
     func testBuildSelectedCandidatePosition() {
         // When both clipboard and selected are present,
-        // order is: inputPat, clipboard, selected, search results
+        // order is: inputPat, search results, clipboard, selected
         let result = GyaimController.buildPrefixCandidates(
             searchResults: [SearchCandidate(word: "亜", reading: "a")],
             inputPat: "a",
@@ -183,12 +183,13 @@ final class ExternalCandidateTests: XCTestCase {
         )
         let words = result.map(\.word)
         XCTAssertEqual(words[0], "a")
-        XCTAssertEqual(words[1], "クリップ")
-        XCTAssertEqual(words[2], "選択中テキスト")
+        XCTAssertEqual(words[1], "亜")
+        XCTAssertEqual(words[2], "クリップ")
+        XCTAssertEqual(words[3], "選択中テキスト")
     }
 
     func testBuildSelectedCandidateWithoutClipboard() {
-        // Selected text alone should appear at position 1 (after inputPat)
+        // Selected text alone should appear after search results.
         let result = GyaimController.buildPrefixCandidates(
             searchResults: [SearchCandidate(word: "亜", reading: "a")],
             inputPat: "a",
@@ -198,8 +199,8 @@ final class ExternalCandidateTests: XCTestCase {
         )
         let words = result.map(\.word)
         XCTAssertEqual(words[0], "a")
-        XCTAssertEqual(words[1], "選択のみ")
-        XCTAssertTrue(words.contains("亜"))
+        XCTAssertEqual(words[1], "亜")
+        XCTAssertEqual(words[2], "選択のみ")
     }
 
     func testBuildSelectedCandidateDeduplicatesWithSearchResults() {

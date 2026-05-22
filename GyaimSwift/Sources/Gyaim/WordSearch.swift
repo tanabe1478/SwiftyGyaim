@@ -5,6 +5,7 @@ enum CandidateSource: Equatable {
     case study
     case local
     case connection
+    case google     // Google Input Tools candidate
     case external   // clipboard / selected text
     case synthetic  // inputPat, hiragana, katakana, timestamp
 }
