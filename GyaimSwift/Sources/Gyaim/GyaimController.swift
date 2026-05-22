@@ -880,6 +880,10 @@ class GyaimController: IMKInputController {
 
                 switch result {
                 case .success(let response):
+                    if Self.shouldIgnoreAIRerankResponse(response) {
+                        Log.input.info("AI rerank ignored: mode=\(modeLabel) input=\"\(query)\" model=\(response.model ?? "unknown") reason=local-zenz-authoritative")
+                        return
+                    }
                     let order = AIReranker.validatedOrder(response.order, candidateCount: snapshot.count)
                     let reranked = order.map { snapshot[$0] }
                     let rawCandidate = snapshot.first { $0.word == query } ?? SearchCandidate(word: query, kind: .raw)
@@ -907,6 +911,15 @@ class GyaimController: IMKInputController {
             Log.input.info("AI rerank provider start: mode=\(modeLabel) provider=external-command input=\"\(query)\"")
             commandReranker.rerank(request, completion: handleResult)
         }
+    }
+
+    private static func shouldIgnoreAIRerankResponse(_ response: AIRerankResponse) -> Bool {
+        guard UserDefaults.standard.object(forKey: "aiRerankAllowHTTPOverride") as? Bool != true,
+              UserDefaults.standard.object(forKey: "aiRerankUseBundledZenz") as? Bool != false,
+              response.model == "ku-nlp/gpt2-small-japanese-char" else {
+            return false
+        }
+        return true
     }
 
     private func limitedAISnapshot(_ snapshot: [SearchCandidate], query: String) -> [SearchCandidate] {

@@ -72,20 +72,23 @@ final class BundledZenzRuntime: ZenzRuntime {
         Log.input.info("Zenz rerank start: input=\"\(request.inputPat)\" candidates=\(request.candidates.count)")
         let heuristic = AIReranker.localRerank(request, model: identifier)
         let prompt = Self.prompt(for: request)
+        let zenzWeight = Self.scoreWeight()
+        let maxScoredCandidates = Self.maxScoredCandidates()
         var scores: [String: Double] = [:]
         var anyRuntimeScore = false
 
         for candidate in request.candidates {
             let heuristicScore = heuristic.scores?[String(candidate.index)] ?? 0
-            if let zenzScore = activeContext.score(prompt: prompt, continuation: candidate.text) {
+            if candidate.index < maxScoredCandidates,
+               let zenzScore = activeContext.score(prompt: prompt, continuation: candidate.text) {
                 anyRuntimeScore = true
-                let combinedScore = heuristicScore + zenzScore * 0.08
+                let combinedScore = heuristicScore + zenzScore * zenzWeight
                 scores[String(candidate.index)] = combinedScore
                 let scoreSummary = "heuristic=\(String(format: "%.4f", heuristicScore)) "
                     + "zenz=\(String(format: "%.4f", zenzScore)) "
                     + "combined=\(String(format: "%.4f", combinedScore))"
                 Log.input.info("Zenz candidate score: input=\"\(request.inputPat)\" "
-                    + "index=\(candidate.index) text=\"\(candidate.text)\" \(scoreSummary)")
+                    + "index=\(candidate.index) text=\"\(candidate.text)\" weight=\(String(format: "%.2f", zenzWeight)) \(scoreSummary)")
             } else {
                 scores[String(candidate.index)] = heuristicScore
             }
@@ -104,7 +107,10 @@ final class BundledZenzRuntime: ZenzRuntime {
             }
             .map(\.index)
         let elapsed = (CFAbsoluteTimeGetCurrent() - runtimeStart) * 1000
-        Log.input.info("Zenz rerank finished: input=\"\(request.inputPat)\" order=\(order) latency=\(String(format: "%.1f", elapsed))ms")
+        let scoredCount = min(request.candidates.count, maxScoredCandidates)
+        Log.input.info("Zenz rerank finished: input=\"\(request.inputPat)\" order=\(order) "
+            + "scored=\(scoredCount)/\(request.candidates.count) "
+            + "latency=\(String(format: "%.1f", elapsed))ms")
         return AIRerankResponse(order: order,
                                 scores: scores,
                                 model: "bundled-zenz-v3.1-xsmall+swift-local-heuristic")
@@ -137,5 +143,15 @@ final class BundledZenzRuntime: ZenzRuntime {
             }
             return Character(scalar)
         })
+    }
+
+    private static func scoreWeight() -> Double {
+        let configured = UserDefaults.standard.double(forKey: "aiRerankZenzWeight")
+        return configured > 0 ? configured : 0.30
+    }
+
+    private static func maxScoredCandidates() -> Int {
+        let configured = UserDefaults.standard.integer(forKey: "aiRerankZenzMaxCandidates")
+        return configured > 0 ? configured : 12
     }
 }
