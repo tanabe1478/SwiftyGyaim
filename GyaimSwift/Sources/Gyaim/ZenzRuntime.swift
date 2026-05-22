@@ -62,9 +62,48 @@ final class BundledZenzRuntime: ZenzRuntime {
     }
 
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse? {
-        // Candidate scoring via llama.cpp will be added next. `prepare()` already
-        // performs real model/context initialization when the llama module is linked,
-        // so returning nil only means scoring is not wired yet.
+        #if canImport(llama)
+        lock.lock()
+        defer { lock.unlock() }
+        let activeContext = context
+        guard let activeContext else { return nil }
+
+        let heuristic = AIReranker.localRerank(request, model: identifier)
+        let prompt = Self.prompt(for: request)
+        var scores: [String: Double] = [:]
+        var anyRuntimeScore = false
+
+        for candidate in request.candidates {
+            let heuristicScore = heuristic.scores?[String(candidate.index)] ?? 0
+            if let zenzScore = activeContext.score(prompt: prompt, continuation: candidate.text) {
+                anyRuntimeScore = true
+                scores[String(candidate.index)] = heuristicScore + zenzScore * 0.08
+            } else {
+                scores[String(candidate.index)] = heuristicScore
+            }
+        }
+        guard anyRuntimeScore else { return nil }
+
+        let order = request.candidates
+            .sorted {
+                let lhs = scores[String($0.index)] ?? 0
+                let rhs = scores[String($1.index)] ?? 0
+                if lhs == rhs { return $0.index < $1.index }
+                return lhs > rhs
+            }
+            .map(\.index)
+        return AIRerankResponse(order: order,
+                                scores: scores,
+                                model: "bundled-zenz-v3.1-xsmall+swift-local-heuristic")
+        #else
         nil
+        #endif
+    }
+
+    private static func prompt(for request: AIRerankRequest) -> String {
+        let contextPrefix = request.context?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .appending("\n") ?? ""
+        return "\(contextPrefix)読み: \(request.hiragana)\n変換:"
     }
 }
