@@ -7,7 +7,7 @@
 
 SwiftyGyaim の既存候補に、Tab 明示起動でローカル複合候補・補完候補を加え、ローカル AI reranker で候補順を補正する。
 
-初段は Swift in-process heuristic rerank を使う。アプリ同梱の `zenz-v3.1-xsmall-gguf` GGUF モデルも bundle resource として持ち、IMEプロセス内で memory-map / llama.cpp context として保持する。`LlamaZenzContext` は tokenization / `llama_decode` / logits 取得を行い、候補文字列の平均 log probability を score に混ぜる。Python resident server / external command の GPT-2 rerank と Google Input Tools は後追い補助として使う。
+初段は Swift in-process heuristic rerank を使う。アプリ同梱の `zenz-v3.1-xsmall-gguf` GGUF モデルも bundle resource として持ち、IMEプロセス内で memory-map / llama.cpp context として保持する。`LlamaZenzContext` は tokenization / `llama_decode` / logits 取得を行い、候補文字列の平均 log probability を score に混ぜる。Python resident server / external command の GPT-2 rerank は legacy 比較用で、既定では起動しない。Google Input Tools は候補追加ソースとして使う。
 
 ## 目的
 
@@ -30,18 +30,20 @@ Resources/Models/zenz-v3.1-xsmall-gguf/ggml-model-Q5_K_M.gguf
 
 `InProcessAIReranker` は `AIRerankBackend` を優先順に試す。既定では `BundledZenzAIRerankBackend` が `BundledZenzRuntime` を通じて `BundledAIRerankModel` を prepare し、同梱GGUFを memory-map してIMEプロセス内で保持する。`llama` module が link されている場合は `LlamaZenzContext` が model/context/vocab を resident にし、Zenz v3 control tag prompt に続く candidate text の token 平均 log probability を Swift heuristic score に小さく加算する。`aiRerankUseBundledZenz=false` で Zenz を明示無効化できる。
 
-Google Input Tools と GPT-2 rerank は後追い補助として使う。Google込みの2段階更新は `aiRerankUseGoogle=false` で明示無効化できる。GPT-2 resident server への直接HTTP接続、または external command を指定した場合だけ、Swift/Zenz の後に追加で非同期実行される。
+Google Input Tools は後追い補助として使う。Google込みの2段階更新は `aiRerankUseGoogle=false` で明示無効化できる。GPT-2 resident server への直接HTTP接続、または external command は legacy 比較用で、`aiRerankUseLegacyExternalReranker=true` を明示した場合だけ Swift/Zenz の後に追加で非同期実行される。
 
-- 推奨 UserDefaults: `aiRerankServerURL`
-- 推奨 env: `GYAIM_AI_RERANK_SERVER`
-- fallback UserDefaults: `aiRerankCommand`
-- fallback env: `GYAIM_AI_RERANK_COMMAND`
+- legacy opt-in UserDefaults: `aiRerankUseLegacyExternalReranker=true`
+- legacy HTTP UserDefaults: `aiRerankServerURL`
+- legacy HTTP env: `GYAIM_AI_RERANK_SERVER`
+- legacy command UserDefaults: `aiRerankCommand`
+- legacy command env: `GYAIM_AI_RERANK_COMMAND`
 
-HTTP timeout は UserDefaults `aiRerankHTTPTimeoutMs` で指定する。未設定時は 1200ms。External command timeout は `aiRerankTimeoutMs` で指定する。
+Legacy HTTP timeout は UserDefaults `aiRerankHTTPTimeoutMs` で指定する。未設定時は 1200ms。External command timeout は `aiRerankTimeoutMs` で指定する。
 
-例:
+Legacy GPT-2 を比較目的で明示的に動かす例:
 
 ```bash
+defaults write com.pitecan.inputmethod.SwiftyGyaim aiRerankUseLegacyExternalReranker -bool true
 defaults write com.pitecan.inputmethod.SwiftyGyaim aiRerankServerURL "http://127.0.0.1:8765/rerank"
 defaults write com.pitecan.inputmethod.SwiftyGyaim aiRerankHTTPTimeoutMs 1200
 ```
@@ -134,10 +136,10 @@ Tab while converting
        -> CandidateGenerator でローカル複合候補 / 補完候補を生成
        -> InProcessAIReranker（AIRerankBackend: 同梱Zenz保持 + Swift heuristic）で即 rerank
        -> raw input を候補0に戻して候補一覧へ反映
-       -> GPT-2 server / external command が設定されていれば後追いで再rerank
+       -> `aiRerankUseLegacyExternalReranker=true` なら GPT-2 server / external command で後追い再rerank
        -> `aiRerankUseGoogle != false` の場合 Google Input Tools API が返ったら候補集合へ追加
        -> Google込みでも InProcessAIReranker で即 rerank
-       -> GPT-2 server / external command が設定されていれば後追い再rerank
+       -> `aiRerankUseLegacyExternalReranker=true` なら GPT-2 server / external command で後追い再rerank
        -> response order を検証
        -> stale guard / revision guard
        -> raw input を候補0に戻して candidates を更新
@@ -145,7 +147,7 @@ Tab while converting
 
 Shift+Tab or ` while converting
   -> requestAIRerankOnlyIfAvailable()
-       -> 現在の候補集合だけを HTTP server または external command へ送る
+       -> 現在の候補集合を InProcessAIReranker で即 rerank する。legacy opt-in 時のみ HTTP server または external command にも送る
        -> 候補追加・Google API・複合候補生成は行わない
        -> response order を検証
        -> stale guard / revision guard

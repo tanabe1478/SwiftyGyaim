@@ -880,10 +880,6 @@ class GyaimController: IMKInputController {
 
                 switch result {
                 case .success(let response):
-                    if Self.shouldIgnoreAIRerankResponse(response) {
-                        Log.input.info("AI rerank ignored: mode=\(modeLabel) input=\"\(query)\" model=\(response.model ?? "unknown") reason=local-zenz-authoritative")
-                        return
-                    }
                     let order = AIReranker.validatedOrder(response.order, candidateCount: snapshot.count)
                     let reranked = order.map { snapshot[$0] }
                     let rawCandidate = snapshot.first { $0.word == query } ?? SearchCandidate(word: query, kind: .raw)
@@ -900,9 +896,14 @@ class GyaimController: IMKInputController {
         }
 
         // Fast in-process rerank: avoids Swift/Python HTTP or process boundary and
-        // gives immediate feedback. Configured GPT/command rerankers may refine it later.
+        // Legacy GPT/command rerankers run only when explicitly enabled for comparison.
         Log.input.info("AI rerank provider start: mode=\(modeLabel) provider=in-process input=\"\(query)\" candidates=\(request.candidates.count)")
         handleResult(.success(InProcessAIReranker.shared.rerank(request)))
+
+        guard Self.shouldRunLegacyExternalAIReranker() else {
+            Log.input.info("AI rerank legacy external provider skipped: mode=\(modeLabel) input=\"\(query)\"")
+            return
+        }
 
         if let httpReranker = HTTPAIReranker.configured() {
             Log.input.info("AI rerank provider start: mode=\(modeLabel) provider=http input=\"\(query)\"")
@@ -913,13 +914,8 @@ class GyaimController: IMKInputController {
         }
     }
 
-    private static func shouldIgnoreAIRerankResponse(_ response: AIRerankResponse) -> Bool {
-        guard UserDefaults.standard.object(forKey: "aiRerankAllowHTTPOverride") as? Bool != true,
-              UserDefaults.standard.object(forKey: "aiRerankUseBundledZenz") as? Bool != false,
-              response.model == "ku-nlp/gpt2-small-japanese-char" else {
-            return false
-        }
-        return true
+    private static func shouldRunLegacyExternalAIReranker() -> Bool {
+        UserDefaults.standard.bool(forKey: "aiRerankUseLegacyExternalReranker")
     }
 
     private func limitedAISnapshot(_ snapshot: [SearchCandidate], query: String) -> [SearchCandidate] {
