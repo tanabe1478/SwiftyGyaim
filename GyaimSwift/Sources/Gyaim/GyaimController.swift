@@ -886,6 +886,10 @@ class GyaimController: IMKInputController {
             }
         }
 
+        // Fast in-process rerank: avoids Swift/Python HTTP or process boundary and
+        // gives immediate feedback. Configured GPT/command rerankers may refine it later.
+        handleResult(.success(AIReranker.localRerank(request)))
+
         if let httpReranker = HTTPAIReranker.configured() {
             httpReranker.rerank(request, completion: handleResult)
         } else if let commandReranker = ExternalCommandAIReranker.configured() {
