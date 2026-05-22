@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(llama)
+import llama
+#endif
 
 enum ZenzRuntimeStatus: Equatable {
     case ready
@@ -12,10 +15,9 @@ enum ZenzRuntimeStatus: Equatable {
 
 /// Runtime boundary for the bundled Zenz/GGUF model.
 ///
-/// `BundledZenzRuntime` currently prepares the model file by memory-mapping it.
-/// The scoring method intentionally returns nil until llama.cpp token inference
-/// is connected; callers then fall back to Swift heuristic scoring while keeping
-/// the model resident.
+/// `BundledZenzRuntime` prepares the model file and, when the llama module is
+/// linked, creates a llama.cpp model/context/vocab in-process. Candidate scoring
+/// still falls back to Swift heuristic until the prompt/evaluation logic is added.
 protocol ZenzRuntime {
     var identifier: String { get }
     func prepare() -> ZenzRuntimeStatus
@@ -27,6 +29,10 @@ final class BundledZenzRuntime: ZenzRuntime {
 
     private let model: BundledAIRerankModel
     private let bundle: Bundle
+    private let lock = NSLock()
+    #if canImport(llama)
+    private var context: LlamaZenzContext?
+    #endif
 
     init(model: BundledAIRerankModel = .shared, bundle: Bundle = .main) {
         self.model = model
@@ -34,15 +40,31 @@ final class BundledZenzRuntime: ZenzRuntime {
     }
 
     func prepare() -> ZenzRuntimeStatus {
-        model.loadIfAvailable(bundle: bundle)
-            ? .ready
-            : .unavailable("bundled GGUF model is not available")
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard model.loadIfAvailable(bundle: bundle), let url = model.modelURL else {
+            return .unavailable("bundled GGUF model is not available")
+        }
+
+        #if canImport(llama)
+        if context != nil { return .ready }
+        do {
+            context = try LlamaZenzContext(modelURL: url)
+            return .ready
+        } catch {
+            Log.input.warning("llama.cpp context initialization failed: \(error.localizedDescription)")
+            return .unavailable(error.localizedDescription)
+        }
+        #else
+        return .ready
+        #endif
     }
 
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse? {
-        // llama.cpp token inference will be wired here. Returning nil keeps the
-        // current behavior explicit: the backend is available/resident, but
-        // scoring still falls through to Swift heuristic for now.
+        // Candidate scoring via llama.cpp will be added next. `prepare()` already
+        // performs real model/context initialization when the llama module is linked,
+        // so returning nil only means scoring is not wired yet.
         nil
     }
 }
