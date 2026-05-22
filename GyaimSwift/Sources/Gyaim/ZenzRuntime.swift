@@ -79,7 +79,7 @@ final class BundledZenzRuntime: ZenzRuntime {
 
         for candidate in request.candidates {
             let heuristicScore = heuristic.scores?[String(candidate.index)] ?? 0
-            if candidate.index < maxScoredCandidates,
+            if Self.shouldScoreWithZenz(candidate, maxScoredCandidates: maxScoredCandidates),
                let zenzScore = activeContext.score(prompt: prompt, continuation: candidate.text) {
                 anyRuntimeScore = true
                 let combinedScore = heuristicScore + zenzScore * zenzWeight
@@ -107,7 +107,9 @@ final class BundledZenzRuntime: ZenzRuntime {
             }
             .map(\.index)
         let elapsed = (CFAbsoluteTimeGetCurrent() - runtimeStart) * 1000
-        let scoredCount = min(request.candidates.count, maxScoredCandidates)
+        let scoredCount = request.candidates
+            .filter { Self.shouldScoreWithZenz($0, maxScoredCandidates: maxScoredCandidates) }
+            .count
         Log.input.info("Zenz rerank finished: input=\"\(request.inputPat)\" order=\(order) "
             + "scored=\(scoredCount)/\(request.candidates.count) "
             + "latency=\(String(format: "%.1f", elapsed))ms")
@@ -152,6 +154,11 @@ final class BundledZenzRuntime: ZenzRuntime {
 
     private static func maxScoredCandidates() -> Int {
         let configured = UserDefaults.standard.integer(forKey: "aiRerankZenzMaxCandidates")
-        return configured > 0 ? configured : 12
+        return configured > 0 ? configured : 8
+    }
+
+    private static func shouldScoreWithZenz(_ candidate: AIRerankCandidate,
+                                            maxScoredCandidates: Int) -> Bool {
+        candidate.index < maxScoredCandidates && candidate.kind != CandidateKind.raw.rawValue
     }
 }

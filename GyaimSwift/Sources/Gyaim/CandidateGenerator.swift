@@ -79,7 +79,7 @@ struct CandidateGenerator {
                                                           limit: segmentCandidateLimit)
                 guard !segmentCandidates.isEmpty else { continue }
                 for beam in beams[pos] {
-                    for candidate in segmentCandidates where candidate.word != reading {
+                    for candidate in segmentCandidates where shouldUseSegmentCandidate(candidate, reading: reading) {
                         let word = beam.word + candidate.word
                         let score = beam.score
                             + scoreSegment(candidate,
@@ -113,6 +113,12 @@ struct CandidateGenerator {
 
     private func adjustedCompoundScore(_ beam: CompoundBeam) -> Double {
         beam.score - unnaturalScriptTransitionPenalty(beam.word)
+    }
+
+    private func shouldUseSegmentCandidate(_ candidate: SearchCandidate, reading: String) -> Bool {
+        candidate.word != reading
+            && !candidate.word.isEmpty
+            && candidate.word.allSatisfy(isAllowedCompoundCharacter)
     }
 
     private func scoreSegment(_ candidate: SearchCandidate,
@@ -180,6 +186,25 @@ struct CandidateGenerator {
             }
         }
         return penalty
+    }
+
+    private func isAllowedCompoundCharacter(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { scalar in
+            switch scalar.value {
+            case 0x3040...0x309F, // Hiragana
+                 0x30A0...0x30FF, // Katakana
+                 0x3400...0x4DBF, // CJK Extension A
+                 0x4E00...0x9FFF, // CJK Unified Ideographs
+                 0xF900...0xFAFF, // CJK Compatibility Ideographs
+                 0x3005...0x3007, // 々, 〆, 〇
+                 0xFF10...0xFF19, // Fullwidth digits
+                 0xFF21...0xFF3A, // Fullwidth Latin uppercase
+                 0xFF41...0xFF5A: // Fullwidth Latin lowercase
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     private func isHiragana(_ character: Character) -> Bool {
