@@ -24,19 +24,21 @@ struct HeuristicAIRerankBackend: AIRerankBackend {
 final class BundledZenzAIRerankBackend: AIRerankBackend {
     let identifier = "swift-local-heuristic+bundled-zenz-v3.1-xsmall-mapped"
 
-    private let model: BundledAIRerankModel
-    private let bundle: Bundle
+    private let runtime: ZenzRuntime
 
-    init(model: BundledAIRerankModel = .shared, bundle: Bundle = .main) {
-        self.model = model
-        self.bundle = bundle
+    convenience init(model: BundledAIRerankModel = .shared, bundle: Bundle = .main) {
+        self.init(runtime: BundledZenzRuntime(model: model, bundle: bundle))
+    }
+
+    init(runtime: ZenzRuntime) {
+        self.runtime = runtime
     }
 
     func canRun() -> Bool {
-        model.loadIfAvailable(bundle: bundle)
+        runtime.prepare().isReady
     }
 
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse {
-        AIReranker.localRerank(request, model: identifier)
+        runtime.rerank(request) ?? AIReranker.localRerank(request, model: identifier)
     }
 }
