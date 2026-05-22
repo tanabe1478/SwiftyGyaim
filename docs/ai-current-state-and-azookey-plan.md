@@ -47,6 +47,7 @@ Tab
 | `Sources/Gyaim/AIRerankBackend.swift` | in-process rerank backend 抽象。Zenz/heuristic の切替点 |
 | `Sources/Gyaim/InProcessAIReranker.swift` | IMEプロセス内rerank入口。backendを優先順に選ぶ |
 | `Sources/Gyaim/ZenzRuntime.swift` | 同梱Zenz/GGUF runtime境界。llama.cpp token inference の接続点 |
+| `Sources/Gyaim/LlamaZenzContext.swift` | llama.cpp model/context/vocab を in-process に保持 |
 | `Sources/Gyaim/BundledAIRerankModel.swift` | 同梱 GGUF モデルの bundle 解決・memory-map 保持 |
 | `Sources/Gyaim/CandidateGenerator.swift` | Tab時のローカル複合候補・補完候補生成 |
 | `Sources/Gyaim/GyaimController.swift` | Tab起動、文脈保持、Google後追い、rerank適用 |
@@ -248,7 +249,7 @@ enum CandidateKind {
 
 ### Phase D: scoring を構造化（着手）
 
-`InProcessAIReranker` を追加し、Tab直後の候補順補正は Swift プロセス内の単一入口に集約した。さらに `AIRerankBackend` と `ZenzRuntime` を追加し、`BundledZenzAIRerankBackend`（同梱モデル prepare + runtime scoring）→ `HeuristicAIRerankBackend`（常時fallback）の優先順で選ぶ構造にした。また `zenz-v3.1-xsmall-gguf` を app bundle に同梱し、`BundledAIRerankModel` で memory-map してIMEプロセス内に保持する。現時点の `BundledZenzRuntime.rerank(_:)` は nil placeholder なので Swift heuristic score にfallbackするが、次に llama.cpp / GGUF token inference へ差し替える接続点が明確になった。GPT-2 server / 単発reranker は `CandidateKind` を受け取り、暫定的な kind bias を score に加える。
+`InProcessAIReranker` を追加し、Tab直後の候補順補正は Swift プロセス内の単一入口に集約した。さらに `AIRerankBackend` と `ZenzRuntime` を追加し、`BundledZenzAIRerankBackend`（同梱モデル prepare + runtime scoring）→ `HeuristicAIRerankBackend`（常時fallback）の優先順で選ぶ構造にした。また `zenz-v3.1-xsmall-gguf` を app bundle に同梱し、`BundledAIRerankModel` で memory-map してIMEプロセス内に保持する。`llama` binary framework を Swift Package として接続し、`LlamaZenzContext` で `llama_backend_init` / `llama_model_load_from_file(use_mmap: true)` / `llama_init_from_model` / `llama_model_get_vocab` まで実行する。現時点の `BundledZenzRuntime.rerank(_:)` は nil placeholder なので Swift heuristic score にfallbackするが、次に prompt/token evaluation を入れる接続点が明確になった。GPT-2 server / 単発reranker は `CandidateKind` を受け取り、暫定的な kind bias を score に加える。
 
 最終 score 例:
 
