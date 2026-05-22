@@ -43,7 +43,8 @@ enum AIReranker {
         validatedOrder(proposedOrder, candidateCount: candidates.count).map { candidates[$0] }
     }
 
-    static func localRerank(_ request: AIRerankRequest) -> AIRerankResponse {
+    static func localRerank(_ request: AIRerankRequest,
+                            model: String = "swift-local-heuristic") -> AIRerankResponse {
         var scores: [String: Double] = [:]
         let scored = request.candidates.map { candidate in
             let score = localScore(candidate: candidate, request: request)
@@ -56,7 +57,7 @@ enum AIReranker {
                 return $0.score > $1.score
             }
             .map(\.index)
-        return AIRerankResponse(order: order, scores: scores, model: "swift-local-heuristic")
+        return AIRerankResponse(order: order, scores: scores, model: model)
     }
 
     private static func localScore(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
