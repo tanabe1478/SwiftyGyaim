@@ -90,4 +90,22 @@ final class CandidateGeneratorTests: XCTestCase {
             XCTAssertLessThan(naturalIndex, unnaturalIndex)
         }
     }
+
+    func testCompoundGenerationRejectsSymbolSegments() throws {
+        let wordSearch = try XCTUnwrap(wordSearch)
+        wordSearch.register(word: "ん", reading: "n")
+        wordSearch.register(word: "∩", reading: "ando")
+        wordSearch.register(word: "か", reading: "ka")
+        wordSearch.register(word: "何度か", reading: "nandoka")
+
+        let generator = CandidateGenerator(compoundLimit: 12, completionLimit: 0)
+        let generated = generator.generate(inputPat: "nandoka",
+                                           context: "",
+                                           baseCandidates: [SearchCandidate(word: "nandoka", kind: .raw)],
+                                           wordSearch: wordSearch)
+        let compoundWords = generated.filter { $0.kind == .compound }.map(\.word)
+
+        XCTAssertFalse(compoundWords.contains("ん∩か"))
+        XCTAssertTrue(compoundWords.contains("何度か"))
+    }
 }
