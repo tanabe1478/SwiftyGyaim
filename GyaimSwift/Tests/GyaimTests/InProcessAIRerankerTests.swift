@@ -2,7 +2,7 @@
 import XCTest
 
 final class InProcessAIRerankerTests: XCTestCase {
-    func testInProcessRerankerUsesHeuristicByDefault() {
+    func testInProcessRerankerUsesBundledZenzByDefault() {
         let request = AIRerankRequest(
             version: 1,
             mode: "rerank",
@@ -26,6 +26,6 @@ final class InProcessAIRerankerTests: XCTestCase {
         let reranker = InProcessAIReranker(bundle: Bundle(for: type(of: self)))
         let response = reranker.rerank(request)
         XCTAssertEqual(response.order.first, 1)
-        XCTAssertEqual(response.model, "swift-local-heuristic")
+        XCTAssertEqual(response.model, "bundled-zenz-v3.1-xsmall+swift-local-heuristic")
     }
 }

@@ -68,6 +68,8 @@ final class BundledZenzRuntime: ZenzRuntime {
         let activeContext = context
         guard let activeContext else { return nil }
 
+        let runtimeStart = CFAbsoluteTimeGetCurrent()
+        Log.input.info("Zenz rerank start: input=\"\(request.inputPat)\" candidates=\(request.candidates.count)")
         let heuristic = AIReranker.localRerank(request, model: identifier)
         let prompt = Self.prompt(for: request)
         var scores: [String: Double] = [:]
@@ -77,12 +79,21 @@ final class BundledZenzRuntime: ZenzRuntime {
             let heuristicScore = heuristic.scores?[String(candidate.index)] ?? 0
             if let zenzScore = activeContext.score(prompt: prompt, continuation: candidate.text) {
                 anyRuntimeScore = true
-                scores[String(candidate.index)] = heuristicScore + zenzScore * 0.08
+                let combinedScore = heuristicScore + zenzScore * 0.08
+                scores[String(candidate.index)] = combinedScore
+                let scoreSummary = "heuristic=\(String(format: "%.4f", heuristicScore)) "
+                    + "zenz=\(String(format: "%.4f", zenzScore)) "
+                    + "combined=\(String(format: "%.4f", combinedScore))"
+                Log.input.info("Zenz candidate score: input=\"\(request.inputPat)\" "
+                    + "index=\(candidate.index) text=\"\(candidate.text)\" \(scoreSummary)")
             } else {
                 scores[String(candidate.index)] = heuristicScore
             }
         }
-        guard anyRuntimeScore else { return nil }
+        guard anyRuntimeScore else {
+            Log.input.warning("Zenz rerank unavailable: input=\"\(request.inputPat)\" reason=no-runtime-score")
+            return nil
+        }
 
         let order = request.candidates
             .sorted {
@@ -92,6 +103,8 @@ final class BundledZenzRuntime: ZenzRuntime {
                 return lhs > rhs
             }
             .map(\.index)
+        let elapsed = (CFAbsoluteTimeGetCurrent() - runtimeStart) * 1000
+        Log.input.info("Zenz rerank finished: input=\"\(request.inputPat)\" order=\(order) latency=\(String(format: "%.1f", elapsed))ms")
         return AIRerankResponse(order: order,
                                 scores: scores,
                                 model: "bundled-zenz-v3.1-xsmall+swift-local-heuristic")

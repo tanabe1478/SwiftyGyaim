@@ -806,9 +806,12 @@ class GyaimController: IMKInputController {
                             modeLabel: "generated-local",
                             client: sender)
 
-        guard UserDefaults.standard.bool(forKey: "aiRerankUseGoogle") else { return }
+        let googleEnabled = UserDefaults.standard.object(forKey: "aiRerankUseGoogle") as? Bool ?? true
+        guard googleEnabled else { return }
 
         // Stage 2: add Google candidates when explicitly enabled, then rerank again.
+        Log.input.info("AI rerank Google request: input=\"\(query)\"")
+        let googleStart = CFAbsoluteTimeGetCurrent()
         GoogleTransliterate.searchCands(query) { [weak self] googleWords in
             guard let self else { return }
             guard self.pendingAIRerankQuery == query,
@@ -817,6 +820,9 @@ class GyaimController: IMKInputController {
                 Log.input.debug("AI rerank Google result discarded for stale query \"\(query)\"")
                 return
             }
+
+            let googleElapsed = (CFAbsoluteTimeGetCurrent() - googleStart) * 1000
+            Log.input.info("AI rerank Google response: input=\"\(query)\" count=\(googleWords.count) latency=\(String(format: "%.1f", googleElapsed))ms")
 
             var seed = self.candidates
             var seen = Set(seed.map(\.word))
@@ -860,6 +866,7 @@ class GyaimController: IMKInputController {
             }
         )
 
+        let requestStart = CFAbsoluteTimeGetCurrent()
         let handleResult: (Result<AIRerankResponse, Error>) -> Void = { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -878,7 +885,8 @@ class GyaimController: IMKInputController {
                     let rawCandidate = snapshot.first { $0.word == query } ?? SearchCandidate(word: query, kind: .raw)
                     self.candidates = [rawCandidate] + reranked.filter { $0.word != query }
                     self.nthCand = 0
-                    Log.input.info("AI rerank applied: mode=\(modeLabel) input=\"\(query)\" model=\(response.model ?? "unknown") order=\(order)")
+                    let elapsed = (CFAbsoluteTimeGetCurrent() - requestStart) * 1000
+                    Log.input.info("AI rerank applied: mode=\(modeLabel) input=\"\(query)\" model=\(response.model ?? "unknown") order=\(order) latency=\(String(format: "%.1f", elapsed))ms")
                     self.showCands(client: sender)
                     self.showWindow()
                 case .failure(let error):
@@ -889,11 +897,14 @@ class GyaimController: IMKInputController {
 
         // Fast in-process rerank: avoids Swift/Python HTTP or process boundary and
         // gives immediate feedback. Configured GPT/command rerankers may refine it later.
+        Log.input.info("AI rerank provider start: mode=\(modeLabel) provider=in-process input=\"\(query)\" candidates=\(request.candidates.count)")
         handleResult(.success(InProcessAIReranker.shared.rerank(request)))
 
         if let httpReranker = HTTPAIReranker.configured() {
+            Log.input.info("AI rerank provider start: mode=\(modeLabel) provider=http input=\"\(query)\"")
             httpReranker.rerank(request, completion: handleResult)
         } else if let commandReranker = ExternalCommandAIReranker.configured() {
+            Log.input.info("AI rerank provider start: mode=\(modeLabel) provider=external-command input=\"\(query)\"")
             commandReranker.rerank(request, completion: handleResult)
         }
     }

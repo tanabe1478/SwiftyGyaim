@@ -37,7 +37,8 @@ final class BundledZenzAIRerankBackend: AIRerankBackend {
     }
 
     func canRun() -> Bool {
-        UserDefaults.standard.bool(forKey: Self.enabledDefaultsKey) && runtime.prepare().isReady
+        let enabled = UserDefaults.standard.object(forKey: Self.enabledDefaultsKey) as? Bool ?? true
+        return enabled && runtime.prepare().isReady
     }
 
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse {
