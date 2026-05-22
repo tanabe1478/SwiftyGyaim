@@ -628,7 +628,7 @@ class GyaimController: IMKInputController {
         selectedCandidate: String?,
         hiragana: String
     ) -> [SearchCandidate] {
-        var candidates: [SearchCandidate] = [SearchCandidate(word: inputPat)]
+        var candidates: [SearchCandidate] = [SearchCandidate(word: inputPat, kind: .raw)]
 
         // Keep raw input as the selected candidate in prefix mode. This preserves the
         // historical safety behavior: plain Enter does not accidentally commit a long
@@ -636,16 +636,16 @@ class GyaimController: IMKInputController {
         candidates.append(contentsOf: searchResults)
 
         if let clip = clipboardCandidate, isValidExternalCandidate(clip) {
-            candidates.append(SearchCandidate(word: clip, source: .external))
+            candidates.append(SearchCandidate(word: clip, source: .external, kind: .exact))
         }
 
         if let sel = selectedCandidate, isValidExternalCandidate(sel) {
-            candidates.append(SearchCandidate(word: sel, source: .external))
+            candidates.append(SearchCandidate(word: sel, source: .external, kind: .exact))
         }
 
         // Add hiragana if few candidates
         if candidates.count < CandidateDisplayMode.current.maxVisible, !hiragana.isEmpty {
-            candidates.append(SearchCandidate(word: hiragana))
+            candidates.append(SearchCandidate(word: hiragana, reading: inputPat, kind: .kana))
         }
 
         // Deduplicate preserving order
@@ -704,12 +704,12 @@ class GyaimController: IMKInputController {
             let katakana = rk.roma2katakana(inputPat)
             if !katakana.isEmpty {
                 candidates = candidates.filter { $0.word != katakana }
-                candidates.insert(SearchCandidate(word: katakana), at: 0)
+                candidates.insert(SearchCandidate(word: katakana, reading: inputPat, kind: .kana), at: 0)
             }
             let hiragana = rk.roma2hiragana(inputPat)
             if !hiragana.isEmpty {
                 candidates = candidates.filter { $0.word != hiragana }
-                candidates.insert(SearchCandidate(word: hiragana), at: 0)
+                candidates.insert(SearchCandidate(word: hiragana, reading: inputPat, kind: .kana), at: 0)
             }
         } else {
             let searchResults = PerfLog.measure("search(\(inputPat), prefix)", logger: Log.input) {
@@ -785,8 +785,6 @@ class GyaimController: IMKInputController {
                             modeLabel: "rerank-only",
                             client: sender)
     }
-
-
     private func requestAIRerankIfAvailable(client sender: Any?) {
         guard searchMode == 0,
               !inputPat.isEmpty else { return }
@@ -798,7 +796,10 @@ class GyaimController: IMKInputController {
 
         // Stage 1: local generation + rerank immediately. This keeps Tab responsive even
         // when Google Input Tools takes a few hundred milliseconds.
-        let localSnapshot = candidatesWithAICompletions(from: candidates, query: query)
+        let localSnapshot = CandidateGenerator().generate(inputPat: query,
+                                                          context: recentCommittedText,
+                                                          baseCandidates: candidates,
+                                                          wordSearch: ws)
         sendAIRerankRequest(query: query,
                             snapshot: localSnapshot,
                             revision: localRevision,
@@ -819,11 +820,14 @@ class GyaimController: IMKInputController {
             var seed = self.candidates
             var seen = Set(seed.map(\.word))
             for word in googleWords where seen.insert(word).inserted {
-                seed.append(SearchCandidate(word: word, reading: query, source: .google))
+                seed.append(SearchCandidate(word: word, reading: query, source: .google, kind: .google))
             }
             self.pendingAIRerankRevision += 1
             let googleRevision = self.pendingAIRerankRevision
-            let snapshot = self.candidatesWithAICompletions(from: seed, query: query)
+            let snapshot = CandidateGenerator().generate(inputPat: query,
+                                                         context: self.recentCommittedText,
+                                                         baseCandidates: seed,
+                                                         wordSearch: self.ws)
             self.sendAIRerankRequest(query: query,
                                      snapshot: snapshot,
                                      revision: googleRevision,
@@ -850,7 +854,8 @@ class GyaimController: IMKInputController {
                 AIRerankCandidate(index: index,
                                   text: candidate.word,
                                   reading: candidate.reading,
-                                  source: String(describing: candidate.source))
+                                  source: String(describing: candidate.source),
+                                  kind: candidate.kind.rawValue)
             }
         )
 
@@ -869,7 +874,7 @@ class GyaimController: IMKInputController {
                 case .success(let response):
                     let order = AIReranker.validatedOrder(response.order, candidateCount: snapshot.count)
                     let reranked = order.map { snapshot[$0] }
-                    let rawCandidate = snapshot.first { $0.word == query } ?? SearchCandidate(word: query)
+                    let rawCandidate = snapshot.first { $0.word == query } ?? SearchCandidate(word: query, kind: .raw)
                     self.candidates = [rawCandidate] + reranked.filter { $0.word != query }
                     self.nthCand = 0
                     Log.input.info("AI rerank applied: mode=\(modeLabel) input=\"\(query)\" model=\(response.model ?? "unknown") order=\(order)")
@@ -903,91 +908,12 @@ class GyaimController: IMKInputController {
         if let raw = snapshot.first(where: { $0.word == query }) {
             append(raw)
         } else {
-            append(SearchCandidate(word: query))
+            append(SearchCandidate(word: query, kind: .raw))
         }
         snapshot.filter { $0.source == .google }.forEach(append)
         snapshot.filter { $0.source != .google && $0.word != query }.forEach(append)
         return result
     }
-
-    private func candidatesWithAICompletions(from base: [SearchCandidate], query: String) -> [SearchCandidate] {
-        var result = base
-        var seen = Set(base.map(\.word))
-        for candidate in generateCompoundCandidates(query: query, limit: 12) {
-            if seen.insert(candidate.word).inserted {
-                result.append(candidate)
-            }
-        }
-
-        let suffixes = ["でした", "です", "だった", "でした。", "です。"]
-        let maxCompletions = 6
-        let countBeforeSuffixes = result.count
-        for candidate in base where result.count < countBeforeSuffixes + maxCompletions {
-            guard candidate.word != query,
-                  !candidate.word.isEmpty,
-                  candidate.word.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) == nil else {
-                continue
-            }
-            for suffix in suffixes where result.count < countBeforeSuffixes + maxCompletions {
-                let word = candidate.word + suffix
-                if seen.insert(word).inserted {
-                    result.append(SearchCandidate(word: word,
-                                                  reading: candidate.reading ?? query,
-                                                  source: .synthetic))
-                }
-            }
-        }
-        return result
-    }
-
-    private struct CompoundBeam {
-        let position: Int
-        let word: String
-        let reading: String
-        let segments: Int
-        let score: Double
-    }
-
-    private func generateCompoundCandidates(query: String, limit: Int) -> [SearchCandidate] {
-        guard let ws, query.count >= 4 else { return [] }
-        let chars = Array(query)
-        let maxSegmentLength = 12
-        let beamWidth = 8
-        let segmentCandidateLimit = 3
-        var beams: [[CompoundBeam]] = Array(repeating: [], count: chars.count + 1)
-        beams[0] = [CompoundBeam(position: 0, word: "", reading: "", segments: 0, score: 0)]
-
-        for pos in 0..<chars.count where !beams[pos].isEmpty {
-            for end in (pos + 1)...min(chars.count, pos + maxSegmentLength) {
-                let reading = String(chars[pos..<end])
-                let segmentCandidates = ws.search(query: reading, searchMode: 1, limit: segmentCandidateLimit)
-                guard !segmentCandidates.isEmpty else { continue }
-                for beam in beams[pos] {
-                    for candidate in segmentCandidates where candidate.word != reading {
-                        let word = beam.word + candidate.word
-                        let score = beam.score + Double(reading.count) - Double(beam.segments) * 0.15
-                        beams[end].append(CompoundBeam(position: end,
-                                                       word: word,
-                                                       reading: beam.reading + reading,
-                                                       segments: beam.segments + 1,
-                                                       score: score))
-                    }
-                }
-                beams[end].sort { $0.score > $1.score }
-                if beams[end].count > beamWidth {
-                    beams[end] = Array(beams[end].prefix(beamWidth))
-                }
-            }
-        }
-
-        var seen = Set<String>()
-        return beams[chars.count]
-            .filter { $0.segments >= 2 && $0.word != query && seen.insert($0.word).inserted }
-            .sorted { $0.score > $1.score }
-            .prefix(limit)
-            .map { SearchCandidate(word: $0.word, reading: $0.reading, source: .synthetic) }
-    }
-
     private func recordCommittedText(_ text: String) {
         guard !text.isEmpty else { return }
         recentCommittedText += text

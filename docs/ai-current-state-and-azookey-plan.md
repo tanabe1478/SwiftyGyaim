@@ -44,7 +44,8 @@ Tab
 | ファイル | 役割 |
 | --- | --- |
 | `Sources/Gyaim/AIReranker.swift` | AI rerank request/response、HTTP/external command client |
-| `Sources/Gyaim/GyaimController.swift` | Tab起動、候補拡張、文脈保持、rerank適用 |
+| `Sources/Gyaim/CandidateGenerator.swift` | Tab時のローカル複合候補・補完候補生成 |
+| `Sources/Gyaim/GyaimController.swift` | Tab起動、文脈保持、Google後追い、rerank適用 |
 | `Sources/Gyaim/WordSearch.swift` | 候補 source に `.google` を追加 |
 | `Tools/ai-rerank/gyaim-gpt2-char-rerank-server.py` | resident GPT-2 scoring server |
 | `Tools/ai-rerank/evaluate-reranker.py` | ログベース評価 runner |
@@ -191,9 +192,9 @@ henkankouho
 
 ## 次に実装する方針
 
-### Phase A: CandidateGenerator を分離
+### Phase A: CandidateGenerator を分離（実装済み）
 
-`GyaimController` から Tab候補生成ロジックを切り出す。
+`GyaimController` から Tab候補生成ロジックを以下へ切り出した。
 
 ```text
 Sources/Gyaim/CandidateGenerator.swift
@@ -210,9 +211,9 @@ generate(
 ) -> [SearchCandidate]
 ```
 
-### Phase B: CandidateKind を導入
+### Phase B: CandidateKind を導入（実装済み）
 
-`CandidateSource` だけでは候補の性質を表しきれない。
+`CandidateSource` だけでは候補の性質を表しきれないため、`SearchCandidate.kind` を追加した。AI request には `kind` も含める。
 
 ```swift
 enum CandidateKind {

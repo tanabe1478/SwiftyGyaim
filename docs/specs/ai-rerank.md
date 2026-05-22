@@ -1,6 +1,6 @@
 # Spec: AI Rerank
 
-> Trigger: AIReranker.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
+> Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
 > Last updated: 2026-05-22
 
 ## 概要
@@ -48,9 +48,9 @@ SwiftyGyaim は external command の stdin に JSON を渡す。
   "hiragana": "きのう",
   "context": "直前に確定した文脈",
   "candidates": [
-    {"index": 0, "text": "昨日", "reading": "kinou", "source": "study"},
-    {"index": 1, "text": "機能", "reading": "kinou", "source": "connection"},
-    {"index": 2, "text": "きのう", "reading": null, "source": "synthetic"}
+    {"index": 0, "text": "昨日", "reading": "kinou", "source": "study", "kind": "exact"},
+    {"index": 1, "text": "機能", "reading": "kinou", "source": "connection", "kind": "exact"},
+    {"index": 2, "text": "きのう", "reading": null, "source": "synthetic", "kind": "kana"}
   ]
 }
 ```
@@ -72,6 +72,18 @@ External command は stdout に JSON を返す。
 ```
 
 `order` は候補 index の配列。新しい候補文字列は返さない。追加候補は SwiftyGyaim 側で request 作成前に生成する。
+
+## Candidate metadata
+
+`source` は候補の出自、`kind` は候補の性質を表す。`kind` は以下の値を取る。
+
+- `raw`: ローマ字そのまま
+- `exact`: 読み完全一致の辞書候補
+- `prefix`: 前方一致の辞書候補
+- `compound`: CandidateGenerator の複合候補
+- `completion`: CandidateGenerator の語尾補完候補
+- `google`: Google Input Tools 候補
+- `kana`: ひらがな/カタカナ候補
 
 ## Validation
 
@@ -96,7 +108,7 @@ searchAndShowCands()
 
 Tab while converting
   -> requestAIRerankIfAvailable()
-       -> ローカル複合候補 / 補完候補を生成して即 rerank
+       -> CandidateGenerator でローカル複合候補 / 補完候補を生成して即 rerank
        -> raw input を候補0に戻して候補一覧へ反映
        -> Google Input Tools API が返ったら候補集合へ追加
        -> Google込みの候補集合を再rerank

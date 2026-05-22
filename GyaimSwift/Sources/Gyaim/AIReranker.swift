@@ -5,6 +5,7 @@ struct AIRerankCandidate: Codable, Equatable {
     let text: String
     let reading: String?
     let source: String
+    let kind: String
 }
 
 struct AIRerankRequest: Codable, Equatable {
