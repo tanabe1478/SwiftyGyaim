@@ -66,6 +66,10 @@ final class GoogleTransliterateTests: XCTestCase {
         // Hiragana/katakana fallback at end
         XCTAssertTrue(words.contains("めぐろ"))
         XCTAssertTrue(words.contains("メグロ"))
+        XCTAssertEqual(candidates.first { $0.word == "meguro" }?.kind, .raw)
+        XCTAssertEqual(candidates.first { $0.word == "目黒" }?.kind, .google)
+        XCTAssertEqual(candidates.first { $0.word == "目黒" }?.source, .google)
+        XCTAssertEqual(candidates.first { $0.word == "めぐろ" }?.kind, .kana)
     }
 
     func testBuildGoogleCandidatesEmptyResults() {

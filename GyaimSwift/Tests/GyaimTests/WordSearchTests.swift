@@ -699,4 +699,17 @@ final class WordSearchTests: XCTestCase {
         XCTAssertTrue(entries.map(\.word).contains("海里"),
             "海里 should also be in file")
     }
+
+    func testSearchCandidateKindExactAndPrefix() throws {
+        try XCTSkipIf(ws == nil)
+        ws.register(word: "テスト", reading: "test")
+        ws.register(word: "テスト長い", reading: "testnagai")
+
+        let prefixResults = ws.search(query: "test", searchMode: 0)
+        XCTAssertEqual(prefixResults.first { $0.word == "テスト" }?.kind, .exact)
+        XCTAssertEqual(prefixResults.first { $0.word == "テスト長い" }?.kind, .prefix)
+
+        let exactResults = ws.search(query: "test", searchMode: 1)
+        XCTAssertEqual(exactResults.first { $0.word == "テスト" }?.kind, .exact)
+    }
 }
