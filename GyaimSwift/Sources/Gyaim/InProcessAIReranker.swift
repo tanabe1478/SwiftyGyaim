@@ -24,6 +24,11 @@ final class InProcessAIReranker {
 
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse {
         let backend = backends.first { $0.canRun() } ?? HeuristicAIRerankBackend()
-        return backend.rerank(request)
+        let start = CFAbsoluteTimeGetCurrent()
+        Log.input.info("AI rerank backend selected: provider=in-process backend=\(backend.identifier) candidates=\(request.candidates.count)")
+        let response = backend.rerank(request)
+        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+        Log.input.info("AI rerank backend finished: provider=in-process backend=\(backend.identifier) model=\(response.model ?? "unknown") latency=\(String(format: "%.1f", elapsed))ms")
+        return response
     }
 }
