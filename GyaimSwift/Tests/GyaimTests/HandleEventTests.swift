@@ -473,27 +473,7 @@ final class HandleEventTests: XCTestCase {
         XCTAssertEqual(result, Result(handled: true, action: .fix))
     }
 
-    // MARK: - Google Transliterate shortcut
-
-    func testGoogleTransliterateShortcutWhenConverting_returnsGoogleTransliterate() {
-        let result = route(
-            converting: true,
-            matchesGoogleTransliterateShortcut: true
-        )
-        XCTAssertEqual(result, Result(handled: true, action: .googleTransliterate))
-    }
-
-    func testGoogleTransliterateShortcutWhenNotConverting_ignored() {
-        let result = route(
-            converting: false,
-            matchesGoogleTransliterateShortcut: true,
-            hasEventString: false
-        )
-        // Not converting → shortcut check skipped, falls through
-        XCTAssertNotEqual(result.action, .googleTransliterate)
-    }
-
-    // MARK: - Manual AI rerank shortcut
+    // MARK: - AI rerank shortcuts
 
     func testTabWhenConverting_returnsAIRerank() {
         let result = route(
@@ -505,6 +485,27 @@ final class HandleEventTests: XCTestCase {
         XCTAssertEqual(result, Result(handled: true, action: .aiRerank))
     }
 
+    func testShiftTabWhenConverting_returnsAIRerankOnly() {
+        let result = route(
+            character: 0x09,
+            keyCode: 48,
+            modifierFlags: [.shift],
+            converting: true,
+            hasEventString: true
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .aiRerankOnly))
+    }
+
+    func testBacktickWhenConverting_returnsAIRerankOnly() {
+        let result = route(
+            character: 0x60,
+            keyCode: 50,
+            converting: true,
+            hasEventString: true
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .aiRerankOnly))
+    }
+
     func testTabWhenNotConverting_ignored() {
         let result = route(
             character: 0x09,
@@ -513,6 +514,7 @@ final class HandleEventTests: XCTestCase {
             hasEventString: true
         )
         XCTAssertNotEqual(result.action, .aiRerank)
+        XCTAssertNotEqual(result.action, .aiRerankOnly)
     }
 
     // MARK: - Edge: 0x08 (backspace alt) treated same as 0x7F

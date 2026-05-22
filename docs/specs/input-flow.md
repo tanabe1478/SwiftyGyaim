@@ -29,7 +29,8 @@ handle(_:client:) → routeEvent() → HandleResult
             ├─ ESC → resetState()
             ├─ BS → inputPat末尾削除
             ├─ F6/F7/shortcut → fixAsKana()
-            └─ Tab → AI rerankを明示起動
+            ├─ Tab → AI候補生成 + rerankを明示起動
+            └─ Shift+Tab / ` → 現在候補のAI rerankだけを明示起動
 ```
 
 ## routeEvent() の設計意図
@@ -48,7 +49,7 @@ handle(_:client:) → routeEvent() → HandleResult
 
 ## AI rerank
 
-AI rerank は通常入力・候補生成時には自動実行しない。変換中に Tab を押した時だけ `requestAIRerankIfAvailable()` を呼び、設定済みの HTTP server / external command があれば非同期に候補を並べ替える。server 未起動・未設定・timeout 時は元順位のまま fallback する。
+AI rerank は通常入力・候補生成時には自動実行しない。変換中に Tab を押した時だけ `requestAIRerankIfAvailable()` を呼び、ローカル複合候補・補完候補・Google候補を追加して非同期に rerank する。Shift+Tab または `` ` `` は `requestAIRerankOnlyIfAvailable()` を呼び、候補追加を行わず現在の候補リストだけを rerank する。単体の Google Transliterate suffix/shortcut は廃止し、Google Input Tools は Tab のAI候補生成 pipeline 内だけで使う。server 未起動・未設定・timeout 時は元順位のまま fallback する。
 
 ## IMEライフサイクル
 

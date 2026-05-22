@@ -86,7 +86,7 @@ SwiftyGyaim 本体は `order` を必ず検証する。
 
 ## 実行フロー
 
-AI rerank は通常入力では自動実行しない。IME の体感速度を優先し、ユーザーが問題だと思った候補一覧に対して明示的に起動する。
+AI rerank は通常入力では自動実行しない。IME の体感速度を優先し、ユーザーが問題だと思った候補一覧に対して Tab / Shift+Tab で明示的に起動する。
 
 ```text
 searchAndShowCands()
@@ -100,6 +100,15 @@ Tab while converting
        -> raw input を候補0に戻して候補一覧へ反映
        -> Google Input Tools API が返ったら候補集合へ追加
        -> Google込みの候補集合を再rerank
+       -> response order を検証
+       -> stale guard / revision guard
+       -> raw input を候補0に戻して candidates を更新
+       -> showCands() / showWindow()
+
+Shift+Tab or ` while converting
+  -> requestAIRerankOnlyIfAvailable()
+       -> 現在の候補集合だけを HTTP server または external command へ送る
+       -> 候補追加・Google API・複合候補生成は行わない
        -> response order を検証
        -> stale guard / revision guard
        -> raw input を候補0に戻して candidates を更新
