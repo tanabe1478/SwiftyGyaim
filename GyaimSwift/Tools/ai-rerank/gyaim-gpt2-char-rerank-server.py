@@ -74,12 +74,14 @@ class GPT2CharReranker:
             for candidate, lm_score in zip(candidates, lm_scores):
                 index = int(candidate["index"])
                 source = str(candidate.get("source") or "")
+                kind = str(candidate.get("kind") or "")
                 text = str(candidate["text"])
                 original_rank = int(candidate.get("index", index))
                 final_score = (
                     self.lm_weight * lm_score
                     - self.rank_penalty * original_rank
                     + self._source_bias(source)
+                    + self._kind_bias(kind)
                     + self._candidate_bias(text, input_pat, hiragana)
                 )
                 scored.append(CandidateScore(index=index, score=final_score))
@@ -158,6 +160,24 @@ class GPT2CharReranker:
             return -0.10
         if source == "synthetic":
             return -0.50
+        return 0.0
+
+    @staticmethod
+    def _kind_bias(kind: str) -> float:
+        if kind == "google":
+            return 0.35
+        if kind == "exact":
+            return 0.20
+        if kind == "compound":
+            return 0.10
+        if kind == "prefix":
+            return -0.15
+        if kind == "completion":
+            return -0.20
+        if kind == "kana":
+            return -0.30
+        if kind == "raw":
+            return -1.00
         return 0.0
 
 
