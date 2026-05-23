@@ -6244,6 +6244,7 @@ dore	どれ	3	4
 hanashigoe	話し声	3	4
 hanasigoe	話し声	3	4
 musu	結	45	46
+yousei	陽性	3	4
 yousei	妖精	3	4
 yuiitsu	唯一	3	4
 yuiitu	唯一	3	4
@@ -37848,6 +37849,7 @@ shimai	姉妹	67
 simai	姉妹	67	
 daikibo	大規模	18	19
 sue	吸え	5	6
+nise	偽	3	4
 nisemono	偽物	3	4
 romendensha	路面電車	59	
 romendensya	路面電車	59	

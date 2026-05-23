@@ -66,7 +66,7 @@ struct CandidateGenerator {
     private func generateCompoundCandidates(query: String,
                                             wordSearch: WordSearch?,
                                             limit: Int) -> [SearchCandidate] {
-        guard let wordSearch, query.count >= 4 else { return [] }
+        guard let wordSearch, query.count >= 5 else { return [] }
         let chars = Array(query)
         var beams: [[CompoundBeam]] = Array(repeating: [], count: chars.count + 1)
         beams[0] = [CompoundBeam(word: "", reading: "", segments: 0, score: 0, lastWord: nil)]
