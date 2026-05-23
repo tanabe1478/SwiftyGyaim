@@ -19,7 +19,7 @@ struct CandidateGenerator {
     var completionLimit = 6
     var suffixes = ["でした", "です", "だった", "でした。", "です。"]
     var maxSegmentLength = 12
-    var beamWidth = 8
+    var beamWidth = 16
     var segmentCandidateLimit = 5
 
     func generate(inputPat: String,
@@ -188,6 +188,10 @@ struct CandidateGenerator {
 
     private func commonCompoundBonus(previous: String, next: String) -> Double {
         switch (previous, next) {
+        case ("今", "の"),
+             ("の", "段階"),
+             ("段階", "では"):
+            return 2.20
         case ("起動", "後"),
              ("更新", "後"),
              ("変更", "後"),

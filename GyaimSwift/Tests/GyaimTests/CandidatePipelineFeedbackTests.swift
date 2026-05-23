@@ -71,7 +71,8 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
             ("ayamatta", "誤った"),
             ("kiiteru", "利いてる"),
             ("kiitenai", "利いてない"),
-            ("kyouka", "強化")
+            ("kyouka", "強化"),
+            ("imanodankaideha", "今の段階では")
         ]
 
         for item in cases {

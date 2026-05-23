@@ -15592,6 +15592,7 @@ sisann	資産	3	4
 konno	今野	13	14
 konnno	今野	13	14
 imano	今野	13	14
+imanodankaideha	今の段階では	3	4
 furubi	古び	5	6
 hurubi	古び	5	6
 heitan	平坦	18	19

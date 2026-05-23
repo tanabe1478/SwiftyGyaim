@@ -67,6 +67,9 @@ enum AIReranker {
         score += kindBias(candidate.kind)
         if candidate.reading == request.inputPat {
             score += 0.20
+            if candidate.kind == CandidateKind.exact.rawValue {
+                score += exactReadingBonus(candidate.text)
+            }
         }
         if candidate.text.contains(where: isKanji) {
             score += 0.10
@@ -76,6 +79,10 @@ enum AIReranker {
         }
         score -= unnaturalScriptTransitionPenalty(candidate.text)
         return score
+    }
+
+    private static func exactReadingBonus(_ text: String) -> Double {
+        text.count >= 5 ? 2.00 : 0.50
     }
 
     private static func sourceBias(_ source: String) -> Double {
