@@ -125,6 +125,18 @@ final class WordSearchTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "exactReadingMatchPriority")
     }
 
+    func testSearchFiltersUnsafeMultilineStudyCandidate() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "聞いてない\n# Private note", reading: "kiitenai")
+        ws.study(word: "聞いてない", reading: "kiitenai")
+
+        let words = ws.search(query: "kiitenai", searchMode: 0).map(\.word)
+
+        XCTAssertTrue(words.contains("聞いてない"))
+        XCTAssertFalse(words.contains { $0.contains("\n") })
+        XCTAssertFalse(words.contains { $0.contains("Private note") })
+    }
+
     func testStudyInsertsNewEntry() throws {
         try XCTSkipIf(ws == nil)
         ws.study(word: "東京", reading: "tokyo")
