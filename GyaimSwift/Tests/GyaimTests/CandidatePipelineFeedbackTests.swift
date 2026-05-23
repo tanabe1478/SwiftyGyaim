@@ -66,13 +66,37 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
             ("yousei", "陽性"),
             ("kaizenn", "改善"),
             ("nisemono", "偽物"),
-            ("jikaikidougo", "次回起動後")
+            ("jikaikidougo", "次回起動後"),
+            ("sunda", "済んだ"),
+            ("ayamatta", "誤った"),
+            ("kiiteru", "利いてる"),
+            ("kiitenai", "利いてない"),
+            ("kyouka", "強化")
         ]
 
         for item in cases {
             let reranked = locallyReranked(candidates: generatedCandidates(for: item.input), inputPat: item.input)
             let head = Array(reranked.prefix(5)).map(\.word)
             XCTAssertTrue(head.contains(item.expected), "Expected \(item.expected) near top for \(item.input): \(head)")
+        }
+    }
+
+    func testLearnedFeedbackCasesBecomeTopCandidate() {
+        let cases: [(input: String, expected: String)] = [
+            ("sunda", "済んだ"),
+            ("ayamatta", "誤った"),
+            ("kiiteru", "利いてる"),
+            ("kiitenai", "利いてない"),
+            ("kyouka", "強化")
+        ]
+
+        for item in cases {
+            wordSearch.study(word: item.expected, reading: item.input)
+            let reranked = locallyReranked(candidates: generatedCandidates(for: item.input), inputPat: item.input)
+            let head = Array(reranked.prefix(5)).map(\.word)
+            XCTAssertEqual(reranked.first?.word,
+                           item.expected,
+                           "Expected learned \(item.expected) top1 for \(item.input): \(head)")
         }
     }
 

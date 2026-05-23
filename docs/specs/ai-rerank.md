@@ -258,14 +258,15 @@ export GYAIM_AI_RERANK_SERVER=http://127.0.0.1:9876/rerank
 
 ## 評価ループ
 
-実ログから、azooKey の `anco evaluate` と同様に query / answer / outputs / rank を評価するデータを作る。SwiftyGyaim 内部ループでは JSONL を使い、azooKey 側との比較には `--azookey-json` で `anco evaluate` 互換JSONも出力できる。
+実ログから、azooKey の `anco evaluate` と同様に query / answer / outputs / rank を評価するデータを作る。SwiftyGyaim 内部ループでは JSONL を使い、azooKey 側との比較には `--azookey-json` で `anco evaluate` 互換JSONも出力できる。ログの確定結果を学習辞書として再生する場合は `--study-dict` で SwiftyGyaim study TSV を作る。
 
 ```bash
 cd GyaimSwift
 Tools/eval/extract-ime-log-cases.py \
   --log ~/.gyaim/gyaim.log \
   --jsonl /tmp/gyaim-ime-cases.jsonl \
-  --azookey-json /tmp/gyaim-azookey-eval.json
+  --azookey-json /tmp/gyaim-azookey-eval.json \
+  --study-dict /tmp/gyaim-feedback-studydict.txt
 ```
 
 resident server を起動した状態で、評価 runner から評価する。実用 latency を見る場合は `--server-url` で直接HTTP接続する。external command client 経由の評価は protocol 検証用。

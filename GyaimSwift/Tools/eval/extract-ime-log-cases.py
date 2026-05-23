@@ -188,6 +188,7 @@ def main():
     parser.add_argument("--log", default="~/.gyaim/gyaim.log")
     parser.add_argument("--jsonl", help="write extracted fixed cases as JSONL")
     parser.add_argument("--azookey-json", help="write azooKey anco evaluate-compatible JSON")
+    parser.add_argument("--study-dict", help="write SwiftyGyaim study dictionary TSV from fixed cases")
     args = parser.parse_args()
 
     fixed, search_latencies, search_by_query, ai_latencies, zenz_alt, zenz_gen = extract(Path(args.log))
@@ -217,7 +218,22 @@ def main():
             json.dump(items, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
         print(f"wrote {len(items)} azooKey-compatible cases to {out}")
+        print(f"wrote {len(items)} azooKey-compatible cases to {out}")
 
+    if args.study_dict:
+        out = Path(args.study_dict)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        frequencies: Counter[tuple[str, str]] = Counter()
+        last_seen: dict[tuple[str, str], int] = {}
+        for line_no, case in enumerate(fixed, start=1):
+            if case.type == "fixed" and case.reading and case.accepted:
+                key = (case.reading, case.accepted)
+                frequencies[key] += 1
+                last_seen[key] = line_no
+        with out.open("w", encoding="utf-8") as handle:
+            for (reading, word), frequency in frequencies.most_common():
+                handle.write(f"{reading}\t{word}\t{last_seen[(reading, word)]}\t{frequency}\n")
+        print(f"wrote {len(frequencies)} study entries to {out}")
 
 if __name__ == "__main__":
     main()
