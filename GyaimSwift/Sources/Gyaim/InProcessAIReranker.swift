@@ -31,4 +31,19 @@ final class InProcessAIReranker {
         Log.input.info("AI rerank backend finished: provider=in-process backend=\(backend.identifier) model=\(response.model ?? "unknown") latency=\(String(format: "%.1f", elapsed))ms")
         return response
     }
+
+    func generateCandidates(inputPat: String,
+                            hiragana: String,
+                            context: String?,
+                            limit: Int = 1) -> [SearchCandidate] {
+        for backend in backends {
+            guard let generator = backend as? AICandidateGenerationBackend else { continue }
+            let candidates = generator.generateCandidates(inputPat: inputPat,
+                                                          hiragana: hiragana,
+                                                          context: context,
+                                                          limit: limit)
+            if !candidates.isEmpty { return candidates }
+        }
+        return []
+    }
 }

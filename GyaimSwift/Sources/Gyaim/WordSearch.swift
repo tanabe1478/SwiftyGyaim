@@ -20,6 +20,7 @@ enum CandidateKind: String, Equatable {
     case google
     case kana
     case lattice
+    case zenz
 }
 
 /// A search result candidate.
