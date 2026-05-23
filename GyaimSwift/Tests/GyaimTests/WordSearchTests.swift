@@ -712,4 +712,19 @@ final class WordSearchTests: XCTestCase {
         let exactResults = ws.search(query: "test", searchMode: 1)
         XCTAssertEqual(exactResults.first { $0.word == "テスト" }?.kind, .exact)
     }
+
+    func testBundleDictionaryContainsNiseAndYouseiCorrections() throws {
+        try XCTSkipIf(ws == nil)
+
+        let niseWords = ws.search(query: "nise", searchMode: 0).map(\.word)
+        XCTAssertTrue(niseWords.contains("偽"), "Expected 偽 in nise candidates: \(niseWords)")
+        XCTAssertTrue(niseWords.contains("偽物"), "Expected 偽物 in nise prefix candidates: \(niseWords)")
+        if let niseIndex = niseWords.firstIndex(of: "偽"),
+           let nisemonoIndex = niseWords.firstIndex(of: "偽物") {
+            XCTAssertLessThan(niseIndex, nisemonoIndex)
+        }
+
+        let youseiWords = ws.search(query: "yousei", searchMode: 0).map(\.word)
+        XCTAssertTrue(youseiWords.contains("陽性"), "Expected 陽性 in yousei candidates: \(youseiWords)")
+    }
 }

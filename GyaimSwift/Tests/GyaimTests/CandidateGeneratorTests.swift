@@ -91,6 +91,21 @@ final class CandidateGeneratorTests: XCTestCase {
         }
     }
 
+    func testCompoundGenerationSkipsVeryShortQueries() throws {
+        let wordSearch = try XCTUnwrap(wordSearch)
+        wordSearch.register(word: "二", reading: "ni")
+        wordSearch.register(word: "世", reading: "se")
+
+        let generator = CandidateGenerator(compoundLimit: 12, completionLimit: 0)
+        let generated = generator.generate(inputPat: "nise",
+                                           context: "",
+                                           baseCandidates: [SearchCandidate(word: "nise", kind: .raw)],
+                                           wordSearch: wordSearch)
+        let compoundWords = generated.filter { $0.kind == .compound }.map(\.word)
+
+        XCTAssertFalse(compoundWords.contains("二世"))
+    }
+
     func testCompoundGenerationRejectsSymbolSegments() throws {
         let wordSearch = try XCTUnwrap(wordSearch)
         wordSearch.register(word: "ん", reading: "n")
