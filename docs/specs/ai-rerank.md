@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-05-23 (ログ由来評価ループとlattice短数値segment抑制)
+> Last updated: 2026-05-23 (ログ由来長文phraseとexact読みrerank改善)
 
 ## 概要
 
@@ -98,6 +98,10 @@ External command は stdout に JSON を返す。
 - `zenz`: 同梱Zenzの制約付きgreedy生成候補
 - `google`: Google Input Tools 候補
 - `kana`: ひらがな/カタカナ候補
+
+## In-process local rerank scoring
+
+Swift heuristic rerank は source bias / kind bias / reading一致 / 漢字含有 / script transition penalty を足し合わせる。raw input は候補0に保持するが、ランキング上は強い負スコアを与える。完全一致読み (`kind=exact` かつ `reading == inputPat`) は、prefix / lattice のノイズより優先されるよう追加 bonus を与える。特に長い exact phrase は、ログ由来の `imanodankaideha -> 今の段階では` のような長文候補を `今野...` 系のprefix複合より上げるため、短い exact より大きく補正する。
 
 ## CandidateGenerator lattice scoring
 

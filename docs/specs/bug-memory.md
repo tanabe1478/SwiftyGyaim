@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-05-23 (BUG-011追加)
+> Last updated: 2026-05-23 (BUG-012追加)
 
 ## 概要
 
@@ -174,6 +174,21 @@
   - ログ由来 watchlist を `CandidatePipelineFeedbackTests` に追加
 - **検証**: `testFeedbackWatchlistCasesHaveExpectedCandidateNearTop` で `jikaikidougo -> 次回起動後` が上位5件に入ることを確認
 - **教訓**: 実ログの accepted rank が悪いケースは候補生成の探索幅不足・短segmentノイズ・局所複合語不足のいずれかに分解し、テスト化してから生成側を直す。
+
+### BUG-012: 長文phraseで自然な助詞分割候補が人名prefix複合に負ける
+
+- **発見日**: 2026-05-23
+- **症状**: ログ由来ケース `imanodankaideha` で、期待候補 `今の段階では` が `今野段階では` / `居間載段階では` などより下位になる
+- **影響**: 長文phrase入力で自然な助詞分割候補が見つかっていても、辞書内の人名・同音prefix複合に押し流される
+- **原因**:
+  - connection辞書に `imanodankaideha -> 今の段階では` がなく、prefix/compound候補だけで競っていた
+  - Swift heuristic rerank の exact reading bonus が弱く、長い完全一致phraseが prefix ノイズに勝ちにくかった
+- **修正**:
+  - connection辞書に `imanodankaideha\t今の段階では\t3\t4` を追加
+  - `AIReranker.localRerank` で `kind=exact` かつ reading完全一致の候補に追加 bonus を付与し、長い exact phrase を強めに補正
+  - lattice 側に `今 + の + 段階 + では` の複合語 bonus を追加
+- **検証**: `testFeedbackWatchlistCasesHaveExpectedCandidateNearTop` に `imanodankaideha -> 今の段階では` を追加し上位5件入りを確認
+- **教訓**: ログで選ばれた長文phraseは辞書エントリ化と exact rerank 補正の両方で扱う。prefix複合の順位だけを個別に下げるより、正解候補を exact として上げる方が安全。
 
 ## パターン集
 
