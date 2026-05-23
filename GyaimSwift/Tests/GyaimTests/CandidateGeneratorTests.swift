@@ -36,7 +36,7 @@ final class CandidateGeneratorTests: XCTestCase {
         }
     }
 
-    func testGenerateAddsCompoundCandidates() throws {
+    func testGenerateAddsLatticeCandidates() throws {
         let wordSearch = try XCTUnwrap(wordSearch)
         wordSearch.register(word: "変換", reading: "henkan")
         wordSearch.register(word: "候補", reading: "kouho")
@@ -47,8 +47,8 @@ final class CandidateGeneratorTests: XCTestCase {
                                            baseCandidates: [SearchCandidate(word: "henkankouho", reading: "henkankouho")],
                                            wordSearch: wordSearch)
 
-        let compound = generated.first { $0.word == "変換候補" }
-        XCTAssertEqual(compound?.kind, .compound)
+        let lattice = generated.first { $0.word == "変換候補" }
+        XCTAssertEqual(lattice?.kind, .lattice)
     }
 
     func testGenerateAddsSuffixCompletionsWithoutDuplicatingBaseCandidates() {
@@ -70,7 +70,7 @@ final class CandidateGeneratorTests: XCTestCase {
         XCTAssertFalse(words.contains("konkaiでした"), "raw romaji candidate should not receive Japanese suffixes")
     }
 
-    func testCompoundScoringPenalizesUnnaturalScriptTransitions() throws {
+    func testLatticeScoringPenalizesUnnaturalScriptTransitions() throws {
         let wordSearch = try XCTUnwrap(wordSearch)
         wordSearch.register(word: "追う", reading: "ou")
         wordSearch.register(word: "集", reading: "syuu")
@@ -82,16 +82,16 @@ final class CandidateGeneratorTests: XCTestCase {
                                            context: "",
                                            baseCandidates: [SearchCandidate(word: "ousyuusuru", kind: .raw)],
                                            wordSearch: wordSearch)
-        let compoundWords = generated.filter { $0.kind == .compound }.map(\.word)
+        let latticeWords = generated.filter { $0.kind == .lattice }.map(\.word)
 
-        XCTAssertTrue(compoundWords.contains("押収する"), "Expected natural compound in \(compoundWords)")
-        if let naturalIndex = compoundWords.firstIndex(of: "押収する"),
-           let unnaturalIndex = compoundWords.firstIndex(of: "追う集する") {
+        XCTAssertTrue(latticeWords.contains("押収する"), "Expected natural lattice candidate in \(latticeWords)")
+        if let naturalIndex = latticeWords.firstIndex(of: "押収する"),
+           let unnaturalIndex = latticeWords.firstIndex(of: "追う集する") {
             XCTAssertLessThan(naturalIndex, unnaturalIndex)
         }
     }
 
-    func testCompoundGenerationSkipsVeryShortQueries() throws {
+    func testLatticeGenerationSkipsVeryShortQueries() throws {
         let wordSearch = try XCTUnwrap(wordSearch)
         wordSearch.register(word: "二", reading: "ni")
         wordSearch.register(word: "世", reading: "se")
@@ -101,12 +101,12 @@ final class CandidateGeneratorTests: XCTestCase {
                                            context: "",
                                            baseCandidates: [SearchCandidate(word: "nise", kind: .raw)],
                                            wordSearch: wordSearch)
-        let compoundWords = generated.filter { $0.kind == .compound }.map(\.word)
+        let latticeWords = generated.filter { $0.kind == .lattice }.map(\.word)
 
-        XCTAssertFalse(compoundWords.contains("二世"))
+        XCTAssertFalse(latticeWords.contains("二世"))
     }
 
-    func testCompoundGenerationRejectsSymbolSegments() throws {
+    func testLatticeGenerationRejectsSymbolSegments() throws {
         let wordSearch = try XCTUnwrap(wordSearch)
         wordSearch.register(word: "ん", reading: "n")
         wordSearch.register(word: "∩", reading: "ando")
@@ -118,9 +118,9 @@ final class CandidateGeneratorTests: XCTestCase {
                                            context: "",
                                            baseCandidates: [SearchCandidate(word: "nandoka", kind: .raw)],
                                            wordSearch: wordSearch)
-        let compoundWords = generated.filter { $0.kind == .compound }.map(\.word)
+        let latticeWords = generated.filter { $0.kind == .lattice }.map(\.word)
 
-        XCTAssertFalse(compoundWords.contains("ん∩か"))
-        XCTAssertTrue(compoundWords.contains("何度か"))
+        XCTAssertFalse(latticeWords.contains("ん∩か"))
+        XCTAssertTrue(latticeWords.contains("何度か"))
     }
 }
