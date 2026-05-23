@@ -42,6 +42,16 @@ final class LlamaZenzContext {
         let score: Float
     }
 
+    struct CandidateEvaluation {
+        struct Alternative {
+            let prefix: String
+            let probabilityRatio: Float
+        }
+
+        let fixRequiredPrefix: String?
+        let alternatives: [Alternative]
+    }
+
     init(modelURL: URL) throws {
         llama_backend_init()
 
@@ -173,6 +183,12 @@ final class LlamaZenzContext {
     }
 
     func preferredPrefix(prompt: String, candidateText: String) -> String? {
+        evaluateCandidate(prompt: prompt, candidateText: candidateText, alternativeLimit: 0)?.fixRequiredPrefix
+    }
+
+    func evaluateCandidate(prompt: String,
+                           candidateText: String,
+                           alternativeLimit: Int) -> CandidateEvaluation? {
         let promptTokens = encode(prompt, addBOS: true)
         let candidateTokens = encode(candidateText, addBOS: false)
         guard !promptTokens.isEmpty, !candidateTokens.isEmpty else { return nil }
@@ -180,18 +196,35 @@ final class LlamaZenzContext {
         let startOffset = promptTokens.count - 1
         guard let logits = logits(tokens: tokens, startOffset: startOffset, seqId: generationSeqId) else { return nil }
         let vocabCount = vocabSize
+        let promptText = promptTokens.compactMap(piece(for:)).joined()
+        var alternatives: [CandidateEvaluation.Alternative] = []
+
         for (tokenIndex, tokenID) in tokens.enumerated().dropFirst(promptTokens.count) {
             let startIndex = (tokenIndex - 1 - startOffset) * vocabCount
-            let best = bestToken(logits: logits, startIndex: startIndex, count: vocabCount)
-            guard best != tokenID else { continue }
-            guard best != llama_vocab_eos(vocab) else { return nil }
-            let prefixTokens = Array(tokens[..<tokenIndex]) + [best]
-            let prefix = prefixTokens.compactMap(piece(for:)).joined()
-            let promptText = promptTokens.compactMap(piece(for:)).joined()
-            guard prefix.hasPrefix(promptText) else { return nil }
-            return String(prefix.dropFirst(promptText.count))
+            let top = topTokens(from: logits.advanced(by: startIndex), limit: max(1, alternativeLimit + 1))
+            guard let best = top.first else { return nil }
+            if best.token != tokenID {
+                guard best.token != llama_vocab_eos(vocab),
+                      let prefix = decodedCandidatePrefix(tokens: Array(tokens[..<tokenIndex]) + [best.token],
+                                                          promptText: promptText) else { return nil }
+                return CandidateEvaluation(fixRequiredPrefix: prefix, alternatives: [])
+            }
+
+            for alternative in top.dropFirst().prefix(alternativeLimit) where alternative.token != llama_vocab_eos(vocab) {
+                guard let prefix = decodedCandidatePrefix(tokens: Array(tokens[..<tokenIndex]) + [alternative.token],
+                                                          promptText: promptText) else { continue }
+                let ratio = expf(alternative.score - best.score)
+                alternatives.append(CandidateEvaluation.Alternative(prefix: prefix, probabilityRatio: ratio))
+            }
         }
-        return nil
+        return CandidateEvaluation(fixRequiredPrefix: nil,
+                                   alternatives: alternatives.sorted { $0.probabilityRatio > $1.probabilityRatio })
+    }
+
+    private func decodedCandidatePrefix(tokens: [llama_token], promptText: String) -> String? {
+        let text = tokens.compactMap(piece(for:)).joined()
+        guard text.hasPrefix(promptText) else { return nil }
+        return String(text.dropFirst(promptText.count))
     }
 
     private func encode(_ text: String, addBOS: Bool) -> [llama_token] {

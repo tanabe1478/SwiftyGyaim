@@ -178,23 +178,51 @@ final class BundledZenzRuntime: ZenzRuntime {
         defer { lock.unlock() }
         guard let activeContext = context else { return [] }
         let prompt = Self.prompt(for: request)
+        let localOrder = AIReranker.localRerank(request, model: identifier).order
+        let candidatesByIndex = Dictionary(uniqueKeysWithValues: request.candidates.map { ($0.index, $0) })
         var seen = Set(request.candidates.map(\.text))
         var alternatives: [SearchCandidate] = []
-        for candidate in request.candidates where alternatives.count < limit {
-            guard candidate.kind != CandidateKind.raw.rawValue,
-                  let prefix = activeContext.preferredPrefix(prompt: prompt, candidateText: candidate.text),
-                  let cleaned = Self.cleanGeneratedCandidate(prefix, inputPat: request.inputPat),
-                  seen.insert(cleaned).inserted else { continue }
-            Log.input.info("Zenz alternative constraint: input=\"\(request.inputPat)\" base=\"\(candidate.text)\" prefix=\"\(cleaned)\"")
-            alternatives.append(SearchCandidate(word: cleaned,
-                                                reading: request.inputPat,
-                                                source: .synthetic,
-                                                kind: .zenz))
+
+        for index in localOrder where alternatives.count < limit {
+            guard let candidate = candidatesByIndex[index], candidate.kind != CandidateKind.raw.rawValue,
+                  let evaluation = activeContext.evaluateCandidate(prompt: prompt,
+                                                                   candidateText: candidate.text,
+                                                                   alternativeLimit: 2) else { continue }
+            if let fixed = evaluation.fixRequiredPrefix,
+               appendAlternative(fixed,
+                                 base: candidate,
+                                 inputPat: request.inputPat,
+                                 seen: &seen,
+                                 alternatives: &alternatives) {
+                break
+            }
+            for alternative in evaluation.alternatives where alternative.probabilityRatio > 0.25 && alternatives.count < limit {
+                _ = appendAlternative(alternative.prefix,
+                                      base: candidate,
+                                      inputPat: request.inputPat,
+                                      seen: &seen,
+                                      alternatives: &alternatives)
+            }
         }
         return alternatives
         #else
         return []
         #endif
+    }
+
+    private func appendAlternative(_ prefix: String,
+                                   base: AIRerankCandidate,
+                                   inputPat: String,
+                                   seen: inout Set<String>,
+                                   alternatives: inout [SearchCandidate]) -> Bool {
+        guard let cleaned = Self.cleanGeneratedCandidate(prefix, inputPat: inputPat),
+              seen.insert(cleaned).inserted else { return false }
+        Log.input.info("Zenz alternative constraint: input=\"\(inputPat)\" base=\"\(base.text)\" prefix=\"\(cleaned)\"")
+        alternatives.append(SearchCandidate(word: cleaned,
+                                            reading: inputPat,
+                                            source: .synthetic,
+                                            kind: .zenz))
+        return true
     }
 
     static func prompt(for request: AIRerankRequest) -> String {
