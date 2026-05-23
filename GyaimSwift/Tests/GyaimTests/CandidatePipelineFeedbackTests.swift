@@ -2,6 +2,17 @@
 import XCTest
 
 final class CandidatePipelineFeedbackTests: XCTestCase {
+    private struct FeedbackCase: Decodable {
+        let input: String
+        let expected: String
+        let assertion: Assertion
+        let note: String?
+
+        enum Assertion: String, Decodable {
+            case top5
+            case learnedTop1
+        }
+    }
     private var tempDir: URL!
     private var wordSearch: WordSearch!
 
@@ -60,47 +71,58 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
         XCTAssertEqual(reranked.first?.word, "陽性")
     }
 
-    func testFeedbackWatchlistCasesHaveExpectedCandidateNearTop() {
-        let cases: [(input: String, expected: String)] = [
-            ("nise", "偽"),
-            ("yousei", "陽性"),
-            ("kaizenn", "改善"),
-            ("nisemono", "偽物"),
-            ("jikaikidougo", "次回起動後"),
-            ("sunda", "済んだ"),
-            ("ayamatta", "誤った"),
-            ("kiiteru", "利いてる"),
-            ("kiitenai", "利いてない"),
-            ("kyouka", "強化"),
-            ("imanodankaideha", "今の段階では"),
-            ("hasirasenakute", "走らせなくて"),
-            ("tukattemitara", "使ってみたら")
-        ]
+    func testFeedbackFixtureTop5Cases() throws {
+        let cases = try loadFeedbackCases().filter { $0.assertion == .top5 }
+        var report: [String] = []
 
         for item in cases {
             let reranked = locallyReranked(candidates: generatedCandidates(for: item.input), inputPat: item.input)
-            let head = Array(reranked.prefix(5)).map(\.word)
-            XCTAssertTrue(head.contains(item.expected), "Expected \(item.expected) near top for \(item.input): \(head)")
+            let words = reranked.map(\.word)
+            let rank = index(of: item.expected, in: words)
+            let head = Array(words.prefix(5))
+            report.append("- \(item.input): expected=\(item.expected) rank=\(rank == Int.max ? -1 : rank + 1) head=\(head)")
+            XCTAssertLessThan(rank, 5, "Expected \(item.expected) in top5 for \(item.input): \(head)")
         }
+        writeFeedbackReport(title: "Top5 fixture", lines: report)
     }
 
-    func testLearnedFeedbackCasesBecomeTopCandidate() {
-        let cases: [(input: String, expected: String)] = [
-            ("sunda", "済んだ"),
-            ("ayamatta", "誤った"),
-            ("kiiteru", "利いてる"),
-            ("kiitenai", "利いてない"),
-            ("kyouka", "強化")
-        ]
+    func testFeedbackFixtureLearnedTop1Cases() throws {
+        let cases = try loadFeedbackCases().filter { $0.assertion == .learnedTop1 }
+        var report: [String] = []
 
         for item in cases {
             wordSearch.study(word: item.expected, reading: item.input)
             let reranked = locallyReranked(candidates: generatedCandidates(for: item.input), inputPat: item.input)
             let head = Array(reranked.prefix(5)).map(\.word)
+            report.append("- \(item.input): expected=\(item.expected) head=\(head)")
             XCTAssertEqual(reranked.first?.word,
                            item.expected,
                            "Expected learned \(item.expected) top1 for \(item.input): \(head)")
         }
+        writeFeedbackReport(title: "Learned top1 fixture", lines: report)
+    }
+
+    private func loadFeedbackCases() throws -> [FeedbackCase] {
+        let fixture = URL(fileURLWithPath: #file)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/candidate-feedback-cases.json")
+        let data = try Data(contentsOf: fixture)
+        return try JSONDecoder().decode([FeedbackCase].self, from: data)
+    }
+
+    private func writeFeedbackReport(title: String, lines: [String]) {
+        let output = ProcessInfo.processInfo.environment["GYAIM_FEEDBACK_REPORT"].map(URL.init(fileURLWithPath:))
+            ?? FileManager.default.temporaryDirectory.appendingPathComponent("gyaim-candidate-feedback-report.md")
+        let section = (["# \(title)", ""] + lines).joined(separator: "\n") + "\n"
+        if FileManager.default.fileExists(atPath: output.path),
+           let handle = try? FileHandle(forWritingTo: output) {
+            defer { try? handle.close() }
+            try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(("\n" + section).utf8))
+        } else {
+            try? section.write(to: output, atomically: true, encoding: .utf8)
+        }
+        print("Candidate feedback report: \(output.path)")
     }
 
     private func generatedCandidates(for inputPat: String) -> [SearchCandidate] {
