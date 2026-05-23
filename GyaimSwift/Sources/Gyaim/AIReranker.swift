@@ -94,6 +94,7 @@ enum AIReranker {
         switch kind {
         case "google": return 0.35
         case "exact": return 0.25
+        case "lattice": return 0.30
         case "compound": return 0.20
         case "prefix": return -0.10
         case "completion": return -0.20

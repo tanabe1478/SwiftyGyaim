@@ -92,24 +92,27 @@ External command は stdout に JSON を返す。
 - `raw`: ローマ字そのまま
 - `exact`: 読み完全一致の辞書候補
 - `prefix`: 前方一致の辞書候補
-- `compound`: CandidateGenerator の複合候補
+- `compound`: 旧CandidateGeneratorの複合候補（互換用）
+- `lattice`: CandidateGenerator の lattice/Viterbi 風候補
 - `completion`: CandidateGenerator の語尾補完候補
 - `google`: Google Input Tools 候補
 - `kana`: ひらがな/カタカナ候補
 
-## CandidateGenerator scoring
+## CandidateGenerator lattice scoring
 
-複合候補は beam search で生成し、以下を暫定的に score へ反映する。
+Tab 時の追加候補は lattice/Viterbi 風の beam search で生成し、読み全体を複数 segment に分割して候補列を探索する。単純な辞書連結よりも azooKey/Zenzai 型の「候補集合を作ってから rerank」に寄せるため、候補には `kind=lattice` を付ける。
+
+暫定 cost / score は以下を反映する。
 
 - segment reading length（長い一致を優先）
 - segment count penalty（細切れ分割を下げる）
 - source bias（study/local/connection）
 - 1文字漢字segment penalty
 - 不自然な script transition penalty（例: ひらがな終端 + 漢字開始、カタカナ + ひらがな）
-- 複合候補segmentの文字種フィルタ（かな・カナ・漢字・全角英数などを許可し、数学記号等を除外）
+- segmentの文字種フィルタ（かな・カナ・漢字・全角英数などを許可し、数学記号等を除外）
 - `漢字語 + する` bonus
 
-これにより `追う集する` / `追う集スる` のような単純連結候補を下げ、`押収する` のようなまとまりのある候補を優先する。また `ん∩か` のような辞書由来の記号segment連結は生成段階で除外する。
+これにより `追う集する` / `追う集スる` のような単純連結候補を下げ、`押収する` のようなまとまりのある候補を優先する。また `ん∩か` のような辞書由来の記号segment連結は生成段階で除外する。短い入力（例: `nise`）では lattice 分割がノイズになりやすいため生成しない。
 
 ## Validation
 

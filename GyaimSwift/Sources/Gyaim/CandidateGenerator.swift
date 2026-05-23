@@ -7,7 +7,7 @@ import Foundation
 /// expands a seed candidate list with local compound candidates and conservative
 /// suffix completions.
 struct CandidateGenerator {
-    private struct CompoundBeam {
+    private struct LatticeBeam {
         let word: String
         let reading: String
         let segments: Int
@@ -32,9 +32,9 @@ struct CandidateGenerator {
         var result = baseCandidates
         var seen = Set(baseCandidates.map(\.word))
 
-        for candidate in generateCompoundCandidates(query: inputPat,
-                                                    wordSearch: wordSearch,
-                                                    limit: compoundLimit) {
+        for candidate in generateLatticeCandidates(query: inputPat,
+                                                   wordSearch: wordSearch,
+                                                   limit: compoundLimit) {
             if seen.insert(candidate.word).inserted {
                 result.append(candidate)
             }
@@ -63,56 +63,65 @@ struct CandidateGenerator {
             && candidate.word.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) == nil
     }
 
-    private func generateCompoundCandidates(query: String,
-                                            wordSearch: WordSearch?,
-                                            limit: Int) -> [SearchCandidate] {
+    private func generateLatticeCandidates(query: String,
+                                           wordSearch: WordSearch?,
+                                           limit: Int) -> [SearchCandidate] {
         guard let wordSearch, query.count >= 5 else { return [] }
         let chars = Array(query)
-        var beams: [[CompoundBeam]] = Array(repeating: [], count: chars.count + 1)
-        beams[0] = [CompoundBeam(word: "", reading: "", segments: 0, score: 0, lastWord: nil)]
+        var beams: [[LatticeBeam]] = Array(repeating: [], count: chars.count + 1)
+        beams[0] = [LatticeBeam(word: "", reading: "", segments: 0, score: 0, lastWord: nil)]
 
         for pos in 0..<chars.count where !beams[pos].isEmpty {
-            for end in (pos + 1)...min(chars.count, pos + maxSegmentLength) {
+            let maxEnd = min(chars.count, pos + maxSegmentLength)
+            for end in (pos + 1)...maxEnd {
                 let reading = String(chars[pos..<end])
                 let segmentCandidates = wordSearch.search(query: reading,
                                                           searchMode: 1,
                                                           limit: segmentCandidateLimit)
+                    .filter { shouldUseSegmentCandidate($0, reading: reading) }
                 guard !segmentCandidates.isEmpty else { continue }
+
                 for beam in beams[pos] {
-                    for candidate in segmentCandidates where shouldUseSegmentCandidate(candidate, reading: reading) {
+                    for candidate in segmentCandidates {
                         let word = beam.word + candidate.word
                         let score = beam.score
                             + scoreSegment(candidate,
                                            reading: reading,
                                            previousWord: beam.lastWord,
                                            segmentIndex: beam.segments)
-                        beams[end].append(CompoundBeam(word: word,
-                                                       reading: beam.reading + reading,
-                                                       segments: beam.segments + 1,
-                                                       score: score,
-                                                       lastWord: candidate.word))
+                        beams[end].append(LatticeBeam(word: word,
+                                                      reading: beam.reading + reading,
+                                                      segments: beam.segments + 1,
+                                                      score: score,
+                                                      lastWord: candidate.word))
                     }
                 }
-                beams[end].sort { $0.score > $1.score }
-                if beams[end].count > beamWidth {
-                    beams[end] = Array(beams[end].prefix(beamWidth))
-                }
+                prune(&beams[end])
             }
         }
 
         var seen = Set<String>()
         return beams[chars.count]
             .filter { $0.segments >= 2 && $0.word != query && seen.insert($0.word).inserted }
-            .sorted { adjustedCompoundScore($0) > adjustedCompoundScore($1) }
+            .sorted { adjustedLatticeScore($0) > adjustedLatticeScore($1) }
             .prefix(limit)
             .map { SearchCandidate(word: $0.word,
                                     reading: $0.reading,
                                     source: .synthetic,
-                                    kind: .compound) }
+                                    kind: .lattice) }
     }
 
-    private func adjustedCompoundScore(_ beam: CompoundBeam) -> Double {
-        beam.score - unnaturalScriptTransitionPenalty(beam.word)
+    private func prune(_ beams: inout [LatticeBeam]) {
+        beams.sort { adjustedLatticeScore($0) > adjustedLatticeScore($1) }
+        if beams.count > beamWidth {
+            beams = Array(beams.prefix(beamWidth))
+        }
+    }
+
+    private func adjustedLatticeScore(_ beam: LatticeBeam) -> Double {
+        beam.score
+            - Double(max(0, beam.segments - 1)) * 0.80
+            - unnaturalScriptTransitionPenalty(beam.word)
     }
 
     private func shouldUseSegmentCandidate(_ candidate: SearchCandidate, reading: String) -> Bool {
