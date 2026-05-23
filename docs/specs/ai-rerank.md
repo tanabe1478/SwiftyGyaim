@@ -279,6 +279,13 @@ Tools/eval/extract-ime-log-cases.py \
   --study-dict /tmp/gyaim-feedback-studydict.txt
 ```
 
+固定fixtureでアプリ外の候補生成 + local rerank ループを検証する場合は以下を使う。入力fixtureは `Tests/GyaimTests/Fixtures/candidate-feedback-cases.json` に置き、top5 / learnedTop1 の期待順位をテストする。結果は `/tmp/gyaim-candidate-feedback-report.md` に出力される。
+
+```bash
+cd GyaimSwift
+Tools/eval/run-candidate-feedback.sh
+```
+
 resident server を起動した状態で、評価 runner から評価する。実用 latency を見る場合は `--server-url` で直接HTTP接続する。external command client 経由の評価は protocol 検証用。
 
 ```bash
