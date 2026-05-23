@@ -796,10 +796,14 @@ class GyaimController: IMKInputController {
 
         // Stage 1: local generation + rerank immediately. This keeps Tab responsive even
         // when Google Input Tools takes a few hundred milliseconds.
-        let localSnapshot = CandidateGenerator().generate(inputPat: query,
-                                                          context: recentCommittedText,
-                                                          baseCandidates: candidates,
-                                                          wordSearch: ws)
+        let generatedSnapshot = CandidateGenerator().generate(inputPat: query,
+                                                              context: recentCommittedText,
+                                                              baseCandidates: candidates,
+                                                              wordSearch: ws)
+        let localSnapshot = Self.appendingZenzGeneratedCandidates(to: generatedSnapshot,
+                                                                 query: query,
+                                                                 hiragana: rk.roma2hiragana(query),
+                                                                 context: recentCommittedText)
         sendAIRerankRequest(query: query,
                             snapshot: localSnapshot,
                             revision: localRevision,
@@ -842,6 +846,23 @@ class GyaimController: IMKInputController {
                                      modeLabel: "generated-google",
                                      client: sender)
         }
+    }
+
+    private static func appendingZenzGeneratedCandidates(to snapshot: [SearchCandidate],
+                                                         query: String,
+                                                         hiragana: String,
+                                                         context: String) -> [SearchCandidate] {
+        var result = snapshot
+        var seen = Set(snapshot.map(\.word))
+        let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        let generated = InProcessAIReranker.shared.generateCandidates(inputPat: query,
+                                                                      hiragana: hiragana,
+                                                                      context: trimmedContext.isEmpty ? nil : trimmedContext,
+                                                                      limit: 1)
+        for candidate in generated where seen.insert(candidate.word).inserted {
+            result.append(candidate)
+        }
+        return result
     }
 
     private func sendAIRerankRequest(query: String,

@@ -11,6 +11,10 @@ protocol AIRerankBackend {
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse
 }
 
+protocol AICandidateGenerationBackend {
+    func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate]
+}
+
 struct HeuristicAIRerankBackend: AIRerankBackend {
     let identifier = "swift-local-heuristic"
 
@@ -21,7 +25,7 @@ struct HeuristicAIRerankBackend: AIRerankBackend {
     }
 }
 
-final class BundledZenzAIRerankBackend: AIRerankBackend {
+final class BundledZenzAIRerankBackend: AIRerankBackend, AICandidateGenerationBackend {
     static let enabledDefaultsKey = "aiRerankUseBundledZenz"
 
     let identifier = "swift-local-heuristic+bundled-zenz-v3.1-xsmall-mapped"
@@ -43,5 +47,16 @@ final class BundledZenzAIRerankBackend: AIRerankBackend {
 
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse {
         runtime.rerank(request) ?? AIReranker.localRerank(request, model: identifier)
+    }
+
+    func generateCandidates(inputPat: String,
+                            hiragana: String,
+                            context: String?,
+                            limit: Int) -> [SearchCandidate] {
+        guard canRun() else { return [] }
+        return runtime.generateCandidates(inputPat: inputPat,
+                                          hiragana: hiragana,
+                                          context: context,
+                                          limit: limit)
     }
 }

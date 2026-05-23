@@ -22,6 +22,13 @@ protocol ZenzRuntime {
     var identifier: String { get }
     func prepare() -> ZenzRuntimeStatus
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse?
+    func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate]
+}
+
+extension ZenzRuntime {
+    func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate] {
+        []
+    }
 }
 
 final class BundledZenzRuntime: ZenzRuntime {
@@ -121,6 +128,38 @@ final class BundledZenzRuntime: ZenzRuntime {
         #endif
     }
 
+    func generateCandidates(inputPat: String,
+                            hiragana: String,
+                            context requestContext: String?,
+                            limit: Int) -> [SearchCandidate] {
+        #if canImport(llama)
+        let enabled = UserDefaults.standard.object(forKey: "aiRerankUseZenzGeneration") as? Bool ?? true
+        guard limit > 0, enabled else { return [] }
+        lock.lock()
+        defer { lock.unlock() }
+        guard let activeContext = context else { return [] }
+
+        let request = AIRerankRequest(version: 1,
+                                      mode: "generate",
+                                      inputPat: inputPat,
+                                      hiragana: hiragana,
+                                      context: requestContext,
+                                      candidates: [])
+        let prompt = Self.prompt(for: request)
+        guard let generated = activeContext.generate(prompt: prompt, maxTokens: 12),
+              let candidate = Self.cleanGeneratedCandidate(generated, inputPat: inputPat) else {
+            return []
+        }
+        Log.input.info("Zenz generated candidate: input=\"\(inputPat)\" text=\"\(candidate)\"")
+        return [SearchCandidate(word: candidate,
+                                reading: inputPat,
+                                source: .synthetic,
+                                kind: .zenz)]
+        #else
+        return []
+        #endif
+    }
+
     static func prompt(for request: AIRerankRequest) -> String {
         var prompt = ""
         if let context = request.context?.trimmingCharacters(in: .whitespacesAndNewlines), !context.isEmpty {
@@ -129,6 +168,47 @@ final class BundledZenzRuntime: ZenzRuntime {
         prompt += ZenzPrompt.inputTag + inputForZenz(request)
         prompt += ZenzPrompt.outputTag
         return prompt
+    }
+
+    private static func cleanGeneratedCandidate(_ text: String, inputPat: String) -> String? {
+        let stopTags = [ZenzPrompt.inputTag, ZenzPrompt.outputTag, ZenzPrompt.contextTag]
+        var candidate = text
+        for tag in stopTags {
+            if let range = candidate.range(of: tag) {
+                candidate = String(candidate[..<range.lowerBound])
+            }
+        }
+        candidate = candidate.components(separatedBy: .newlines).first ?? candidate
+        candidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty,
+              candidate != inputPat,
+              candidate.count <= 16,
+              candidate.contains(where: isJapaneseLike),
+              candidate.allSatisfy(isAllowedGeneratedCharacter) else {
+            return nil
+        }
+        return candidate
+    }
+
+    private static func isJapaneseLike(_ character: Character) -> Bool {
+        character.unicodeScalars.contains { scalar in
+            0x3040...0x309F ~= scalar.value
+                || 0x30A0...0x30FF ~= scalar.value
+                || 0x4E00...0x9FFF ~= scalar.value
+        }
+    }
+
+    private static func isAllowedGeneratedCharacter(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { scalar in
+            switch scalar.value {
+            case 0x3040...0x309F, 0x30A0...0x30FF, 0x4E00...0x9FFF,
+                 0x3005...0x3007, 0x30FC, 0xFF10...0xFF19,
+                 0xFF21...0xFF3A, 0xFF41...0xFF5A:
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     private static func inputForZenz(_ request: AIRerankRequest) -> String {

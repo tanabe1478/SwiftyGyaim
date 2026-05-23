@@ -27,6 +27,7 @@ final class LlamaZenzContext {
     private var context: OpaquePointer
     private var vocab: OpaquePointer
     private let evalSeqId: llama_seq_id = 0
+    private let generationSeqId: llama_seq_id = 1
     private var previousTokensBySeq: [llama_seq_id: [llama_token]] = [:]
 
     init(modelURL: URL) throws {
@@ -103,6 +104,26 @@ final class LlamaZenzContext {
         return logProbability / Double(continuationTokens.count)
     }
 
+    func generate(prompt: String, maxTokens: Int) -> String? {
+        var tokens = encode(prompt, addBOS: true)
+        guard !tokens.isEmpty, maxTokens > 0 else { return nil }
+        var generated: [llama_token] = []
+
+        for _ in 0..<maxTokens {
+            let startOffset = max(0, tokens.count - 1)
+            guard let logits = logits(tokens: tokens, startOffset: startOffset, seqId: generationSeqId) else {
+                return nil
+            }
+            let next = greedyToken(from: logits)
+            if next == llama_vocab_eos(vocab) { break }
+            generated.append(next)
+            tokens.append(next)
+        }
+
+        guard !generated.isEmpty else { return nil }
+        return generated.compactMap(piece(for:)).joined()
+    }
+
     private func encode(_ text: String, addBOS: Bool) -> [llama_token] {
         tokenize(text: preprocess(text), addBOS: addBOS)
     }
@@ -165,6 +186,29 @@ final class LlamaZenzContext {
         }
         batch.logits[index] = includeLogits ? 1 : 0
         batch.n_tokens += 1
+    }
+
+    private func greedyToken(from logits: UnsafeMutablePointer<Float>) -> llama_token {
+        var bestToken: llama_token = 0
+        var bestLogit = -Float.infinity
+        for token in 0..<vocabSize where logits[token] > bestLogit {
+            bestLogit = logits[token]
+            bestToken = llama_token(token)
+        }
+        return bestToken
+    }
+
+    private func piece(for token: llama_token) -> String? {
+        var buffer = [CChar](repeating: 0, count: 128)
+        let count = llama_token_to_piece(vocab, token, &buffer, Int32(buffer.count), 0, false)
+        if count < 0 {
+            var retry = [CChar](repeating: 0, count: Int(-count))
+            let retryCount = llama_token_to_piece(vocab, token, &retry, Int32(retry.count), 0, false)
+            guard retryCount > 0 else { return nil }
+            return String(bytes: retry.prefix(Int(retryCount)).map { UInt8(bitPattern: $0) }, encoding: .utf8)
+        }
+        guard count > 0 else { return nil }
+        return String(bytes: buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }, encoding: .utf8)
     }
 
     private func logSumExp(logits: UnsafeMutablePointer<Float>, startIndex: Int, count: Int) -> Float {
