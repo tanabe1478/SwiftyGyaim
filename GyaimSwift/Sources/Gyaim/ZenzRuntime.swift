@@ -146,15 +146,21 @@ final class BundledZenzRuntime: ZenzRuntime {
                                       context: requestContext,
                                       candidates: [])
         let prompt = Self.prompt(for: request)
-        guard let generated = activeContext.generate(prompt: prompt, maxTokens: 12),
-              let candidate = Self.cleanGeneratedCandidate(generated, inputPat: inputPat) else {
-            return []
+        var seen = Set<String>()
+        let generated = activeContext.generateAlternatives(prompt: prompt,
+                                                           maxTokens: 12,
+                                                           beamWidth: Self.generationBeamWidth(),
+                                                           limit: limit)
+        let candidates = generated.compactMap { text -> SearchCandidate? in
+            guard let candidate = Self.cleanGeneratedCandidate(text, inputPat: inputPat),
+                  seen.insert(candidate).inserted else { return nil }
+            Log.input.info("Zenz generated candidate: input=\"\(inputPat)\" text=\"\(candidate)\"")
+            return SearchCandidate(word: candidate,
+                                   reading: inputPat,
+                                   source: .synthetic,
+                                   kind: .zenz)
         }
-        Log.input.info("Zenz generated candidate: input=\"\(inputPat)\" text=\"\(candidate)\"")
-        return [SearchCandidate(word: candidate,
-                                reading: inputPat,
-                                source: .synthetic,
-                                kind: .zenz)]
+        return Array(candidates.prefix(limit))
         #else
         return []
         #endif
@@ -230,6 +236,11 @@ final class BundledZenzRuntime: ZenzRuntime {
     private static func scoreWeight() -> Double {
         let configured = UserDefaults.standard.double(forKey: "aiRerankZenzWeight")
         return configured > 0 ? configured : 0.30
+    }
+
+    private static func generationBeamWidth() -> Int {
+        let configured = UserDefaults.standard.integer(forKey: "aiRerankZenzGenerationBeamWidth")
+        return configured > 0 ? min(configured, 6) : 1
     }
 
     private static func maxScoredCandidates() -> Int {

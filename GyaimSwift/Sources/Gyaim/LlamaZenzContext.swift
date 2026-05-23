@@ -30,6 +30,18 @@ final class LlamaZenzContext {
     private let generationSeqId: llama_seq_id = 1
     private var previousTokensBySeq: [llama_seq_id: [llama_token]] = [:]
 
+    private struct GenerationBeam {
+        let tokens: [llama_token]
+        let generated: [llama_token]
+        let score: Float
+        let finished: Bool
+    }
+
+    private struct TokenScore {
+        let token: llama_token
+        let score: Float
+    }
+
     init(modelURL: URL) throws {
         llama_backend_init()
 
@@ -105,23 +117,59 @@ final class LlamaZenzContext {
     }
 
     func generate(prompt: String, maxTokens: Int) -> String? {
-        var tokens = encode(prompt, addBOS: true)
-        guard !tokens.isEmpty, maxTokens > 0 else { return nil }
-        var generated: [llama_token] = []
+        generateAlternatives(prompt: prompt, maxTokens: maxTokens, beamWidth: 1, limit: 1).first
+    }
 
+    func generateAlternatives(prompt: String,
+                              maxTokens: Int,
+                              beamWidth: Int,
+                              limit: Int) -> [String] {
+        let promptTokens = encode(prompt, addBOS: true)
+        guard !promptTokens.isEmpty, maxTokens > 0, beamWidth > 0, limit > 0 else { return [] }
+
+        var beams = [GenerationBeam(tokens: promptTokens,
+                                    generated: [],
+                                    score: 0,
+                                    finished: false)]
         for _ in 0..<maxTokens {
-            let startOffset = max(0, tokens.count - 1)
-            guard let logits = logits(tokens: tokens, startOffset: startOffset, seqId: generationSeqId) else {
-                return nil
+            var expanded: [GenerationBeam] = []
+            for beam in beams {
+                if beam.finished {
+                    expanded.append(beam)
+                    continue
+                }
+                let startOffset = max(0, beam.tokens.count - 1)
+                guard let logits = logits(tokens: beam.tokens,
+                                          startOffset: startOffset,
+                                          seqId: generationSeqId) else {
+                    continue
+                }
+                for next in topTokens(from: logits, limit: beamWidth) {
+                    var tokens = beam.tokens
+                    var generated = beam.generated
+                    let finished = next.token == llama_vocab_eos(vocab)
+                    tokens.append(next.token)
+                    if !finished { generated.append(next.token) }
+                    expanded.append(GenerationBeam(tokens: tokens,
+                                                   generated: generated,
+                                                   score: beam.score + next.score,
+                                                   finished: finished))
+                }
             }
-            let next = greedyToken(from: logits)
-            if next == llama_vocab_eos(vocab) { break }
-            generated.append(next)
-            tokens.append(next)
+            beams = Array(expanded.sorted { $0.score > $1.score }.prefix(beamWidth))
+            if beams.allSatisfy(\.finished) { break }
         }
 
-        guard !generated.isEmpty else { return nil }
-        return generated.compactMap(piece(for:)).joined()
+        var seen = Set<String>()
+        return beams
+            .sorted { $0.score > $1.score }
+            .compactMap { beam -> String? in
+                guard !beam.generated.isEmpty else { return nil }
+                let text = beam.generated.compactMap(piece(for:)).joined()
+                return seen.insert(text).inserted ? text : nil
+            }
+            .prefix(limit)
+            .map { $0 }
     }
 
     private func encode(_ text: String, addBOS: Bool) -> [llama_token] {
@@ -189,13 +237,18 @@ final class LlamaZenzContext {
     }
 
     private func greedyToken(from logits: UnsafeMutablePointer<Float>) -> llama_token {
-        var bestToken: llama_token = 0
-        var bestLogit = -Float.infinity
-        for token in 0..<vocabSize where logits[token] > bestLogit {
-            bestLogit = logits[token]
-            bestToken = llama_token(token)
+        topTokens(from: logits, limit: 1).first?.token ?? 0
+    }
+
+    private func topTokens(from logits: UnsafeMutablePointer<Float>, limit: Int) -> [TokenScore] {
+        var best: [TokenScore] = []
+        for token in 0..<vocabSize {
+            let tokenScore = TokenScore(token: llama_token(token), score: logits[token])
+            best.append(tokenScore)
+            best.sort { $0.score > $1.score }
+            if best.count > limit { best.removeLast() }
         }
-        return bestToken
+        return best
     }
 
     private func piece(for token: llama_token) -> String? {
