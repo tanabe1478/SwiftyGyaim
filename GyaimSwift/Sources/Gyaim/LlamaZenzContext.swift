@@ -172,6 +172,28 @@ final class LlamaZenzContext {
             .map { $0 }
     }
 
+    func preferredPrefix(prompt: String, candidateText: String) -> String? {
+        let promptTokens = encode(prompt, addBOS: true)
+        let candidateTokens = encode(candidateText, addBOS: false)
+        guard !promptTokens.isEmpty, !candidateTokens.isEmpty else { return nil }
+        let tokens = promptTokens + candidateTokens
+        let startOffset = promptTokens.count - 1
+        guard let logits = logits(tokens: tokens, startOffset: startOffset, seqId: generationSeqId) else { return nil }
+        let vocabCount = vocabSize
+        for (tokenIndex, tokenID) in tokens.enumerated().dropFirst(promptTokens.count) {
+            let startIndex = (tokenIndex - 1 - startOffset) * vocabCount
+            let best = bestToken(logits: logits, startIndex: startIndex, count: vocabCount)
+            guard best != tokenID else { continue }
+            guard best != llama_vocab_eos(vocab) else { return nil }
+            let prefixTokens = Array(tokens[..<tokenIndex]) + [best]
+            let prefix = prefixTokens.compactMap(piece(for:)).joined()
+            let promptText = promptTokens.compactMap(piece(for:)).joined()
+            guard prefix.hasPrefix(promptText) else { return nil }
+            return String(prefix.dropFirst(promptText.count))
+        }
+        return nil
+    }
+
     private func encode(_ text: String, addBOS: Bool) -> [llama_token] {
         tokenize(text: preprocess(text), addBOS: addBOS)
     }
@@ -234,6 +256,16 @@ final class LlamaZenzContext {
         }
         batch.logits[index] = includeLogits ? 1 : 0
         batch.n_tokens += 1
+    }
+
+    private func bestToken(logits: UnsafeMutablePointer<Float>, startIndex: Int, count: Int) -> llama_token {
+        var best: llama_token = 0
+        var bestLogit = -Float.infinity
+        for index in 0..<count where logits[startIndex + index] > bestLogit {
+            bestLogit = logits[startIndex + index]
+            best = llama_token(index)
+        }
+        return best
     }
 
     private func greedyToken(from logits: UnsafeMutablePointer<Float>) -> llama_token {
