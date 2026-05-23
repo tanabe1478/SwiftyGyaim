@@ -23,10 +23,15 @@ protocol ZenzRuntime {
     func prepare() -> ZenzRuntimeStatus
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse?
     func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate]
+    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate]
 }
 
 extension ZenzRuntime {
     func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate] {
+        []
+    }
+
+    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate] {
         []
     }
 }
@@ -161,6 +166,32 @@ final class BundledZenzRuntime: ZenzRuntime {
                                    kind: .zenz)
         }
         return Array(candidates.prefix(limit))
+        #else
+        return []
+        #endif
+    }
+
+    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate] {
+        #if canImport(llama)
+        guard limit > 0 else { return [] }
+        lock.lock()
+        defer { lock.unlock() }
+        guard let activeContext = context else { return [] }
+        let prompt = Self.prompt(for: request)
+        var seen = Set(request.candidates.map(\.text))
+        var alternatives: [SearchCandidate] = []
+        for candidate in request.candidates where alternatives.count < limit {
+            guard candidate.kind != CandidateKind.raw.rawValue,
+                  let prefix = activeContext.preferredPrefix(prompt: prompt, candidateText: candidate.text),
+                  let cleaned = Self.cleanGeneratedCandidate(prefix, inputPat: request.inputPat),
+                  seen.insert(cleaned).inserted else { continue }
+            Log.input.info("Zenz alternative constraint: input=\"\(request.inputPat)\" base=\"\(candidate.text)\" prefix=\"\(cleaned)\"")
+            alternatives.append(SearchCandidate(word: cleaned,
+                                                reading: request.inputPat,
+                                                source: .synthetic,
+                                                kind: .zenz))
+        }
+        return alternatives
         #else
         return []
         #endif

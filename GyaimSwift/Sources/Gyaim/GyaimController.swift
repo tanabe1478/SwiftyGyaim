@@ -800,10 +800,14 @@ class GyaimController: IMKInputController {
                                                               context: recentCommittedText,
                                                               baseCandidates: candidates,
                                                               wordSearch: ws)
-        let localSnapshot = Self.appendingZenzGeneratedCandidates(to: generatedSnapshot,
-                                                                 query: query,
-                                                                 hiragana: rk.roma2hiragana(query),
-                                                                 context: recentCommittedText)
+        let zenzGeneratedSnapshot = Self.appendingZenzGeneratedCandidates(to: generatedSnapshot,
+                                                                         query: query,
+                                                                         hiragana: rk.roma2hiragana(query),
+                                                                         context: recentCommittedText)
+        let localSnapshot = Self.appendingZenzAlternativeCandidates(to: zenzGeneratedSnapshot,
+                                                                   query: query,
+                                                                   hiragana: rk.roma2hiragana(query),
+                                                                   context: recentCommittedText)
         sendAIRerankRequest(query: query,
                             snapshot: localSnapshot,
                             revision: localRevision,
@@ -860,6 +864,32 @@ class GyaimController: IMKInputController {
                                                                       context: trimmedContext.isEmpty ? nil : trimmedContext,
                                                                       limit: 1)
         for candidate in generated where seen.insert(candidate.word).inserted {
+            result.append(candidate)
+        }
+        return result
+    }
+
+    private static func appendingZenzAlternativeCandidates(to snapshot: [SearchCandidate],
+                                                           query: String,
+                                                           hiragana: String,
+                                                           context: String) -> [SearchCandidate] {
+        var result = snapshot
+        var seen = Set(snapshot.map(\.word))
+        let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        let request = AIRerankRequest(version: 1,
+                                      mode: "alternative",
+                                      inputPat: query,
+                                      hiragana: hiragana,
+                                      context: trimmedContext.isEmpty ? nil : trimmedContext,
+                                      candidates: snapshot.enumerated().map { index, candidate in
+                                          AIRerankCandidate(index: index,
+                                                            text: candidate.word,
+                                                            reading: candidate.reading,
+                                                            source: String(describing: candidate.source),
+                                                            kind: candidate.kind.rawValue)
+                                      })
+        let alternatives = InProcessAIReranker.shared.alternativeCandidates(for: request, limit: 2)
+        for candidate in alternatives where seen.insert(candidate.word).inserted {
             result.append(candidate)
         }
         return result

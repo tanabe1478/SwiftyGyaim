@@ -13,6 +13,7 @@ protocol AIRerankBackend {
 
 protocol AICandidateGenerationBackend {
     func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate]
+    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate]
 }
 
 struct HeuristicAIRerankBackend: AIRerankBackend {
@@ -58,5 +59,10 @@ final class BundledZenzAIRerankBackend: AIRerankBackend, AICandidateGenerationBa
                                           hiragana: hiragana,
                                           context: context,
                                           limit: limit)
+    }
+
+    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate] {
+        guard canRun() else { return [] }
+        return runtime.alternativeCandidates(for: request, limit: limit)
     }
 }

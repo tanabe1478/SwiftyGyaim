@@ -46,4 +46,13 @@ final class InProcessAIReranker {
         }
         return []
     }
+
+    func alternativeCandidates(for request: AIRerankRequest, limit: Int = 2) -> [SearchCandidate] {
+        for backend in backends {
+            guard let generator = backend as? AICandidateGenerationBackend else { continue }
+            let candidates = generator.alternativeCandidates(for: request, limit: limit)
+            if !candidates.isEmpty { return candidates }
+        }
+        return []
+    }
 }
