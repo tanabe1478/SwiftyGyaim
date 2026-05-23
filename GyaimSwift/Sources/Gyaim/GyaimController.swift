@@ -807,7 +807,8 @@ class GyaimController: IMKInputController {
         let localSnapshot = Self.appendingZenzAlternativeCandidates(to: zenzGeneratedSnapshot,
                                                                    query: query,
                                                                    hiragana: rk.roma2hiragana(query),
-                                                                   context: recentCommittedText)
+                                                                   context: recentCommittedText,
+                                                                   wordSearch: ws)
         sendAIRerankRequest(query: query,
                             snapshot: localSnapshot,
                             revision: localRevision,
@@ -872,7 +873,8 @@ class GyaimController: IMKInputController {
     private static func appendingZenzAlternativeCandidates(to snapshot: [SearchCandidate],
                                                            query: String,
                                                            hiragana: String,
-                                                           context: String) -> [SearchCandidate] {
+                                                           context: String,
+                                                           wordSearch: WordSearch?) -> [SearchCandidate] {
         var result = snapshot
         var seen = Set(snapshot.map(\.word))
         let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -889,7 +891,15 @@ class GyaimController: IMKInputController {
                                                             kind: candidate.kind.rawValue)
                                       })
         let alternatives = InProcessAIReranker.shared.alternativeCandidates(for: request, limit: 2)
-        for candidate in alternatives where seen.insert(candidate.word).inserted {
+        let constrained = alternatives.flatMap { prefix in
+            CandidateGenerator(compoundLimit: 4, completionLimit: 0)
+                .generate(inputPat: query,
+                          context: context,
+                          baseCandidates: [],
+                          wordSearch: wordSearch,
+                          surfacePrefixes: [prefix.word])
+        }
+        for candidate in constrained where seen.insert(candidate.word).inserted {
             result.append(candidate)
         }
         return result

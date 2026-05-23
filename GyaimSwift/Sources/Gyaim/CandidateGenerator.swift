@@ -25,7 +25,8 @@ struct CandidateGenerator {
     func generate(inputPat: String,
                   context: String,
                   baseCandidates: [SearchCandidate],
-                  wordSearch: WordSearch?) -> [SearchCandidate] {
+                  wordSearch: WordSearch?,
+                  surfacePrefixes: [String] = []) -> [SearchCandidate] {
         // `context` is reserved for upcoming context-aware local generation.
         _ = context
 
@@ -34,7 +35,8 @@ struct CandidateGenerator {
 
         for candidate in generateLatticeCandidates(query: inputPat,
                                                    wordSearch: wordSearch,
-                                                   limit: compoundLimit) {
+                                                   limit: compoundLimit,
+                                                   surfacePrefixes: surfacePrefixes) {
             if seen.insert(candidate.word).inserted {
                 result.append(candidate)
             }
@@ -65,7 +67,8 @@ struct CandidateGenerator {
 
     private func generateLatticeCandidates(query: String,
                                            wordSearch: WordSearch?,
-                                           limit: Int) -> [SearchCandidate] {
+                                           limit: Int,
+                                           surfacePrefixes: [String] = []) -> [SearchCandidate] {
         guard let wordSearch, query.count >= 5 else { return [] }
         let chars = Array(query)
         var beams: [[LatticeBeam]] = Array(repeating: [], count: chars.count + 1)
@@ -100,9 +103,15 @@ struct CandidateGenerator {
             }
         }
 
+        let normalizedPrefixes = surfacePrefixes.filter { !$0.isEmpty }
         var seen = Set<String>()
         return beams[chars.count]
-            .filter { $0.segments >= 2 && $0.word != query && seen.insert($0.word).inserted }
+            .filter { beam in
+                beam.segments >= 2
+                    && beam.word != query
+                    && seen.insert(beam.word).inserted
+                    && satisfiesSurfacePrefixes(beam.word, prefixes: normalizedPrefixes)
+            }
             .sorted { adjustedLatticeScore($0) > adjustedLatticeScore($1) }
             .prefix(limit)
             .map { SearchCandidate(word: $0.word,
@@ -122,6 +131,10 @@ struct CandidateGenerator {
         beam.score
             - Double(max(0, beam.segments - 1)) * 0.80
             - unnaturalScriptTransitionPenalty(beam.word)
+    }
+
+    private func satisfiesSurfacePrefixes(_ word: String, prefixes: [String]) -> Bool {
+        prefixes.isEmpty || prefixes.contains { word.hasPrefix($0) }
     }
 
     private func shouldUseSegmentCandidate(_ candidate: SearchCandidate, reading: String) -> Bool {
