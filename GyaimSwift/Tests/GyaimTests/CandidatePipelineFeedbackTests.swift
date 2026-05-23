@@ -64,7 +64,9 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
         let cases: [(input: String, expected: String)] = [
             ("nise", "偽"),
             ("yousei", "陽性"),
-            ("kaizenn", "改善")
+            ("kaizenn", "改善"),
+            ("nisemono", "偽物"),
+            ("jikaikidougo", "次回起動後")
         ]
 
         for item in cases {

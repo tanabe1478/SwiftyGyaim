@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-05-22 (BUG-010追加)
+> Last updated: 2026-05-23 (BUG-011追加)
 
 ## 概要
 
@@ -157,6 +157,23 @@
   - Zenz scoring の既定対象を上位8件に減らし、raw input を scoring 対象から除外してTab latencyを削減
 - **検証**: `testCompoundGenerationRejectsSymbolSegments` を追加
 - **教訓**: rerankerで下げられるノイズでも、生成段階で排除できるものは排除する。特に辞書由来の記号・数式文字は日本語IME候補として別扱いにする。
+
+### BUG-011: 長文lattice候補で短い数値segmentと低順位同音語が上位化する
+
+- **発見日**: 2026-05-23
+- **症状**: ログ由来ケース `jikaikidougo` で、期待候補 `次回起動後` より `次回起動５` / `次回木戸動` / `次回軌道後` などが上位に出る
+- **影響**: Tab AI候補生成が、実際にユーザーが選んだ複合語を上位に戻せない
+- **原因**:
+  - lattice の segment 候補上限が狭く、`kidou -> 起動` のような辞書内で少し下位の候補が探索から落ちやすかった
+  - `go -> ５` / `五` のような短い数値候補が長文lattice内で文脈なしに高スコア化していた
+  - 一般的な複合語（例: `起動後`）への局所的な補正がなかった
+- **修正**:
+  - segment候補上限を5に拡張
+  - 短い読みの数値segmentをlattice生成から除外
+  - `起動 + 後` などログで観測された一般的な複合語に bonus を追加
+  - ログ由来 watchlist を `CandidatePipelineFeedbackTests` に追加
+- **検証**: `testFeedbackWatchlistCasesHaveExpectedCandidateNearTop` で `jikaikidougo -> 次回起動後` が上位5件に入ることを確認
+- **教訓**: 実ログの accepted rank が悪いケースは候補生成の探索幅不足・短segmentノイズ・局所複合語不足のいずれかに分解し、テスト化してから生成側を直す。
 
 ## パターン集
 
