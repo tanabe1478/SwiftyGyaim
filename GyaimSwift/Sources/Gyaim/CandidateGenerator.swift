@@ -20,7 +20,7 @@ struct CandidateGenerator {
     var suffixes = ["でした", "です", "だった", "でした。", "です。"]
     var maxSegmentLength = 12
     var beamWidth = 8
-    var segmentCandidateLimit = 3
+    var segmentCandidateLimit = 5
 
     func generate(inputPat: String,
                   context: String,
@@ -141,6 +141,7 @@ struct CandidateGenerator {
         candidate.word != reading
             && !candidate.word.isEmpty
             && candidate.word.allSatisfy(isAllowedCompoundCharacter)
+            && !isShortNumericSegment(word: candidate.word, reading: reading)
     }
 
     private func scoreSegment(_ candidate: SearchCandidate,
@@ -156,6 +157,7 @@ struct CandidateGenerator {
             if previousWord.allSatisfy(isKanji) && candidate.word == "する" {
                 score += 0.80
             }
+            score += commonCompoundBonus(previous: previousWord, next: candidate.word)
         }
         return score
     }
@@ -184,6 +186,19 @@ struct CandidateGenerator {
         return penalty
     }
 
+    private func commonCompoundBonus(previous: String, next: String) -> Double {
+        switch (previous, next) {
+        case ("起動", "後"),
+             ("更新", "後"),
+             ("変更", "後"),
+             ("修正", "後"),
+             ("改善", "点"):
+            return 1.20
+        default:
+            return 0
+        }
+    }
+
     private func transitionPenalty(previous: String, next: String) -> Double {
         guard let previousLast = previous.last, let nextFirst = next.first else { return 0 }
         if isHiragana(previousLast) && isKanji(nextFirst) {
@@ -208,6 +223,25 @@ struct CandidateGenerator {
             }
         }
         return penalty
+    }
+
+    private func isShortNumericSegment(word: String, reading: String) -> Bool {
+        reading.count <= 2 && word.allSatisfy(isNumericCharacter)
+    }
+
+    private func isNumericCharacter(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { scalar in
+            switch scalar.value {
+            case 0x0030...0x0039, // ASCII digits
+                 0xFF10...0xFF19, // Fullwidth digits
+                 0x2460...0x2473, // Circled digits
+                 0x00B2...0x00B3, 0x00B9, // Superscript digits
+                 0x2070, 0x2074...0x2079:
+                return true
+            default:
+                return "〇零一二三四五六七八九十百千万億兆".unicodeScalars.contains(scalar)
+            }
+        }
     }
 
     private func isAllowedCompoundCharacter(_ character: Character) -> Bool {

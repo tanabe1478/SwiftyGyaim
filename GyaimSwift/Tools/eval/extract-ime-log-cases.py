@@ -187,6 +187,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--log", default="~/.gyaim/gyaim.log")
     parser.add_argument("--jsonl", help="write extracted fixed cases as JSONL")
+    parser.add_argument("--azookey-json", help="write azooKey anco evaluate-compatible JSON")
     args = parser.parse_args()
 
     fixed, search_latencies, search_by_query, ai_latencies, zenz_alt, zenz_gen = extract(Path(args.log))
@@ -199,6 +200,23 @@ def main():
             for case in fixed:
                 handle.write(json.dumps(asdict(case), ensure_ascii=False) + "\n")
         print(f"\nwrote {len(fixed)} cases to {out}")
+
+    if args.azookey_json:
+        out = Path(args.azookey_json)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        items = [
+            {
+                "query": case.reading,
+                "answer": [case.accepted],
+                "tag": [case.type],
+            }
+            for case in fixed
+            if case.type == "fixed" and case.reading and case.accepted
+        ]
+        with out.open("w", encoding="utf-8") as handle:
+            json.dump(items, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        print(f"wrote {len(items)} azooKey-compatible cases to {out}")
 
 
 if __name__ == "__main__":
