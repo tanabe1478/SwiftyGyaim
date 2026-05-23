@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-05-07 (Gictionary接続辞書インポートURL正規化)
+> Last updated: 2026-05-24 (unsafe候補フィルタ追加)
 
 ## 概要
 
@@ -58,6 +58,10 @@ https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt
 - `#` コメント行はスキップし、行末の空白+`#`以降はコメントとして削除する
 - 読みがひらがなで始まる場合は `RomaKana.hiragana2roma()` でローマ字候補に展開する。ひらがな以外で始まる場合は元の読みをそのままpatternにする
 - 単語カテゴリ/次カテゴリには出現順で1始まりのconnection番号を割り当て、次カテゴリなしは `outConnection = 0` とする
+
+## 候補安全フィルタ
+
+`WordSearch.search()` は study/local/connection 由来候補を返す直前に表示安全性を検証する。空白のみ、80文字超、改行またはNULを含む候補は除外する。これは誤学習や外部テキスト混入で、複数行のメモ・設定・secret説明文などがIME候補やログに出ることを防ぐため。
 
 ## 検索モード
 

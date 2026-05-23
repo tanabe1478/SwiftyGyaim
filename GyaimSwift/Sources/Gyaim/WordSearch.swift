@@ -312,12 +312,22 @@ class WordSearch {
                 candfound.insert(w)
             }
         }
+        candidates = candidates.filter { Self.isSafeDisplayCandidate($0.word) }
+
         // Limit results
         if limit > 0, candidates.count > limit {
             candidates = Array(candidates.prefix(limit))
         }
 
         return candidates
+    }
+
+    private static func isSafeDisplayCandidate(_ word: String) -> Bool {
+        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 80 else { return false }
+        return !trimmed.unicodeScalars.contains { scalar in
+            CharacterSet.newlines.contains(scalar) || scalar.value == 0
+        }
     }
 
     /// Register a word to the user's local dictionary.
