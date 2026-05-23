@@ -74,6 +74,7 @@ enum AIReranker {
         if candidate.text.contains(where: isKanji) {
             score += 0.10
         }
+        score += naturalFunctionWordPhraseBonus(candidate.text)
         if candidate.text == request.inputPat && candidate.text.allSatisfy(\.isASCII) {
             score -= 8.0
         }
@@ -83,6 +84,17 @@ enum AIReranker {
 
     private static func exactReadingBonus(_ text: String) -> Double {
         text.count >= 5 ? 2.00 : 0.50
+    }
+
+    private static func naturalFunctionWordPhraseBonus(_ text: String) -> Double {
+        var score = 0.0
+        if text.range(of: #"[一-龯]の[一-龯]"#, options: .regularExpression) != nil {
+            score += 1.40
+        }
+        if text.hasSuffix("では") || text.hasSuffix("には") || text.hasSuffix("とは") {
+            score += 0.70
+        }
+        return score
     }
 
     private static func sourceBias(_ source: String) -> Double {
