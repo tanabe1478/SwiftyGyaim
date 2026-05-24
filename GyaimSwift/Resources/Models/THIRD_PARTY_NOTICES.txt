@@ -1,0 +1,16 @@
+# Third-party AI model notices
+
+SwiftyGyaim bundles the following third-party model for on-device AI candidate generation and reranking.
+
+## zenz-v3.1-xsmall-gguf
+
+- Model: zenz-v3.1-xsmall-gguf
+- Source: https://huggingface.co/Miwa-Keita/zenz-v3.1-xsmall-gguf
+- Bundled file: Models/zenz-v3.1-xsmall-gguf/ggml-model-Q5_K_M.gguf
+- SHA-256: 189638370c43292fd54ba5e83854b24887ddd57e8914e19095514e663f60c7f5
+- License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+- License URL: https://creativecommons.org/licenses/by-sa/4.0/
+- SPDX identifier: CC-BY-SA-4.0
+- Local modifications: none. The GGUF file is redistributed as downloaded.
+
+Attribution and license information are included to satisfy the CC BY-SA 4.0 attribution requirement for the bundled model.

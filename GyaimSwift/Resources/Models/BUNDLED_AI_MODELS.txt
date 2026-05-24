@@ -6,7 +6,9 @@ SwiftyGyaim bundles a small on-device GGUF model for in-process AI candidate wor
 
 - Source: https://huggingface.co/Miwa-Keita/zenz-v3.1-xsmall-gguf
 - File: `zenz-v3.1-xsmall-gguf/ggml-model-Q5_K_M.gguf`
-- License: CC-BY-SA-4.0 (see upstream model card)
+- License: CC-BY-SA-4.0
+- License notice: `THIRD_PARTY_NOTICES.txt`
+- License text/link: `CC-BY-SA-4.0.txt`
 - SHA-256: `189638370c43292fd54ba5e83854b24887ddd57e8914e19095514e663f60c7f5`
 
-The first implementation memory-maps this file in-process. Token inference wiring is planned as a follow-up.
+The implementation memory-maps this file in-process. The GGUF file is redistributed as downloaded without local modifications.
