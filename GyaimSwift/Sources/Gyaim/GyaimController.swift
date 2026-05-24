@@ -878,29 +878,38 @@ class GyaimController: IMKInputController {
         var result = snapshot
         var seen = Set(snapshot.map(\.word))
         let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
-        let request = AIRerankRequest(version: 1,
-                                      mode: "alternative",
-                                      inputPat: query,
-                                      hiragana: hiragana,
-                                      context: trimmedContext.isEmpty ? nil : trimmedContext,
-                                      candidates: snapshot.enumerated().map { index, candidate in
-                                          AIRerankCandidate(index: index,
-                                                            text: candidate.word,
-                                                            reading: candidate.reading,
-                                                            source: String(describing: candidate.source),
-                                                            kind: candidate.kind.rawValue)
-                                      })
-        let alternatives = InProcessAIReranker.shared.alternativeCandidates(for: request, limit: 2)
-        let constrained = alternatives.flatMap { prefix in
-            CandidateGenerator(compoundLimit: 4, completionLimit: 0)
-                .generate(inputPat: query,
-                          context: context,
-                          baseCandidates: [],
-                          wordSearch: wordSearch,
-                          surfacePrefixes: [prefix.word])
-        }
-        for candidate in constrained where seen.insert(candidate.word).inserted {
-            result.append(candidate)
+        let maxReviewRounds = 2
+
+        for round in 0..<maxReviewRounds {
+            let request = AIRerankRequest(version: 1,
+                                          mode: "alternative-review-\(round + 1)",
+                                          inputPat: query,
+                                          hiragana: hiragana,
+                                          context: trimmedContext.isEmpty ? nil : trimmedContext,
+                                          candidates: result.enumerated().map { index, candidate in
+                                              AIRerankCandidate(index: index,
+                                                                text: candidate.word,
+                                                                reading: candidate.reading,
+                                                                source: String(describing: candidate.source),
+                                                                kind: candidate.kind.rawValue)
+                                          })
+            let alternatives = InProcessAIReranker.shared.alternativeCandidates(for: request, limit: 2)
+            guard !alternatives.isEmpty else { break }
+
+            var appended = 0
+            for prefix in alternatives {
+                let constrained = CandidateGenerator(compoundLimit: 4, completionLimit: 0)
+                    .generate(inputPat: query,
+                              context: context,
+                              baseCandidates: [],
+                              wordSearch: wordSearch,
+                              surfacePrefixes: [prefix.word])
+                for candidate in constrained where seen.insert(candidate.word).inserted {
+                    result.append(candidate)
+                    appended += 1
+                }
+            }
+            guard appended > 0 else { break }
         }
         return result
     }
