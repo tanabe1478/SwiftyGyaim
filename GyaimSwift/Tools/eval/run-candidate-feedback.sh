@@ -8,6 +8,7 @@ SCHEME="${SCHEME:-GyaimTests}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-.build}"
 BUNDLE="$DERIVED_DATA_PATH/Build/Products/Debug/${SCHEME}.xctest"
 REPORT="${REPORT:-/tmp/gyaim-candidate-feedback-report.md}"
+RUN_ZENZ="${RUN_ZENZ:-1}"
 
 xcodebuild \
   -project "$PROJECT" \
@@ -19,11 +20,12 @@ xcodebuild \
 rm -f "$REPORT"
 
 GYAIM_FEEDBACK_REPORT="$REPORT" \
+GYAIM_RUN_ZENZ_FEEDBACK="$RUN_ZENZ" \
 xcrun xctest \
   -XCTest Gyaim.CandidatePipelineFeedbackTests \
   "$BUNDLE"
 
 if [[ -f "$REPORT" ]]; then
   echo "wrote $REPORT"
-  sed -n '1,160p' "$REPORT"
+  sed -n '1,220p' "$REPORT"
 fi

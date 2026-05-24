@@ -11,6 +11,7 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
         enum Assertion: String, Decodable {
             case top5
             case learnedTop1
+            case zenzTop5
         }
     }
     private var tempDir: URL!
@@ -102,6 +103,32 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
         writeFeedbackReport(title: "Learned top1 fixture", lines: report)
     }
 
+    func testFeedbackFixtureBundledZenzCases() throws {
+        guard ProcessInfo.processInfo.environment["GYAIM_RUN_ZENZ_FEEDBACK"] == "1" else {
+            throw XCTSkip("Set GYAIM_RUN_ZENZ_FEEDBACK=1 to run bundled Zenz feedback cases")
+        }
+        let zenzCases = try loadFeedbackCases().filter { $0.assertion == .zenzTop5 }
+        let reranker = InProcessAIReranker(backends: [
+            BundledZenzAIRerankBackend(model: .shared, bundle: Bundle(for: Self.self)),
+            HeuristicAIRerankBackend()
+        ])
+        var report: [String] = []
+
+        for item in zenzCases {
+            let start = CFAbsoluteTimeGetCurrent()
+            let local = locallyReranked(candidates: generatedCandidates(for: item.input), inputPat: item.input)
+            let zenz = zenzPipelineCandidates(for: item.input, reranker: reranker)
+            let localRank = index(of: item.expected, in: local.map(\.word))
+            let zenzRank = index(of: item.expected, in: zenz.map(\.word))
+            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+            let head = Array(zenz.prefix(5)).map(\.word)
+            report.append("- \(item.input): expected=\(item.expected) localRank=\(rankText(localRank)) "
+                + "zenzRank=\(rankText(zenzRank)) latencyMs=\(String(format: "%.1f", elapsed)) head=\(head)")
+            XCTAssertLessThan(zenzRank, 5, "Expected \(item.expected) in Zenz top5 for \(item.input): \(head)")
+        }
+        writeFeedbackReport(title: "Bundled Zenz fixture", lines: report)
+    }
+
     private func loadFeedbackCases() throws -> [FeedbackCase] {
         let fixture = URL(fileURLWithPath: #file)
             .deletingLastPathComponent()
@@ -134,20 +161,70 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
                                              wordSearch: wordSearch)
     }
 
+    private func zenzPipelineCandidates(for inputPat: String, reranker: InProcessAIReranker) -> [SearchCandidate] {
+        let hiragana = RomaKana().roma2hiragana(inputPat)
+        var snapshot = generatedCandidates(for: inputPat)
+        var seen = Set(snapshot.map(\.word))
+
+        for candidate in reranker.generateCandidates(inputPat: inputPat, hiragana: hiragana, context: nil, limit: 1)
+            where seen.insert(candidate.word).inserted {
+            snapshot.append(candidate)
+        }
+
+        for _ in 0..<2 {
+            let request = makeRequest(inputPat: inputPat,
+                                      hiragana: hiragana,
+                                      candidates: snapshot,
+                                      mode: "zenz-feedback-alternative")
+            let alternatives = reranker.alternativeCandidates(for: request, limit: 2)
+            var appended = 0
+            for prefix in alternatives {
+                let constrained = CandidateGenerator(compoundLimit: 4, completionLimit: 0)
+                    .generate(inputPat: inputPat,
+                              context: "",
+                              baseCandidates: [],
+                              wordSearch: wordSearch,
+                              surfacePrefixes: [prefix.word])
+                for candidate in constrained where seen.insert(candidate.word).inserted {
+                    snapshot.append(candidate)
+                    appended += 1
+                }
+            }
+            if appended == 0 { break }
+        }
+
+        let request = makeRequest(inputPat: inputPat, hiragana: hiragana, candidates: snapshot, mode: "zenz-feedback-rerank")
+        return AIReranker.apply(order: reranker.rerank(request).order, to: snapshot)
+    }
+
     private func locallyReranked(candidates: [SearchCandidate], inputPat: String) -> [SearchCandidate] {
-        let request = AIRerankRequest(version: 1,
-                                      mode: "feedback-test",
-                                      inputPat: inputPat,
-                                      hiragana: RomaKana().roma2hiragana(inputPat),
-                                      context: nil,
-                                      candidates: candidates.enumerated().map { index, candidate in
-                                          AIRerankCandidate(index: index,
-                                                            text: candidate.word,
-                                                            reading: candidate.reading,
-                                                            source: String(describing: candidate.source),
-                                                            kind: candidate.kind.rawValue)
-                                      })
+        let request = makeRequest(inputPat: inputPat,
+                                  hiragana: RomaKana().roma2hiragana(inputPat),
+                                  candidates: candidates,
+                                  mode: "feedback-test")
         return AIReranker.apply(order: AIReranker.localRerank(request).order, to: candidates)
+    }
+
+    private func makeRequest(inputPat: String,
+                             hiragana: String,
+                             candidates: [SearchCandidate],
+                             mode: String) -> AIRerankRequest {
+        AIRerankRequest(version: 1,
+                        mode: mode,
+                        inputPat: inputPat,
+                        hiragana: hiragana,
+                        context: nil,
+                        candidates: candidates.enumerated().map { index, candidate in
+                            AIRerankCandidate(index: index,
+                                              text: candidate.word,
+                                              reading: candidate.reading,
+                                              source: String(describing: candidate.source),
+                                              kind: candidate.kind.rawValue)
+                        })
+    }
+
+    private func rankText(_ rank: Int) -> String {
+        rank == Int.max ? "-" : String(rank + 1)
     }
 
     private func index(of word: String, in words: [String]) -> Int {

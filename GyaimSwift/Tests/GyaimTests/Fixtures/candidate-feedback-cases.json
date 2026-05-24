@@ -16,5 +16,7 @@
   {"input":"ayamatta","expected":"誤った","assertion":"learnedTop1","note":"learning should override homophone"},
   {"input":"kiiteru","expected":"利いてる","assertion":"learnedTop1","note":"learning should override homophone"},
   {"input":"kiitenai","expected":"利いてない","assertion":"learnedTop1","note":"learning should override homophone"},
-  {"input":"kyouka","expected":"強化","assertion":"learnedTop1","note":"learning should override homophone"}
+  {"input":"kyouka","expected":"強化","assertion":"learnedTop1","note":"learning should override homophone"},
+  {"input":"detesimattemasune","expected":"出てしまってますね","assertion":"zenzTop5","note":"Zenz generation/review should recover typo-like long phrase"},
+  {"input":"imanodankaideha","expected":"今の段階では","assertion":"zenzTop5","note":"Zenz review should not regress phrase lattice"}
 ]
