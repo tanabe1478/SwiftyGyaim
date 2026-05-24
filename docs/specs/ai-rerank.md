@@ -279,7 +279,7 @@ Tools/eval/extract-ime-log-cases.py \
   --study-dict /tmp/gyaim-feedback-studydict.txt
 ```
 
-固定fixtureでアプリ外の候補生成 + local rerank ループを検証する場合は以下を使う。入力fixtureは `Tests/GyaimTests/Fixtures/candidate-feedback-cases.json` に置き、top5 / learnedTop1 の期待順位をテストする。結果は `/tmp/gyaim-candidate-feedback-report.md` に出力される。
+固定fixtureでアプリ外の候補生成 + rerank ループを検証する場合は以下を使う。入力fixtureは `Tests/GyaimTests/Fixtures/candidate-feedback-cases.json` に置き、top5 / learnedTop1 / zenzTop5 の期待順位をテストする。Zenz込み検証では base generation / Zenz generation / review loop / final rerank の latency breakdown、review round数、review追加候補数を `/tmp/gyaim-candidate-feedback-report.md` に出力する。`RUN_ZENZ=0` で重いZenz込み検証をskipできる。
 
 ```bash
 cd GyaimSwift

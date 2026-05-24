@@ -14,6 +14,18 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
             case zenzTop5
         }
     }
+
+    private struct ZenzPipelineResult {
+        let candidates: [SearchCandidate]
+        let baseMs: Double
+        let generationMs: Double
+        let reviewMs: Double
+        let rerankMs: Double
+        let reviewRounds: Int
+        let appendedByReview: Int
+
+        var totalMs: Double { baseMs + generationMs + reviewMs + rerankMs }
+    }
     private var tempDir: URL!
     private var wordSearch: WordSearch!
 
@@ -115,15 +127,17 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
         var report: [String] = []
 
         for item in zenzCases {
-            let start = CFAbsoluteTimeGetCurrent()
             let local = locallyReranked(candidates: generatedCandidates(for: item.input), inputPat: item.input)
-            let zenz = zenzPipelineCandidates(for: item.input, reranker: reranker)
+            let zenzResult = zenzPipelineCandidates(for: item.input, reranker: reranker)
+            let zenz = zenzResult.candidates
             let localRank = index(of: item.expected, in: local.map(\.word))
             let zenzRank = index(of: item.expected, in: zenz.map(\.word))
-            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
             let head = Array(zenz.prefix(5)).map(\.word)
             report.append("- \(item.input): expected=\(item.expected) localRank=\(rankText(localRank)) "
-                + "zenzRank=\(rankText(zenzRank)) latencyMs=\(String(format: "%.1f", elapsed)) head=\(head)")
+                + "zenzRank=\(rankText(zenzRank)) totalMs=\(formatMs(zenzResult.totalMs)) "
+                + "baseMs=\(formatMs(zenzResult.baseMs)) genMs=\(formatMs(zenzResult.generationMs)) "
+                + "reviewMs=\(formatMs(zenzResult.reviewMs)) rerankMs=\(formatMs(zenzResult.rerankMs)) "
+                + "rounds=\(zenzResult.reviewRounds) reviewAdded=\(zenzResult.appendedByReview) head=\(head)")
             XCTAssertLessThan(zenzRank, 5, "Expected \(item.expected) in Zenz top5 for \(item.input): \(head)")
         }
         writeFeedbackReport(title: "Bundled Zenz fixture", lines: report)
@@ -161,16 +175,23 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
                                              wordSearch: wordSearch)
     }
 
-    private func zenzPipelineCandidates(for inputPat: String, reranker: InProcessAIReranker) -> [SearchCandidate] {
+    private func zenzPipelineCandidates(for inputPat: String, reranker: InProcessAIReranker) -> ZenzPipelineResult {
         let hiragana = RomaKana().roma2hiragana(inputPat)
+        let baseStart = CFAbsoluteTimeGetCurrent()
         var snapshot = generatedCandidates(for: inputPat)
+        let baseMs = elapsedMs(since: baseStart)
         var seen = Set(snapshot.map(\.word))
 
+        let generationStart = CFAbsoluteTimeGetCurrent()
         for candidate in reranker.generateCandidates(inputPat: inputPat, hiragana: hiragana, context: nil, limit: 1)
             where seen.insert(candidate.word).inserted {
             snapshot.append(candidate)
         }
+        let generationMs = elapsedMs(since: generationStart)
 
+        let reviewStart = CFAbsoluteTimeGetCurrent()
+        var reviewRounds = 0
+        var appendedByReview = 0
         for _ in 0..<2 {
             let request = makeRequest(inputPat: inputPat,
                                       hiragana: hiragana,
@@ -190,11 +211,23 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
                     appended += 1
                 }
             }
+            reviewRounds += 1
+            appendedByReview += appended
             if appended == 0 { break }
         }
+        let reviewMs = elapsedMs(since: reviewStart)
 
+        let rerankStart = CFAbsoluteTimeGetCurrent()
         let request = makeRequest(inputPat: inputPat, hiragana: hiragana, candidates: snapshot, mode: "zenz-feedback-rerank")
-        return AIReranker.apply(order: reranker.rerank(request).order, to: snapshot)
+        let candidates = AIReranker.apply(order: reranker.rerank(request).order, to: snapshot)
+        let rerankMs = elapsedMs(since: rerankStart)
+        return ZenzPipelineResult(candidates: candidates,
+                                  baseMs: baseMs,
+                                  generationMs: generationMs,
+                                  reviewMs: reviewMs,
+                                  rerankMs: rerankMs,
+                                  reviewRounds: reviewRounds,
+                                  appendedByReview: appendedByReview)
     }
 
     private func locallyReranked(candidates: [SearchCandidate], inputPat: String) -> [SearchCandidate] {
@@ -225,6 +258,14 @@ final class CandidatePipelineFeedbackTests: XCTestCase {
 
     private func rankText(_ rank: Int) -> String {
         rank == Int.max ? "-" : String(rank + 1)
+    }
+
+    private func formatMs(_ value: Double) -> String {
+        String(format: "%.1f", value)
+    }
+
+    private func elapsedMs(since start: CFAbsoluteTime) -> Double {
+        (CFAbsoluteTimeGetCurrent() - start) * 1000
     }
 
     private func index(of word: String, in words: [String]) -> Int {
