@@ -796,19 +796,34 @@ class GyaimController: IMKInputController {
 
         // Stage 1: local generation + rerank immediately. This keeps Tab responsive even
         // when Google Input Tools takes a few hundred milliseconds.
+        let pipelineStart = CFAbsoluteTimeGetCurrent()
+        let baseStart = CFAbsoluteTimeGetCurrent()
         let generatedSnapshot = CandidateGenerator().generate(inputPat: query,
                                                               context: recentCommittedText,
                                                               baseCandidates: candidates,
                                                               wordSearch: ws)
+        let baseMs = Self.elapsedMilliseconds(since: baseStart)
+
+        let zenzGenerationStart = CFAbsoluteTimeGetCurrent()
         let zenzGeneratedSnapshot = Self.appendingZenzGeneratedCandidates(to: generatedSnapshot,
                                                                          query: query,
                                                                          hiragana: rk.roma2hiragana(query),
                                                                          context: recentCommittedText)
+        let zenzGenerationMs = Self.elapsedMilliseconds(since: zenzGenerationStart)
+
+        let reviewStart = CFAbsoluteTimeGetCurrent()
         let localSnapshot = Self.appendingZenzAlternativeCandidates(to: zenzGeneratedSnapshot,
                                                                    query: query,
                                                                    hiragana: rk.roma2hiragana(query),
                                                                    context: recentCommittedText,
                                                                    wordSearch: ws)
+        let reviewMs = Self.elapsedMilliseconds(since: reviewStart)
+        let totalMs = Self.elapsedMilliseconds(since: pipelineStart)
+        Log.input.info("AI candidate pipeline finished: input=\"\(query)\" "
+            + "baseCandidates=\(generatedSnapshot.count) zenzGenerated=\(zenzGeneratedSnapshot.count - generatedSnapshot.count) "
+            + "reviewAdded=\(localSnapshot.count - zenzGeneratedSnapshot.count) finalCandidates=\(localSnapshot.count) "
+            + "baseMs=\(Self.formatMilliseconds(baseMs)) zenzGenerationMs=\(Self.formatMilliseconds(zenzGenerationMs)) "
+            + "reviewMs=\(Self.formatMilliseconds(reviewMs)) totalMs=\(Self.formatMilliseconds(totalMs))")
         sendAIRerankRequest(query: query,
                             snapshot: localSnapshot,
                             revision: localRevision,
@@ -878,7 +893,8 @@ class GyaimController: IMKInputController {
         var result = snapshot
         var seen = Set(snapshot.map(\.word))
         let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
-        let maxReviewRounds = 2
+        let maxReviewRounds = Self.zenzReviewRounds()
+        let alternativeLimit = Self.zenzAlternativeLimit()
 
         for round in 0..<maxReviewRounds {
             let request = AIRerankRequest(version: 1,
@@ -893,7 +909,7 @@ class GyaimController: IMKInputController {
                                                                 source: String(describing: candidate.source),
                                                                 kind: candidate.kind.rawValue)
                                           })
-            let alternatives = InProcessAIReranker.shared.alternativeCandidates(for: request, limit: 2)
+            let alternatives = InProcessAIReranker.shared.alternativeCandidates(for: request, limit: alternativeLimit)
             guard !alternatives.isEmpty else { break }
 
             var appended = 0
@@ -912,6 +928,24 @@ class GyaimController: IMKInputController {
             guard appended > 0 else { break }
         }
         return result
+    }
+
+    private static func zenzReviewRounds() -> Int {
+        let configured = UserDefaults.standard.integer(forKey: "aiRerankZenzReviewRounds")
+        return configured > 0 ? min(configured, 3) : 2
+    }
+
+    private static func zenzAlternativeLimit() -> Int {
+        let configured = UserDefaults.standard.integer(forKey: "aiRerankZenzAlternativeLimit")
+        return configured > 0 ? min(configured, 4) : 2
+    }
+
+    private static func elapsedMilliseconds(since start: CFAbsoluteTime) -> Double {
+        (CFAbsoluteTimeGetCurrent() - start) * 1000
+    }
+
+    private static func formatMilliseconds(_ value: Double) -> String {
+        String(format: "%.1f", value)
     }
 
     private func sendAIRerankRequest(query: String,
