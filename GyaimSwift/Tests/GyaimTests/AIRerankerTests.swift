@@ -93,6 +93,31 @@ final class AIRerankerTests: XCTestCase {
         XCTAssertEqual(AIReranker.localRerank(request).order.first, 1)
     }
 
+    func testLocalRerankBoostsAllKanjiZenzCandidate() {
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "rerank",
+            inputPat: "kyoukaisen",
+            hiragana: "きょうかいせん",
+            context: nil,
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "教会せん",
+                                  reading: "kyoukaisen",
+                                  source: "synthetic",
+                                  kind: "lattice"),
+                AIRerankCandidate(index: 1,
+                                  text: "境界線",
+                                  reading: "kyoukaisen",
+                                  source: "synthetic",
+                                  kind: "zenz")
+            ]
+        )
+
+        XCTAssertEqual(AIReranker.localRerank(request).order.first, 1)
+    }
+
+
     func testLocalRerankModelLabelCanBeOverridden() {
         let request = AIRerankRequest(
             version: 1,

@@ -309,6 +309,7 @@ final class BundledZenzRuntime: ZenzRuntime {
 
     private static func shouldScoreWithZenz(_ candidate: AIRerankCandidate,
                                             maxScoredCandidates: Int) -> Bool {
-        candidate.index < maxScoredCandidates && candidate.kind != CandidateKind.raw.rawValue
+        guard candidate.kind != CandidateKind.raw.rawValue else { return false }
+        return candidate.index < maxScoredCandidates || candidate.kind == CandidateKind.zenz.rawValue
     }
 }
