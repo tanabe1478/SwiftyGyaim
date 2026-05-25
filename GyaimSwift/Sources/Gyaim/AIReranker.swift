@@ -75,6 +75,9 @@ enum AIReranker {
             score += 0.10
         }
         score += naturalFunctionWordPhraseBonus(candidate.text)
+        if candidate.kind == CandidateKind.zenz.rawValue && isAllKanjiWord(candidate.text) {
+            score += 0.50
+        }
         if candidate.text == request.inputPat && candidate.text.allSatisfy(\.isASCII) {
             score -= 8.0
         }
@@ -149,6 +152,10 @@ enum AIReranker {
 
     private static func isKanji(_ character: Character) -> Bool {
         character.unicodeScalars.allSatisfy { 0x4E00...0x9FFF ~= $0.value }
+    }
+
+    private static func isAllKanjiWord(_ text: String) -> Bool {
+        text.count >= 2 && text.allSatisfy(isKanji)
     }
 }
 
