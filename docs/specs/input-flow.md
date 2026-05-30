@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-05-22 (prefix modeのraw input先頭維持とAI rerank明示起動)
+> Last updated: 2026-05-30 (外部候補を候補ウィンドウ先頭に表示)
 
 ## 概要
 
@@ -70,7 +70,7 @@ deactivateServer(_:) → hideWindow, fix(skipStudy: true), 辞書finish
 
 ひらがなフォールバック: 候補数が `CandidateDisplayMode.current.maxVisible` 未満の場合、ひらがなを候補に追加。
 
-Prefix mode の候補順: `buildPrefixCandidates()` は raw `inputPat` を先頭に保ち、その後に辞書検索結果、外部候補（クリップボード、選択テキスト）、ひらがなフォールバックを並べる。raw `inputPat` を先頭にすることで、短い prefix 入力や完全一致前の入力で `gu` → `具体的`、`maeno` → `前のめり` のような長い prefix 候補が Enter / deactivate で誤確定されるのを防ぐ。
+Prefix mode の候補順: `buildPrefixCandidates()` は raw `inputPat` を先頭に保ち、その後に外部候補（クリップボード、選択テキスト）、辞書検索結果、ひらがなフォールバックを並べる。raw `inputPat` を先頭にすることで、短い prefix 入力や完全一致前の入力で `gu` → `具体的`、`maeno` → `前のめり` のような長い prefix 候補が Enter / deactivate で誤確定されるのを防ぐ。一方、候補ウィンドウは `nthCand + 1` 以降を表示するため、コピー後5秒以内のクリップボード候補や選択テキスト候補は表示上の先頭に出る。
 
 ## 既知の制約
 

@@ -633,8 +633,8 @@ class GyaimController: IMKInputController {
         // Keep raw input as the selected candidate in prefix mode. This preserves the
         // historical safety behavior: plain Enter does not accidentally commit a long
         // prefix match such as "gu" -> "具体的" or "maeno" -> "前のめり".
-        candidates.append(contentsOf: searchResults)
-
+        // External candidates follow raw input so they appear at the top of the
+        // candidate window, matching the original Gyaim registration workflow.
         if let clip = clipboardCandidate, isValidExternalCandidate(clip) {
             candidates.append(SearchCandidate(word: clip, source: .external, kind: .exact))
         }
@@ -642,6 +642,8 @@ class GyaimController: IMKInputController {
         if let sel = selectedCandidate, isValidExternalCandidate(sel) {
             candidates.append(SearchCandidate(word: sel, source: .external, kind: .exact))
         }
+
+        candidates.append(contentsOf: searchResults)
 
         // Add hiragana if few candidates
         if candidates.count < CandidateDisplayMode.current.maxVisible, !hiragana.isEmpty {
