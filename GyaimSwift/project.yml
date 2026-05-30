@@ -5,6 +5,10 @@ options:
     macOS: "13.0"
   xcodeVersion: "15.0"
 
+packages:
+  LlamaCpp:
+    path: Packages/LlamaCpp
+
 targets:
   Gyaim:
     type: application
@@ -21,6 +25,9 @@ targets:
       SWIFT_VERSION: "5.9"
       PRODUCT_NAME: SwiftyGyaim
       PRODUCT_MODULE_NAME: Gyaim
+    dependencies:
+      - package: LlamaCpp
+        product: llama
     frameworks:
       - InputMethodKit
       - Security
@@ -52,6 +59,9 @@ targets:
       INFOPLIST_FILE: ""
       PRODUCT_BUNDLE_IDENTIFIER: com.pitecan.inputmethod.SwiftyGyaim.Tests
       PRODUCT_MODULE_NAME: Gyaim
+    dependencies:
+      - package: LlamaCpp
+        product: llama
     frameworks:
       - InputMethodKit
       - Security

@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-05-07 (BUG-009追加)
+> Last updated: 2026-05-24 (BUG-013追加)
 
 ## 概要
 
@@ -145,6 +145,61 @@
 - **教訓**:
   - URL入力UIでは「人間が貼りがちなURL」と「機械が取得すべきraw URL」を区別し、内部で正規化する
   - 外部リポジトリ連携は、成功パスだけでなく実際にユーザーが貼るURL形式でテストする
+
+### BUG-010: AI複合候補に数学記号segmentが混入する
+
+- **発見日**: 2026-05-22
+- **症状**: Tab AI候補生成で `nandoka` に対して `ん∩か` / `る∩か` のような不自然な候補が生成される
+- **影響**: Zenz rerank では下位に落ちるが、候補リストにノイズが混じり、Zenz scoring 対象も浪費する
+- **原因**: CandidateGenerator が完全一致segment候補を文字種検証なしで連結していた。接続辞書に `ando -> ∩` のような記号エントリがあると、日本語文として不適切なcompound候補に混入した
+- **修正**:
+  - 複合候補segmentに文字種フィルタを追加し、かな・カナ・漢字・全角英数・々/〆/〇のみ許可
+  - Zenz scoring の既定対象を上位8件に減らし、raw input を scoring 対象から除外してTab latencyを削減
+- **検証**: `testCompoundGenerationRejectsSymbolSegments` を追加
+- **教訓**: rerankerで下げられるノイズでも、生成段階で排除できるものは排除する。特に辞書由来の記号・数式文字は日本語IME候補として別扱いにする。
+
+### BUG-011: 長文lattice候補で短い数値segmentと低順位同音語が上位化する
+
+- **発見日**: 2026-05-23
+- **症状**: ログ由来ケース `jikaikidougo` で、期待候補 `次回起動後` より `次回起動５` / `次回木戸動` / `次回軌道後` などが上位に出る
+- **影響**: Tab AI候補生成が、実際にユーザーが選んだ複合語を上位に戻せない
+- **原因**:
+  - lattice の segment 候補上限が狭く、`kidou -> 起動` のような辞書内で少し下位の候補が探索から落ちやすかった
+  - `go -> ５` / `五` のような短い数値候補が長文lattice内で文脈なしに高スコア化していた
+  - 一般的な複合語（例: `起動後`）への局所的な補正がなかった
+- **修正**:
+  - segment候補上限を5に拡張
+  - 短い読みの数値segmentをlattice生成から除外
+  - `起動 + 後` などログで観測された一般的な複合語に bonus を追加
+  - ログ由来 watchlist を `CandidatePipelineFeedbackTests` に追加
+- **検証**: `testFeedbackWatchlistCasesHaveExpectedCandidateNearTop` で `jikaikidougo -> 次回起動後` が上位5件に入ることを確認
+- **教訓**: 実ログの accepted rank が悪いケースは候補生成の探索幅不足・短segmentノイズ・局所複合語不足のいずれかに分解し、テスト化してから生成側を直す。
+
+### BUG-012: 長文phraseで自然な助詞分割候補が人名prefix複合に負ける
+
+- **発見日**: 2026-05-23
+- **症状**: ログ由来ケース `imanodankaideha` で、期待候補 `今の段階では` が `今野段階では` / `居間載段階では` などより下位になる
+- **影響**: 長文phrase入力で自然な助詞分割候補が見つかっていても、辞書内の人名・同音prefix複合に押し流される
+- **原因**:
+  - lattice上には `今 + の + 段階 + では` から `今の段階では` を生成できていたが、segment length が長い `imano -> 今野` 系の人名prefix複合が局所スコアで勝っていた
+  - Swift heuristic rerank が助詞を含む自然な文節構造（`漢字 + の + 漢字`、文末 `では` など）を評価していなかった
+- **修正**:
+  - `AIReranker.localRerank` に助詞を含む自然なphrase bonusを追加
+  - `AIReranker.localRerank` で `kind=exact` かつ reading完全一致の候補に追加 bonus を付与
+  - lattice 側に `今 + の + 段階 + では` の複合語 bonus を追加
+  - 内蔵辞書への `imanodankaideha` 固定エントリ追加は取り下げ、生成・rerank側で解決する
+- **検証**: `testFeedbackWatchlistCasesHaveExpectedCandidateNearTop` に `imanodankaideha -> 今の段階では` を追加し、内蔵phraseエントリなしで上位5件入りを確認
+- **教訓**: azooKey型に寄せるなら、長文phraseは固定辞書追加だけに逃がさず、lattice生成済み候補を文節構造・助詞・接続で評価して上げる。辞書追加は未知語や固有表現の最後の手段にする。
+
+### BUG-013: 誤学習した複数行テキストが候補・ログに露出する
+
+- **発見日**: 2026-05-24
+- **症状**: ログ由来ケース `kiitenai` の候補列に、改行を含む長いMarkdown風テキストが混入していた
+- **影響**: IME候補として不要なだけでなく、個人メモや設定説明、secretに関する文書が候補ウィンドウやログに露出する可能性がある
+- **原因**: study/local辞書に登録された候補文字列を表示前に安全検証しておらず、複数行・長大テキストも通常候補として返していた
+- **修正**: `WordSearch.search()` の返却直前に候補安全フィルタを追加し、空白のみ、80文字超、改行またはNULを含む候補を除外する
+- **検証**: `testSearchFiltersUnsafeMultilineStudyCandidate` を追加
+- **教訓**: 学習辞書はユーザー入力由来なので信頼しない。登録時だけでなく検索返却時にも表示安全性を検証する。
 
 ## パターン集
 

@@ -125,6 +125,18 @@ final class WordSearchTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "exactReadingMatchPriority")
     }
 
+    func testSearchFiltersUnsafeMultilineStudyCandidate() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "聞いてない\n# Private note", reading: "kiitenai")
+        ws.study(word: "聞いてない", reading: "kiitenai")
+
+        let words = ws.search(query: "kiitenai", searchMode: 0).map(\.word)
+
+        XCTAssertTrue(words.contains("聞いてない"))
+        XCTAssertFalse(words.contains { $0.contains("\n") })
+        XCTAssertFalse(words.contains { $0.contains("Private note") })
+    }
+
     func testStudyInsertsNewEntry() throws {
         try XCTSkipIf(ws == nil)
         ws.study(word: "東京", reading: "tokyo")
@@ -698,5 +710,33 @@ final class WordSearchTests: XCTestCase {
             "乖離 should survive in file after ws2.study() — must not be overwritten")
         XCTAssertTrue(entries.map(\.word).contains("海里"),
             "海里 should also be in file")
+    }
+
+    func testSearchCandidateKindExactAndPrefix() throws {
+        try XCTSkipIf(ws == nil)
+        ws.register(word: "テスト", reading: "test")
+        ws.register(word: "テスト長い", reading: "testnagai")
+
+        let prefixResults = ws.search(query: "test", searchMode: 0)
+        XCTAssertEqual(prefixResults.first { $0.word == "テスト" }?.kind, .exact)
+        XCTAssertEqual(prefixResults.first { $0.word == "テスト長い" }?.kind, .prefix)
+
+        let exactResults = ws.search(query: "test", searchMode: 1)
+        XCTAssertEqual(exactResults.first { $0.word == "テスト" }?.kind, .exact)
+    }
+
+    func testBundleDictionaryContainsNiseAndYouseiCorrections() throws {
+        try XCTSkipIf(ws == nil)
+
+        let niseWords = ws.search(query: "nise", searchMode: 0).map(\.word)
+        XCTAssertTrue(niseWords.contains("偽"), "Expected 偽 in nise candidates: \(niseWords)")
+        XCTAssertTrue(niseWords.contains("偽物"), "Expected 偽物 in nise prefix candidates: \(niseWords)")
+        if let niseIndex = niseWords.firstIndex(of: "偽"),
+           let nisemonoIndex = niseWords.firstIndex(of: "偽物") {
+            XCTAssertLessThan(niseIndex, nisemonoIndex)
+        }
+
+        let youseiWords = ws.search(query: "yousei", searchMode: 0).map(\.word)
+        XCTAssertTrue(youseiWords.contains("陽性"), "Expected 陽性 in yousei candidates: \(youseiWords)")
     }
 }

@@ -1,0 +1,68 @@
+import Foundation
+
+/// Backend interface for in-process reranking.
+///
+/// This keeps `GyaimController` independent from the concrete implementation:
+/// the current backends still use Swift heuristic scoring, while a future
+/// llama.cpp/GGUF backend can implement the same entry point.
+protocol AIRerankBackend {
+    var identifier: String { get }
+    func canRun() -> Bool
+    func rerank(_ request: AIRerankRequest) -> AIRerankResponse
+}
+
+protocol AICandidateGenerationBackend {
+    func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate]
+    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate]
+}
+
+struct HeuristicAIRerankBackend: AIRerankBackend {
+    let identifier = "swift-local-heuristic"
+
+    func canRun() -> Bool { true }
+
+    func rerank(_ request: AIRerankRequest) -> AIRerankResponse {
+        AIReranker.localRerank(request, model: identifier)
+    }
+}
+
+final class BundledZenzAIRerankBackend: AIRerankBackend, AICandidateGenerationBackend {
+    static let enabledDefaultsKey = "aiRerankUseBundledZenz"
+
+    let identifier = "swift-local-heuristic+bundled-zenz-v3.1-xsmall-mapped"
+
+    private let runtime: ZenzRuntime
+
+    convenience init(model: BundledAIRerankModel = .shared, bundle: Bundle = .main) {
+        self.init(runtime: BundledZenzRuntime(model: model, bundle: bundle))
+    }
+
+    init(runtime: ZenzRuntime) {
+        self.runtime = runtime
+    }
+
+    func canRun() -> Bool {
+        let enabled = UserDefaults.standard.object(forKey: Self.enabledDefaultsKey) as? Bool ?? true
+        return enabled && runtime.prepare().isReady
+    }
+
+    func rerank(_ request: AIRerankRequest) -> AIRerankResponse {
+        runtime.rerank(request) ?? AIReranker.localRerank(request, model: identifier)
+    }
+
+    func generateCandidates(inputPat: String,
+                            hiragana: String,
+                            context: String?,
+                            limit: Int) -> [SearchCandidate] {
+        guard canRun() else { return [] }
+        return runtime.generateCandidates(inputPat: inputPat,
+                                          hiragana: hiragana,
+                                          context: context,
+                                          limit: limit)
+    }
+
+    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate] {
+        guard canRun() else { return [] }
+        return runtime.alternativeCandidates(for: request, limit: limit)
+    }
+}

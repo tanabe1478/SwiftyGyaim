@@ -112,6 +112,8 @@ cp -r .build/Build/Products/Debug/SwiftyGyaim.app ~/Library/Input\ Methods/
 
 オリジナルの [masui/GyaimMotion](https://github.com/masui/GyaimMotion) に由来するライセンスです。
 
+同梱AIモデルは別ライセンスです。`GyaimSwift/Resources/Models/THIRD_PARTY_NOTICES.txt` と `GyaimSwift/Resources/Models/CC-BY-SA-4.0.txt` を参照してください。
+
 ## クレジット
 
 - オリジナル作者: [増井俊之](http://masui.github.io/GyaimMotion/) (2011-2015, RubyMotion)

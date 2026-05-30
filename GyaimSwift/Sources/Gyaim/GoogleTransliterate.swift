@@ -69,17 +69,17 @@ enum GoogleTransliterate {
         let katakana = rk.roma2katakana(query)
 
         var candidates: [SearchCandidate] = []
-        candidates.append(SearchCandidate(word: query))
+        candidates.append(SearchCandidate(word: query, kind: .raw))
 
         for word in apiResults {
-            candidates.append(SearchCandidate(word: word, reading: query))
+            candidates.append(SearchCandidate(word: word, reading: query, source: .google, kind: .google))
         }
 
         if !hiragana.isEmpty {
-            candidates.append(SearchCandidate(word: hiragana, reading: query))
+            candidates.append(SearchCandidate(word: hiragana, reading: query, kind: .kana))
         }
         if !katakana.isEmpty {
-            candidates.append(SearchCandidate(word: katakana, reading: query))
+            candidates.append(SearchCandidate(word: katakana, reading: query, kind: .kana))
         }
 
         // Deduplicate preserving order
