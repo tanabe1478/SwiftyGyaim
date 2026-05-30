@@ -10,16 +10,47 @@ enum CandidateSource: Equatable {
     case synthetic  // inputPat, hiragana, katakana, timestamp
 }
 
+/// Identifies what shape or generation path a candidate represents.
+enum CandidateKind: String, Equatable {
+    case raw
+    case exact
+    case prefix
+    case compound
+    case completion
+    case google
+    case kana
+    case lattice
+    case zenz
+}
+
 /// A search result candidate.
 struct SearchCandidate: Equatable {
     let word: String
     let reading: String?
     let source: CandidateSource
+    let kind: CandidateKind
 
-    init(word: String, reading: String? = nil, source: CandidateSource = .synthetic) {
+    init(word: String,
+         reading: String? = nil,
+         source: CandidateSource = .synthetic,
+         kind: CandidateKind? = nil) {
         self.word = word
         self.reading = reading
         self.source = source
+        self.kind = kind ?? Self.defaultKind(word: word, reading: reading, source: source)
+    }
+
+    private static func defaultKind(word: String,
+                                    reading: String?,
+                                    source: CandidateSource) -> CandidateKind {
+        switch source {
+        case .google:
+            return .google
+        case .synthetic where reading == nil || reading == word:
+            return .raw
+        default:
+            return .exact
+        }
     }
 }
 
@@ -158,6 +189,9 @@ class WordSearch {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return candidates }
 
         let exactPriority = searchMode == 0 && Self.isExactReadingMatchPriority
+        func matchKind(for reading: String) -> CandidateKind {
+            searchMode > 0 || reading == q ? .exact : .prefix
+        }
 
         if exactPriority {
             // 4-bucket cross-dict ordering (BUG-004):
@@ -172,7 +206,10 @@ class WordSearch {
             // Bucket 1: studyDict exact (reading == q)
             for entry in Self.studyDict {
                 if entry.reading == q, !candfound.contains(entry.word) {
-                    candidates.append(SearchCandidate(word: entry.word, reading: entry.reading, source: .study))
+                    candidates.append(SearchCandidate(word: entry.word,
+                                                      reading: entry.reading,
+                                                      source: .study,
+                                                      kind: .exact))
                     candfound.insert(entry.word)
                     if limit > 0, candidates.count >= limit { break }
                 }
@@ -184,7 +221,10 @@ class WordSearch {
                     let yomi = entry[0]
                     let word = entry[1]
                     if yomi == q, !candfound.contains(word) {
-                        candidates.append(SearchCandidate(word: word, reading: yomi, source: .local))
+                        candidates.append(SearchCandidate(word: word,
+                                                          reading: yomi,
+                                                          source: .local,
+                                                          kind: .exact))
                         candfound.insert(word)
                         if limit > 0, candidates.count >= limit { break }
                     }
@@ -196,7 +236,10 @@ class WordSearch {
                     let range = NSRange(entry.reading.startIndex..., in: entry.reading)
                     if regex.firstMatch(in: entry.reading, range: range) != nil,
                        !candfound.contains(entry.word) {
-                        candidates.append(SearchCandidate(word: entry.word, reading: entry.reading, source: .study))
+                        candidates.append(SearchCandidate(word: entry.word,
+                                                          reading: entry.reading,
+                                                          source: .study,
+                                                          kind: .prefix))
                         candfound.insert(entry.word)
                         if limit > 0, candidates.count >= limit { break }
                     }
@@ -211,7 +254,10 @@ class WordSearch {
                     let range = NSRange(yomi.startIndex..., in: yomi)
                     if regex.firstMatch(in: yomi, range: range) != nil,
                        !candfound.contains(word) {
-                        candidates.append(SearchCandidate(word: word, reading: yomi, source: .local))
+                        candidates.append(SearchCandidate(word: word,
+                                                          reading: yomi,
+                                                          source: .local,
+                                                          kind: .prefix))
                         candfound.insert(word)
                         if limit > 0, candidates.count >= limit { break }
                     }
@@ -223,7 +269,10 @@ class WordSearch {
                 let range = NSRange(entry.reading.startIndex..., in: entry.reading)
                 if regex.firstMatch(in: entry.reading, range: range) != nil {
                     if !candfound.contains(entry.word) {
-                        candidates.append(SearchCandidate(word: entry.word, reading: entry.reading, source: .study))
+                        candidates.append(SearchCandidate(word: entry.word,
+                                                          reading: entry.reading,
+                                                          source: .study,
+                                                          kind: matchKind(for: entry.reading)))
                         candfound.insert(entry.word)
                         if limit > 0, candidates.count >= limit { break }
                     }
@@ -237,7 +286,10 @@ class WordSearch {
                     let range = NSRange(yomi.startIndex..., in: yomi)
                     if regex.firstMatch(in: yomi, range: range) != nil {
                         if !candfound.contains(word) {
-                            candidates.append(SearchCandidate(word: word, reading: yomi, source: .local))
+                            candidates.append(SearchCandidate(word: word,
+                                                              reading: yomi,
+                                                              source: .local,
+                                                              kind: matchKind(for: yomi)))
                             candfound.insert(word)
                             if limit > 0, candidates.count >= limit { break }
                         }
@@ -253,16 +305,29 @@ class WordSearch {
             if w.hasSuffix("*") { return }
             w = w.replacingOccurrences(of: "*", with: "")
             if !candfound.contains(w) {
-                candidates.append(SearchCandidate(word: w, reading: pat, source: .connection))
+                candidates.append(SearchCandidate(word: w,
+                                                  reading: pat,
+                                                  source: .connection,
+                                                  kind: matchKind(for: pat)))
                 candfound.insert(w)
             }
         }
+        candidates = candidates.filter { Self.isSafeDisplayCandidate($0.word) }
+
         // Limit results
         if limit > 0, candidates.count > limit {
             candidates = Array(candidates.prefix(limit))
         }
 
         return candidates
+    }
+
+    private static func isSafeDisplayCandidate(_ word: String) -> Bool {
+        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 80 else { return false }
+        return !trimmed.unicodeScalars.contains { scalar in
+            CharacterSet.newlines.contains(scalar) || scalar.value == 0
+        }
     }
 
     /// Register a word to the user's local dictionary.

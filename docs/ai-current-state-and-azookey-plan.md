@@ -43,8 +43,15 @@ Tab
 
 | ファイル | 役割 |
 | --- | --- |
-| `Sources/Gyaim/AIReranker.swift` | AI rerank request/response、HTTP/external command client |
-| `Sources/Gyaim/GyaimController.swift` | Tab起動、候補拡張、文脈保持、rerank適用 |
+| `Sources/Gyaim/AIReranker.swift` | AI rerank request/response、Swift in-process heuristic、HTTP/external command client |
+| `Sources/Gyaim/AIRerankBackend.swift` | in-process rerank backend 抽象。Zenz/heuristic の切替点 |
+| `Sources/Gyaim/InProcessAIReranker.swift` | IMEプロセス内rerank入口。backendを優先順に選ぶ |
+| `Sources/Gyaim/ZenzRuntime.swift` | 同梱Zenz/GGUF runtime境界。llama.cpp token inference の接続点 |
+| `Sources/Gyaim/ZenzPrompt.swift` | Zenz v3 private-use control tags（context/input/output） |
+| `Sources/Gyaim/LlamaZenzContext.swift` | llama.cpp model/context/vocab を in-process に保持し、token log probability を計算 |
+| `Sources/Gyaim/BundledAIRerankModel.swift` | 同梱 GGUF モデルの bundle 解決・memory-map 保持 |
+| `Sources/Gyaim/CandidateGenerator.swift` | Tab時のローカル複合候補・補完候補生成 |
+| `Sources/Gyaim/GyaimController.swift` | Tab起動、文脈保持、Google後追い、rerank適用 |
 | `Sources/Gyaim/WordSearch.swift` | 候補 source に `.google` を追加 |
 | `Tools/ai-rerank/gyaim-gpt2-char-rerank-server.py` | resident GPT-2 scoring server |
 | `Tools/ai-rerank/evaluate-reranker.py` | ログベース評価 runner |
@@ -191,9 +198,9 @@ henkankouho
 
 ## 次に実装する方針
 
-### Phase A: CandidateGenerator を分離
+### Phase A: CandidateGenerator を分離（実装済み）
 
-`GyaimController` から Tab候補生成ロジックを切り出す。
+`GyaimController` から Tab候補生成ロジックを以下へ切り出した。
 
 ```text
 Sources/Gyaim/CandidateGenerator.swift
@@ -210,9 +217,9 @@ generate(
 ) -> [SearchCandidate]
 ```
 
-### Phase B: CandidateKind を導入
+### Phase B: CandidateKind を導入（実装済み）
 
-`CandidateSource` だけでは候補の性質を表しきれない。
+`CandidateSource` だけでは候補の性質を表しきれないため、`SearchCandidate.kind` を追加した。AI request には `kind` も含める。
 
 ```swift
 enum CandidateKind {
@@ -228,9 +235,9 @@ enum CandidateKind {
 
 これにより、source と kind を分けて順位制御する。
 
-### Phase C: Lattice / beam search を強化
+### Phase C: Lattice / beam search を強化（着手）
 
-現状の簡易 beam search を、以下に発展させる。
+現状の簡易 beam search に、segment cost / source bias / 不自然表記 penalty を追加した。特に「ひらがな終端 + 漢字開始」「カタカナ + ひらがな」のような不自然な script transition と、1文字漢字segmentを下げる。今後さらに以下へ発展させる。
 
 - 任意分割
 - N-best path
@@ -241,9 +248,9 @@ enum CandidateKind {
 - 不自然表記 penalty
 - duplicate / near-duplicate 除去
 
-### Phase D: scoring を構造化
+### Phase D: scoring を構造化（着手）
 
-現在の GPT-2 server 側 score はヒューリスティックが混ざっている。Swift側で候補 feature を作り、Python側は LM score を返すだけに近づける。
+`InProcessAIReranker` を追加し、Tab直後の候補順補正は Swift プロセス内の単一入口に集約した。さらに `AIRerankBackend` と `ZenzRuntime` を追加し、`BundledZenzAIRerankBackend`（同梱モデル prepare + runtime scoring）→ `HeuristicAIRerankBackend`（常時fallback）の優先順で選ぶ構造にした。また `zenz-v3.1-xsmall-gguf` を app bundle に同梱し、`BundledAIRerankModel` で memory-map してIMEプロセス内に保持する。`llama` binary framework を Swift Package として接続し、`LlamaZenzContext` で `llama_backend_init` / `llama_model_load_from_file(use_mmap: true)` / `llama_init_from_model` / `llama_model_get_vocab` / `llama_decode` / logits 取得まで実行する。`BundledZenzRuntime.rerank(_:)` は azooKey/Zenz v3 と同じ private-use control tag（context/input/output）で prompt を組み、カタカナ化した input に続く candidate text の平均 log probability を Swift heuristic score に小さく加算して order を返す。まだ prefix constraint / rich alternative evaluation は未実装のため、次は azooKey の candidate evaluation にさらに寄せる。GPT-2 server / 単発reranker は `CandidateKind` を受け取り、暫定的な kind bias を score に加える。
 
 最終 score 例:
 

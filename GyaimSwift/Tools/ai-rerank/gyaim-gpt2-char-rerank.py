@@ -86,6 +86,24 @@ def source_bias(source: str) -> float:
     return 0.0
 
 
+
+def kind_bias(kind: str) -> float:
+    if kind == "google":
+        return 0.20
+    if kind == "exact":
+        return 0.10
+    if kind == "compound":
+        return 0.05
+    if kind == "prefix":
+        return -0.05
+    if kind == "completion":
+        return -0.10
+    if kind == "kana":
+        return -0.15
+    if kind == "raw":
+        return -0.50
+    return 0.0
+
 def build_prompt(request: dict[str, Any]) -> str:
     hiragana = request.get("hiragana") or request.get("inputPat") or ""
     # Keep prompt stable and short.  The char-level GPT-2 was not instruction
@@ -108,8 +126,9 @@ def main() -> int:
         index = int(candidate["index"])
         text = str(candidate["text"])
         source = str(candidate.get("source") or "")
+        kind = str(candidate.get("kind") or "")
         lm_score = candidate_logprob(tokenizer, model, device, prompt, text)
-        score = lm_score + source_bias(source)
+        score = lm_score + source_bias(source) + kind_bias(kind)
         scored.append(CandidateScore(index=index, text=text, score=score))
 
     scored.sort(key=lambda item: item.score, reverse=True)

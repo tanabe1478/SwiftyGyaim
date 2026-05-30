@@ -1,0 +1,23 @@
+[
+  {"input":"nise","expected":"偽","assertion":"top5","note":"short input should avoid ni+se lattice noise"},
+  {"input":"yousei","expected":"陽性","assertion":"top5","note":"dictionary-backed correction"},
+  {"input":"kaizenn","expected":"改善","assertion":"top5","note":"common conversion"},
+  {"input":"nisemono","expected":"偽物","assertion":"top5","note":"prefix/lattice should recover compound"},
+  {"input":"jikaikidougo","expected":"次回起動後","assertion":"top5","note":"lattice compound with 起動+後"},
+  {"input":"sunda","expected":"済んだ","assertion":"top5","note":"homophone baseline"},
+  {"input":"ayamatta","expected":"誤った","assertion":"top5","note":"homophone baseline"},
+  {"input":"kiiteru","expected":"利いてる","assertion":"top5","note":"homophone baseline"},
+  {"input":"kiitenai","expected":"利いてない","assertion":"top5","note":"homophone baseline"},
+  {"input":"kyouka","expected":"強化","assertion":"top5","note":"homophone baseline"},
+  {"input":"imanodankaideha","expected":"今の段階では","assertion":"top5","note":"phrase generated without fixed dictionary entry"},
+  {"input":"hasirasenakute","expected":"走らせなくて","assertion":"top5","note":"inflected phrase"},
+  {"input":"tukattemitara","expected":"使ってみたら","assertion":"top5","note":"inflected phrase"},
+  {"input":"sunda","expected":"済んだ","assertion":"learnedTop1","note":"learning should override homophone"},
+  {"input":"ayamatta","expected":"誤った","assertion":"learnedTop1","note":"learning should override homophone"},
+  {"input":"kiiteru","expected":"利いてる","assertion":"learnedTop1","note":"learning should override homophone"},
+  {"input":"kiitenai","expected":"利いてない","assertion":"learnedTop1","note":"learning should override homophone"},
+  {"input":"kyouka","expected":"強化","assertion":"learnedTop1","note":"learning should override homophone"},
+  {"input":"detesimattemasune","expected":"出てしまってますね","assertion":"zenzTop5","note":"Zenz generation/review should recover typo-like long phrase"},
+  {"input":"imanodankaideha","expected":"今の段階では","assertion":"zenzTop5","note":"Zenz review should not regress phrase lattice"},
+  {"input":"kyoukaisen","expected":"境界線","assertion":"zenzTop5","note":"log-derived case where Zenz generated/review candidate was outside the scoring cap"}
+]
