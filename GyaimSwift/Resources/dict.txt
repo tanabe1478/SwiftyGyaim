@@ -40882,3 +40882,23 @@ wazenn	和膳	3	4
 wabisabi	侘び寂び	3	4
 ka	*化	4	51
 ka	*化	21	51
+kairi	乖離	3	4
+kairi	乖離	50	51
+ruikei	類型	3	4
+jushin	受診	3	4
+jushinn	受診	3	4
+jusin	受診	3	4
+jusinn	受診	3	4
+jushin	受診	50	51
+jushinn	受診	50	51
+jusin	受診	50	51
+jusinn	受診	50	51
+manabi	学び	3	4
+siyou	私用	3	4
+teki	*的	4	19
+teki	*的	21	19
+sei	*性	19	21
+sei	*性	21	21
+ttara	*ったら	16	
+saigen	再現	20	21
+saigenn	再現	20	21
