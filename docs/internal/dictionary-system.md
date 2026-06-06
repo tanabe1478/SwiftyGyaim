@@ -171,7 +171,61 @@ connection
 
 MRU的な「最近学習したものが上に来る」挙動を保つためです。
 
-## 9. ConnectionDict の実装
+## 9. Gyaim/Gictionary由来の接続辞書モデル
+
+接続辞書は、増井俊之氏の Gyaim / Gictionary 由来の中核モデルです。普通の辞書のような `読み -> 単語` だけではなく、各単語に「この単語はどのカテゴリか」と「この単語の後ろにどのカテゴリが続けられるか」を持たせます。
+
+Gictionary上では、1ページが1語に対応します。ページタイトルが表記、本文先頭の行が接続辞書エントリです。
+
+```text
+慶應
+けいおう 大学名 大学名接続
+
+大学
+だいがく 名詞 名詞接続
+だいがく 大学名接続 名詞接続
+```
+
+この場合、`けいおう` で `慶應` が見つかり、その `outConnection` が `大学名接続` を指すため、続く `だいがく` の `inConnection = 大学名接続` と接続できます。結果として `けいおうだいがく -> 慶應大学` が生成されます。
+
+同じ考え方で動詞活用も扱います。
+
+```text
+結
+むす ば行五段動詞 ば行五段動詞語尾
+
+*べ*
+べ ば行五段動詞語尾 な否定
+
+*ない
+ない な否定
+```
+
+これにより `むすべない -> 結べない` を、巨大な統計モデルなしで状態遷移として生成できます。`*` は内部接続用の目印で、候補表示時には削除されます。末尾が `*` の候補は表示候補から落とされます。
+
+SwiftyGyaim の `dict.txt` ではカテゴリ名は数値化されています。
+
+```text
+romaji<TAB>surface<TAB>inConnection<TAB>outConnection
+```
+
+この変換済みTSVは `ConnectionDict` が直接読みます。`GictionaryConnectionImporter` は `Gictionary.json` または `dict2.txt` を取り込み、`~/.gyaim/connectiondict.txt` として同じ形式に揃えます。
+
+### 生産的接尾辞としての「化」
+
+`XX化` は `慶應大学` と同じ接続辞書モデルで扱える。たとえば `局所` は `名詞 -> 名詞接続` を持つので、`化` に `名詞接続 -> する接続` の suffix-only エントリを足すと、以下の経路が成立します。
+
+```text
+kyokusho  局所  名詞      名詞接続
+ka        *化   名詞接続  する接続
+suru      する  する接続  ...
+```
+
+これにより `kyokushoka -> 局所化`、`kyokushokasuru -> 局所化する` が生成できる。`*化` は先頭に `*` があるため初回 `keyLink` には入らず、単独 `ka` のトップレベル候補を増やさない。一方で `connectionLink` には入るため、名詞の後続としては探索される。候補表示時は `*` が削除される。
+
+このモデルは SwiftyGyaim の通常変換の基盤です。一方、AI Tab候補・Google候補・Zenz rerank は明示起動の補完レイヤーです。ユーザー辞書や接続辞書だけでは候補が弱いときに補助するためのものであり、接続辞書の状態遷移を厳密に再現する必要はありません。ただし、通常辞書候補の順位・出自・削除可否を壊さないように扱います。
+
+## 10. ConnectionDict の実装
 
 `ConnectionDict` は固定辞書 `dict.txt` を読みます。
 
@@ -224,7 +278,7 @@ if pat == entry.pat {
 
 例えば `pat` が複合語の先頭entryに一致したら、残りの `pat` を `outConnection` から再帰検索します。これにより、単語をつなげた候補を生成します。
 
-## 10. study()
+## 11. study()
 
 学習は `WordSearch.study(word:reading:)` が担当します。
 
@@ -244,7 +298,7 @@ saveStudyDict
 
 保存が即時なのが重要です。IMEは `deactivateServer` を経由せず終了することがあるため、終了時保存だけでは学習が失われます。
 
-## 11. StudyEntry.score()
+## 12. StudyEntry.score()
 
 ```swift
 func score() -> Double {
@@ -260,7 +314,7 @@ func score() -> Double {
 - 1文字長いと約10分ぶんのペナルティ
 - ただし支配的なのは `lastAccessTime`
 
-## 12. local辞書登録と削除
+## 13. local辞書登録と削除
 
 外部候補確定時などに `register(word:reading:)` が呼ばれます。
 
@@ -272,7 +326,7 @@ localDictTime 更新
 
 削除は `deleteFromLocal` / `deleteFromStudy` です。どちらも削除後に即保存します。
 
-## 13. ファイル形式
+## 14. ファイル形式
 
 ### localdict.txt
 
@@ -288,7 +342,7 @@ reading<TAB>word<TAB>timestamp<TAB>frequency
 
 旧形式の2カラムstudy辞書も読み込めます。互換性を保ちながら、保存時には4カラム形式へ寄せます。
 
-## 14. 実装を読む時の注意
+## 15. 実装を読む時の注意
 
 - `candfound` のdedup順序は候補順位だけでなく `CandidateSource` に影響する
 - `studyDict` はstaticなのでテストでは `resetStudyDict()` が必要
