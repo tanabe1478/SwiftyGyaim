@@ -75,11 +75,36 @@ final class ConnectionDictTests: XCTestCase {
         assertExactMatches(expectations)
     }
 
+    func testProductiveKaSuffixCompounds() throws {
+        let expectations = [
+            ("kyokushoka", "局所化"),
+            ("kyokusyoka", "局所化"),
+            ("gengoka", "言語化"),
+            ("kyokushokasuru", "局所化する"),
+            ("chuushouka", "抽象化")
+        ]
+
+        assertExactMatches(expectations)
+    }
+
+    func testLogDrivenFixedDictionaryTerms() throws {
+        let expectations = [
+            ("kairi", "乖離"),
+            ("ruikei", "類型"),
+            ("jusinn", "受診"),
+            ("manabi", "学び"),
+            ("siyou", "私用")
+        ]
+
+        assertExactMatches(expectations)
+    }
+
     private func assertExactMatches(_ expectations: [(String, String)], file: StaticString = #filePath, line: UInt = #line) {
         for (pat, expectedWord) in expectations {
             var words: [String] = []
             dict.search(pat: pat, searchMode: 1) { word, _, _ in
-                words.append(word)
+                if word.hasSuffix("*") { return }
+                words.append(word.replacingOccurrences(of: "*", with: ""))
             }
             XCTAssertTrue(words.contains(expectedWord),
                           "Expected '\(expectedWord)' for '\(pat)' in results: \(words)",
