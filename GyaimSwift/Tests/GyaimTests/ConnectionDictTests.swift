@@ -87,6 +87,18 @@ final class ConnectionDictTests: XCTestCase {
         assertExactMatches(expectations)
     }
 
+    func testLogDrivenFixedDictionaryTerms() throws {
+        let expectations = [
+            ("kairi", "乖離"),
+            ("ruikei", "類型"),
+            ("jusinn", "受診"),
+            ("manabi", "学び"),
+            ("siyou", "私用")
+        ]
+
+        assertExactMatches(expectations)
+    }
+
     private func assertExactMatches(_ expectations: [(String, String)], file: StaticString = #filePath, line: UInt = #line) {
         for (pat, expectedWord) in expectations {
             var words: [String] = []
