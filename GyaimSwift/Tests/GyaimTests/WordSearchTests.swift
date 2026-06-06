@@ -51,6 +51,14 @@ final class WordSearchTests: XCTestCase {
         XCTAssertTrue(words.contains("万"), "Expected '万' in exact search: \(words)")
     }
 
+    func testSearchProductiveKaSuffixCandidate() throws {
+        try XCTSkipIf(ws == nil)
+        let results = ws.search(query: "kyokushoka", searchMode: 1)
+        let words = results.map(\.word)
+        XCTAssertTrue(words.contains("局所化"), "Expected '局所化' in exact search: \(words)")
+        XCTAssertFalse(words.contains { $0.contains("*") }, "Displayed candidates should strip internal markers: \(words)")
+    }
+
     func testTimestamp() throws {
         try XCTSkipIf(ws == nil)
         let results = ws.search(query: "ds", searchMode: 0)

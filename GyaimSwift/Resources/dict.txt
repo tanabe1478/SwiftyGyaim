@@ -40880,3 +40880,5 @@ wairozai	賄賂罪	3	4
 wasedaakademi-	早稲田アカデミー	3	4
 wazenn	和膳	3	4
 wabisabi	侘び寂び	3	4
+ka	*化	4	51
+ka	*化	21	51
