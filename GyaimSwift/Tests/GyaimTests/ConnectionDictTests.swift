@@ -99,6 +99,40 @@ final class ConnectionDictTests: XCTestCase {
         assertExactMatches(expectations)
     }
 
+    func testProductiveTekiSuffixCompounds() throws {
+        let expectations = [
+            ("chuushouteki", "抽象的"),
+            ("chuushoutekina", "抽象的な"),
+            ("chuushoutekini", "抽象的に"),
+            ("kyokushoteki", "局所的"),
+            ("kouzouteki", "構造的")
+        ]
+
+        assertExactMatches(expectations)
+    }
+
+    func testProductiveSeiSuffixCompounds() throws {
+        let expectations = [
+            ("saigensei", "再現性"),
+            ("saigennsei", "再現性"),
+            ("anzensei", "安全性"),
+            ("gijutsusei", "技術性"),
+            ("kouzousei", "構造性")
+        ]
+
+        assertExactMatches(expectations)
+    }
+
+    func testConditionalTtaraInflection() throws {
+        let expectations = [
+            ("owattara", "終わったら"),
+            ("kawattara", "変わったら"),
+            ("kaitara", "書いたら")
+        ]
+
+        assertExactMatches(expectations)
+    }
+
     private func assertExactMatches(_ expectations: [(String, String)], file: StaticString = #filePath, line: UInt = #line) {
         for (pat, expectedWord) in expectations {
             var words: [String] = []

@@ -40895,3 +40895,10 @@ jusin	受診	50	51
 jusinn	受診	50	51
 manabi	学び	3	4
 siyou	私用	3	4
+teki	*的	4	19
+teki	*的	21	19
+sei	*性	19	21
+sei	*性	21	21
+ttara	*ったら	16	
+saigen	再現	20	21
+saigenn	再現	20	21
