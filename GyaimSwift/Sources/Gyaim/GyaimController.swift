@@ -98,6 +98,9 @@ class GyaimController: IMKInputController {
     private var lastValidCandidateLineRect: NSRect?
     /// Tracks the in-flight Google Transliterate query to discard stale results.
     private var pendingGoogleQuery: String?
+    /// Diagnostics for very short activate → deactivate cycles caused by input source switching.
+    private var lastActivationTime: CFAbsoluteTime?
+    private var lastActivationSequence = 0
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         super.init(server: server, delegate: delegate, client: inputClient)
@@ -120,14 +123,31 @@ class GyaimController: IMKInputController {
     }
 
     override func activateServer(_ sender: Any!) {
-        Log.input.info("IME activated (pasteboardCC=\(NSPasteboard.general.changeCount), lastConsumedCC=\(GyaimController.lastConsumedCC))")
+        lastActivationTime = CFAbsoluteTimeGetCurrent()
+        lastActivationSequence += 1
+        let senderDescription = describeIMKObject(sender)
+        let clientDescription = describeIMKObject(client())
+        Log.input.info("IME activated: seq=\(lastActivationSequence) "
+            + "sender=\(senderDescription) currentClient=\(clientDescription) "
+            + "pasteboardCC=\(NSPasteboard.general.changeCount) "
+            + "lastConsumedCC=\(GyaimController.lastConsumedCC)")
         CopyText.set(NSPasteboard.general.string(forType: .string))
         ws?.start()
         showWindow()
     }
 
     override func deactivateServer(_ sender: Any!) {
-        Log.input.info("IME deactivated: committing preedit (converting=\(converting), candidates=\(candidates.count))")
+        let now = CFAbsoluteTimeGetCurrent()
+        let elapsedMs = lastActivationTime.map { (now - $0) * 1000 }
+        let elapsedDescription = elapsedMs.map { String(format: "%.1f", $0) } ?? "unknown"
+        let shortCycle = elapsedMs.map { $0 < 1000 } ?? false
+        let level = shortCycle ? "short-cycle" : "normal"
+        let senderDescription = describeIMKObject(sender)
+        let clientDescription = describeIMKObject(client())
+        Log.input.info("IME deactivated: level=\(level) seq=\(lastActivationSequence) "
+            + "elapsedSinceActivate=\(elapsedDescription)ms converting=\(converting) "
+            + "candidates=\(candidates.count) sender=\(senderDescription) "
+            + "currentClient=\(clientDescription)")
         hideWindow()
         fix(client: sender, skipStudy: true)
         ws?.finish()
@@ -169,6 +189,13 @@ class GyaimController: IMKInputController {
 
     private var converting: Bool {
         !inputPat.isEmpty
+    }
+
+    private func describeIMKObject(_ object: Any?) -> String {
+        guard let object else { return "nil" }
+        let typeName = String(describing: type(of: object))
+        let bundleIdentifier = (object as? IMKTextInput)?.bundleIdentifier() ?? "unknown"
+        return "type=\(typeName),bundle=\(bundleIdentifier)"
     }
 
     // MARK: - Menu & Preferences
