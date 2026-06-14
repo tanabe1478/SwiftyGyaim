@@ -699,7 +699,8 @@ class GyaimController: IMKInputController {
                                           context: String?) -> [SearchCandidate] {
         guard searchResults.count >= 2 else { return searchResults }
 
-        let maxFastRerankCandidates = 24
+        let start = CFAbsoluteTimeGetCurrent()
+        let maxFastRerankCandidates = Self.maxFastContextRerankCandidates()
         let head = Array(searchResults.prefix(maxFastRerankCandidates))
         let tail = Array(searchResults.dropFirst(maxFastRerankCandidates))
         let trimmedContext = context?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -717,8 +718,27 @@ class GyaimController: IMKInputController {
                                   kind: candidate.kind.rawValue)
             }
         )
-        return AIReranker.apply(order: AIReranker.localRerank(request, model: "swift-fast-context-heuristic").order,
-                                to: head) + tail
+        let response = fastContextRerankResponse(for: request)
+        let elapsed = elapsedMilliseconds(since: start)
+        Log.input.info("Fast context rerank finished: input=\"\(inputPat)\" model=\(response.model ?? "unknown") candidates=\(head.count)/\(searchResults.count) latency=\(formatMilliseconds(elapsed))ms")
+        return AIReranker.apply(order: response.order, to: head) + tail
+    }
+
+    private static func fastContextRerankResponse(for request: AIRerankRequest) -> AIRerankResponse {
+        if shouldUseModelForFastContextRerank() {
+            return InProcessAIReranker.shared.rerank(request)
+        }
+        return AIReranker.localRerank(request, model: "swift-fast-context-heuristic")
+    }
+
+    private static func shouldUseModelForFastContextRerank() -> Bool {
+        UserDefaults.standard.bool(forKey: "aiRerankUseModelForFastContext")
+    }
+
+    private static func maxFastContextRerankCandidates() -> Int {
+        let configured = UserDefaults.standard.integer(forKey: "aiRerankFastContextCandidateLimit")
+        guard configured > 0 else { return 24 }
+        return min(max(configured, 2), 48)
     }
 
     // MARK: - Search & Display

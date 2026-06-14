@@ -200,8 +200,9 @@ prefix mode では `WordSearch.search()` が返した辞書候補に対して、
 制約:
 - raw input は常に先頭維持
 - クリップボード/選択テキスト候補は辞書候補より前に維持
-- rerank対象は辞書候補上位24件のみ
+- rerank対象は辞書候補上位24件のみ（`aiRerankFastContextCandidateLimit` で 2〜48 に調整可能）
 - 低確信時は exact reading を prefix prediction より優先する
+- 既定では Swift heuristic のみを使う。`aiRerankUseModelForFastContext=true` の場合だけ in-process model backend を使う
 
 ## 完全一致reading優先（ADR-016 → ADR-017）
 
