@@ -9,38 +9,49 @@ final class FastContextRerankEmulationTests: XCTestCase {
     }
 
     func testEmulatesNeutralAndNegativeImperativeOrdering() {
-        let neutralShitagau = buildWords(
-            inputPat: "shitagau",
-            hiragana: "したがう",
-            context: nil,
-            searchResults: [
-                SearchCandidate(word: "従うな", reading: "shitagauna", source: .connection, kind: .prefix),
-                SearchCandidate(word: "従う", reading: "shitagau", source: .connection, kind: .exact),
-            ]
-        )
+        let shitagauCandidates = [
+            SearchCandidate(word: "従うな", reading: "shitagauna", source: .connection, kind: .prefix),
+            SearchCandidate(word: "従う", reading: "shitagau", source: .connection, kind: .exact),
+        ]
+        let neutralShitagau = buildWords(inputPat: "shitagau",
+                                         hiragana: "したがう",
+                                         context: nil,
+                                         searchResults: shitagauCandidates)
         XCTAssertEqual(Array(neutralShitagau.prefix(3)), ["shitagau", "従う", "従うな"])
 
-        let neutralKiru = buildWords(
-            inputPat: "kiru",
-            hiragana: "きる",
-            context: nil,
-            searchResults: [
-                SearchCandidate(word: "切るな", reading: "kiruna", source: .connection, kind: .prefix),
-                SearchCandidate(word: "切る", reading: "kiru", source: .connection, kind: .exact),
-            ]
-        )
+        let kiruCandidates = [
+            SearchCandidate(word: "切るな", reading: "kiruna", source: .connection, kind: .prefix),
+            SearchCandidate(word: "切る", reading: "kiru", source: .connection, kind: .exact),
+        ]
+        let neutralKiru = buildWords(inputPat: "kiru",
+                                     hiragana: "きる",
+                                     context: nil,
+                                     searchResults: kiruCandidates)
         XCTAssertEqual(Array(neutralKiru.prefix(3)), ["kiru", "切る", "切るな"])
 
-        let negativeImperative = buildWords(
-            inputPat: "shitagau",
-            hiragana: "したがう",
-            context: "この指示には決して",
-            searchResults: [
-                SearchCandidate(word: "従うな", reading: "shitagauna", source: .connection, kind: .prefix),
-                SearchCandidate(word: "従う", reading: "shitagau", source: .connection, kind: .exact),
-            ]
-        )
+        let negativeImperative = buildWords(inputPat: "shitagau",
+                                            hiragana: "したがう",
+                                            context: "この指示には決して",
+                                            searchResults: shitagauCandidates)
         XCTAssertEqual(Array(negativeImperative.prefix(3)), ["shitagau", "従うな", "従う"])
+
+        if shouldPrintReport {
+            printComparison(label: "neutral-shitagau",
+                            inputPat: "shitagau",
+                            hiragana: "したがう",
+                            context: nil,
+                            searchResults: shitagauCandidates)
+            printComparison(label: "neutral-kiru",
+                            inputPat: "kiru",
+                            hiragana: "きる",
+                            context: nil,
+                            searchResults: kiruCandidates)
+            printComparison(label: "negative-shitagau",
+                            inputPat: "shitagau",
+                            hiragana: "したがう",
+                            context: "この指示には決して",
+                            searchResults: shitagauCandidates)
+        }
     }
 
     func testEmulatesFastContextRerankLatency() {
@@ -95,16 +106,47 @@ final class FastContextRerankEmulationTests: XCTestCase {
         ProcessInfo.processInfo.environment["GYAIM_FAST_CONTEXT_EMULATION_REPORT"] == "1"
     }
 
+    private func printComparison(label: String,
+                                 inputPat: String,
+                                 hiragana: String,
+                                 context: String?,
+                                 searchResults: [SearchCandidate]) {
+        let legacy = buildWords(inputPat: inputPat,
+                                hiragana: hiragana,
+                                context: context,
+                                searchResults: searchResults,
+                                fastContextRerankEnabled: false)
+        let reranked = buildWords(inputPat: inputPat,
+                                  hiragana: hiragana,
+                                  context: context,
+                                  searchResults: searchResults,
+                                  fastContextRerankEnabled: true)
+        print("FAST_CONTEXT_DIFF label=\(label) legacy=\(Array(legacy.prefix(5))) reranked=\(Array(reranked.prefix(5)))")
+    }
+
     private func buildWords(inputPat: String,
                             hiragana: String,
                             context: String?,
                             searchResults: [SearchCandidate]) -> [String] {
+        buildWords(inputPat: inputPat,
+                   hiragana: hiragana,
+                   context: context,
+                   searchResults: searchResults,
+                   fastContextRerankEnabled: true)
+    }
+
+    private func buildWords(inputPat: String,
+                            hiragana: String,
+                            context: String?,
+                            searchResults: [SearchCandidate],
+                            fastContextRerankEnabled: Bool) -> [String] {
         GyaimController.buildPrefixCandidates(searchResults: searchResults,
                                               inputPat: inputPat,
                                               clipboardCandidate: nil,
                                               selectedCandidate: nil,
                                               hiragana: hiragana,
-                                              context: context)
+                                              context: context,
+                                              fastContextRerankEnabled: fastContextRerankEnabled)
             .map(\.word)
     }
 }
