@@ -70,7 +70,10 @@ enum AIReranker {
             if candidate.kind == CandidateKind.exact.rawValue {
                 score += exactReadingBonus(candidate.text)
             }
+        } else {
+            score -= prefixPredictionPenalty(candidate: candidate, inputPat: request.inputPat)
         }
+        score += contextPredictionBonus(candidate: candidate, request: request)
         if candidate.text.contains(where: isKanji) {
             score += 0.10
         }
@@ -87,6 +90,35 @@ enum AIReranker {
 
     private static func exactReadingBonus(_ text: String) -> Double {
         text.count >= 5 ? 2.00 : 0.50
+    }
+
+    private static func prefixPredictionPenalty(candidate: AIRerankCandidate, inputPat: String) -> Double {
+        guard candidate.kind == CandidateKind.prefix.rawValue,
+              let reading = candidate.reading,
+              reading.hasPrefix(inputPat),
+              reading != inputPat else { return 0 }
+        return min(1.50, Double(reading.count - inputPat.count) * 0.35)
+    }
+
+    private static func contextPredictionBonus(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
+        guard candidate.kind == CandidateKind.prefix.rawValue,
+              let reading = candidate.reading,
+              reading.hasPrefix(request.inputPat),
+              reading != request.inputPat,
+              let context = request.context else { return 0 }
+
+        let trimmed = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return 0 }
+
+        var score = 0.0
+        if candidate.text.hasSuffix("な"), hasStrongNegativeImperativeCue(trimmed) {
+            score += 2.00
+        }
+        return score
+    }
+
+    private static func hasStrongNegativeImperativeCue(_ context: String) -> Bool {
+        ["決して", "してはいけ", "してはなら", "禁止", "だめ", "ダメ", "ないで"].contains { context.contains($0) }
     }
 
     private static func naturalFunctionWordPhraseBonus(_ text: String) -> Double {

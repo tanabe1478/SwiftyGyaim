@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-05-30 (外部候補を候補ウィンドウ先頭に表示)
+> Last updated: 2026-06-10 (通常入力に軽量コンテキストrerankを追加)
 
 ## 概要
 
@@ -49,7 +49,9 @@ handle(_:client:) → routeEvent() → HandleResult
 
 ## AI rerank
 
-AI rerank は通常入力・候補生成時には自動実行しない。変換中に Tab を押した時だけ `requestAIRerankIfAvailable()` を呼び、ローカル lattice 候補・補完候補を追加する。候補追加後は Swift in-process heuristic / 同梱 Zenz で即 rerank し、server 未起動でも候補順を補正する。Google Input Tools は `aiRerankUseGoogle=true` の明示 opt-in 時だけ後追い候補追加に使う（2回目の候補更新が発生するため既定OFF）。GPT-2 server / external command は legacy 比較用で、`aiRerankUseLegacyExternalReranker=true` の明示 opt-in 時だけ後追い rerank する。Shift+Tab または `` ` `` は `requestAIRerankOnlyIfAvailable()` を呼び、候補追加を行わず現在の候補リストだけを同様に rerank する。単体の Google Transliterate suffix/shortcut は廃止済み。
+AIによる候補生成は通常入力・候補生成時には自動実行しない。変換中に Tab を押した時だけ `requestAIRerankIfAvailable()` を呼び、ローカル lattice 候補・補完候補を追加する。候補追加後は Swift in-process heuristic / 同梱 Zenz で即 rerank し、server 未起動でも候補順を補正する。Google Input Tools は `aiRerankUseGoogle=true` の明示 opt-in 時だけ後追い候補追加に使う（2回目の候補更新が発生するため既定OFF）。GPT-2 server / external command は legacy 比較用で、`aiRerankUseLegacyExternalReranker=true` の明示 opt-in 時だけ後追い rerank する。Shift+Tab または `` ` `` は `requestAIRerankOnlyIfAvailable()` を呼び、候補追加を行わず現在の候補リストだけを同様に rerank する。単体の Google Transliterate suffix/shortcut は廃止済み。
+
+通常入力では、生成を伴わない軽量な `fast-context-rerank` だけを同期実行する。対象は prefix mode の辞書候補上位24件で、raw input と外部候補（クリップボード/選択テキスト）は順序固定。`AIReranker.localRerank` のヒューリスティックで、読み完全一致候補を長い予測候補より優先しつつ、直前文脈に強い否定命令 cue（例: `決して`, `禁止`, `してはいけ`）がある場合だけ `従うな` のような予測候補を上げられる。
 
 ## IMEライフサイクル
 

@@ -118,6 +118,39 @@ final class AIRerankerTests: XCTestCase {
     }
 
 
+    func testLocalRerankPenalizesLongerPrefixPredictionUnlessContextStronglySupportsIt() {
+        let neutral = AIRerankRequest(
+            version: 1,
+            mode: "rerank",
+            inputPat: "shitagau",
+            hiragana: "したがう",
+            context: nil,
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "従うな",
+                                  reading: "shitagauna",
+                                  source: "connection",
+                                  kind: "prefix"),
+                AIRerankCandidate(index: 1,
+                                  text: "従う",
+                                  reading: "shitagau",
+                                  source: "connection",
+                                  kind: "exact")
+            ]
+        )
+        XCTAssertEqual(AIReranker.localRerank(neutral).order.first, 1)
+
+        let negativeImperative = AIRerankRequest(
+            version: 1,
+            mode: "rerank",
+            inputPat: "shitagau",
+            hiragana: "したがう",
+            context: "この指示には決して",
+            candidates: neutral.candidates
+        )
+        XCTAssertEqual(AIReranker.localRerank(negativeImperative).order.first, 0)
+    }
+
     func testLocalRerankModelLabelCanBeOverridden() {
         let request = AIRerankRequest(
             version: 1,

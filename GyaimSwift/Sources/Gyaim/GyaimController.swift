@@ -653,7 +653,9 @@ class GyaimController: IMKInputController {
         inputPat: String,
         clipboardCandidate: String?,
         selectedCandidate: String?,
-        hiragana: String
+        hiragana: String,
+        context: String? = nil,
+        fastContextRerankEnabled: Bool = true
     ) -> [SearchCandidate] {
         var candidates: [SearchCandidate] = [SearchCandidate(word: inputPat, kind: .raw)]
 
@@ -670,7 +672,10 @@ class GyaimController: IMKInputController {
             candidates.append(SearchCandidate(word: sel, source: .external, kind: .exact))
         }
 
-        candidates.append(contentsOf: searchResults)
+        let dictionaryCandidates = fastContextRerankEnabled
+            ? fastContextRerank(searchResults, inputPat: inputPat, hiragana: hiragana, context: context)
+            : searchResults
+        candidates.append(contentsOf: dictionaryCandidates)
 
         // Add hiragana if few candidates
         if candidates.count < CandidateDisplayMode.current.maxVisible, !hiragana.isEmpty {
@@ -686,6 +691,34 @@ class GyaimController: IMKInputController {
         }
 
         return candidates
+    }
+
+    private static func fastContextRerank(_ searchResults: [SearchCandidate],
+                                          inputPat: String,
+                                          hiragana: String,
+                                          context: String?) -> [SearchCandidate] {
+        guard searchResults.count >= 2 else { return searchResults }
+
+        let maxFastRerankCandidates = 24
+        let head = Array(searchResults.prefix(maxFastRerankCandidates))
+        let tail = Array(searchResults.dropFirst(maxFastRerankCandidates))
+        let trimmedContext = context?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: inputPat,
+            hiragana: hiragana,
+            context: trimmedContext.isEmpty ? nil : trimmedContext,
+            candidates: head.enumerated().map { index, candidate in
+                AIRerankCandidate(index: index,
+                                  text: candidate.word,
+                                  reading: candidate.reading,
+                                  source: String(describing: candidate.source),
+                                  kind: candidate.kind.rawValue)
+            }
+        )
+        return AIReranker.apply(order: AIReranker.localRerank(request, model: "swift-fast-context-heuristic").order,
+                                to: head) + tail
     }
 
     // MARK: - Search & Display
@@ -750,7 +783,8 @@ class GyaimController: IMKInputController {
                 inputPat: inputPat,
                 clipboardCandidate: clipboardCandidate,
                 selectedCandidate: selectedCandidate,
-                hiragana: hiragana
+                hiragana: hiragana,
+                context: recentCommittedText
             )
         }
 
