@@ -672,7 +672,7 @@ class GyaimController: IMKInputController {
             candidates.append(SearchCandidate(word: sel, source: .external, kind: .exact))
         }
 
-        let dictionaryCandidates = fastContextRerankEnabled
+        let dictionaryCandidates = fastContextRerankEnabled && isFastContextRerankEnabled
             ? fastContextRerank(searchResults, inputPat: inputPat, hiragana: hiragana, context: context)
             : searchResults
         candidates.append(contentsOf: dictionaryCandidates)
@@ -719,8 +719,14 @@ class GyaimController: IMKInputController {
             }
         )
         let response = fastContextRerankResponse(for: request)
-        let elapsed = elapsedMilliseconds(since: start)
-        Log.input.info("Fast context rerank finished: input=\"\(inputPat)\" model=\(response.model ?? "unknown") candidates=\(head.count)/\(searchResults.count) latency=\(formatMilliseconds(elapsed))ms")
+        if isFastContextRerankLoggingEnabled {
+            let elapsed = elapsedMilliseconds(since: start)
+            Log.input.info(
+                "Fast context rerank finished: input=\"\(inputPat)\" "
+                    + "model=\(response.model ?? "unknown") candidates=\(head.count)/\(searchResults.count) "
+                    + "latency=\(formatMilliseconds(elapsed))ms"
+            )
+        }
         return AIReranker.apply(order: response.order, to: head) + tail
     }
 
@@ -731,8 +737,34 @@ class GyaimController: IMKInputController {
         return AIReranker.localRerank(request, model: "swift-fast-context-heuristic")
     }
 
-    private static func shouldUseModelForFastContextRerank() -> Bool {
+    static var isFastContextRerankEnabled: Bool {
+        UserDefaults.standard.object(forKey: "aiRerankFastContextEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "aiRerankFastContextEnabled")
+    }
+
+    static func setFastContextRerankEnabled(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: "aiRerankFastContextEnabled")
+    }
+
+    static var isFastContextRerankModelEnabled: Bool {
         UserDefaults.standard.bool(forKey: "aiRerankUseModelForFastContext")
+    }
+
+    static func setFastContextRerankModelEnabled(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: "aiRerankUseModelForFastContext")
+    }
+
+    static var isFastContextRerankLoggingEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "aiRerankFastContextLoggingEnabled")
+    }
+
+    static func setFastContextRerankLoggingEnabled(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: "aiRerankFastContextLoggingEnabled")
+    }
+
+    private static func shouldUseModelForFastContextRerank() -> Bool {
+        isFastContextRerankModelEnabled
     }
 
     private static func maxFastContextRerankCandidates() -> Int {

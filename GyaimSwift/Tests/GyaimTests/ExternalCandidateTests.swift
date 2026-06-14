@@ -114,6 +114,24 @@ final class ExternalCandidateTests: XCTestCase {
         XCTAssertEqual(result.map(\.word).prefix(4), ["shitagau", "従う", "従うな", "随う"])
     }
 
+    func testBuildHonorsGlobalFastContextRerankDisabledSetting() {
+        GyaimController.setFastContextRerankEnabled(false)
+        defer { UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled") }
+
+        let searchResults = [
+            SearchCandidate(word: "従うな", reading: "shitagauna", source: .connection, kind: .prefix),
+            SearchCandidate(word: "従う", reading: "shitagau", source: .connection, kind: .exact),
+        ]
+        let result = GyaimController.buildPrefixCandidates(
+            searchResults: searchResults,
+            inputPat: "shitagau",
+            clipboardCandidate: nil,
+            selectedCandidate: nil,
+            hiragana: "したがう"
+        )
+        XCTAssertEqual(result.map(\.word).prefix(3), ["shitagau", "従うな", "従う"])
+    }
+
     func testBuildCanDisableFastContextRerankForLegacyOrder() {
         let searchResults = [
             SearchCandidate(word: "従うな", reading: "shitagauna", source: .connection, kind: .prefix),

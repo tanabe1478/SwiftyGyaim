@@ -190,7 +190,7 @@ AI候補生成は通常入力では自動実行せず、明示的なTab起動時
 
 ## 通常入力の軽量コンテキストrerank
 
-prefix mode では `WordSearch.search()` が返した辞書候補に対して、`GyaimController.buildPrefixCandidates()` が上位24件だけ同期的に `AIReranker.localRerank` へ渡す。これは候補生成を伴わない軽量rerankで、Tab起動のAI候補生成とは別物。
+prefix mode では `aiRerankFastContextEnabled=true`（デフォルトON）のとき、`WordSearch.search()` が返した辞書候補に対して、`GyaimController.buildPrefixCandidates()` が上位24件だけ同期的に `AIReranker.localRerank` へ渡す。これは候補生成を伴わない軽量rerankで、Tab起動のAI候補生成とは別物。
 
 目的:
 - `したがう` に対する `従う` と `従うな` のように、読み完全一致候補と長い予測候補の順序を自然にする
@@ -203,6 +203,7 @@ prefix mode では `WordSearch.search()` が返した辞書候補に対して、
 - rerank対象は辞書候補上位24件のみ（`aiRerankFastContextCandidateLimit` で 2〜48 に調整可能）
 - 低確信時は exact reading を prefix prediction より優先する
 - 既定では Swift heuristic のみを使う。`aiRerankUseModelForFastContext=true` の場合だけ in-process model backend を使う
+- 入力ごとの latency ログは `aiRerankFastContextLoggingEnabled=true` のときだけ出す
 
 ## 完全一致reading優先（ADR-016 → ADR-017）
 
