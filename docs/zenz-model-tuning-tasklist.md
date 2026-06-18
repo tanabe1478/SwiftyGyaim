@@ -74,38 +74,45 @@ Definition of done:
 
 ### M1-1. eval case schema を実装する
 
-- [ ] `GyaimSwift/Tests/GyaimTests/Fixtures/fast-context-eval-cases.jsonl` を作る
-- [ ] schema fields を固定する
-  - [ ] `id`
-  - [ ] `inputPat`
-  - [ ] `inputKana`
-  - [ ] `context`
-  - [ ] `candidates[]`
-  - [ ] `expectedTop`
-  - [ ] `mustNotTop[]`
-  - [ ] `tags[]`
-  - [ ] `reason`
+- [x] `GyaimSwift/Tests/GyaimTests/Fixtures/fast-context-eval-cases.jsonl` を作る
+- [x] schema fields を固定する
+  - [x] `id`
+  - [x] `inputPat`
+  - [x] `inputKana`
+  - [x] `context`
+  - [x] `candidates[]`
+  - [x] `expectedTop`
+  - [x] `mustNotTop[]`
+  - [x] `tags[]`
+  - [x] `reason`
 - [ ] fixture loader test を追加する
-- [ ] malformed case を検出する validation を追加する
+- [x] malformed case を検出する validation を追加する
+
+実装:
+
+- `GyaimSwift/Tests/GyaimTests/Fixtures/fast-context-eval-cases.jsonl`
+- `GyaimSwift/Tools/ai-rerank/validate-fast-context-eval-cases.py`
 
 Definition of done:
 
-- [ ] JSONL fixture が CI で parse される
-- [ ] schema mismatch が test failure になる
+- [x] JSONL fixture が validation script で parse される
+- [ ] schema mismatch が CI test failure になる
 
 ### M1-2. seed eval set 100件を作る
 
+進捗: 12/100件。
+
 カテゴリ別目標:
 
-- [ ] exact protection: 20件
-- [ ] prefix promotion: 15件
-- [ ] negative imperative: 10件
-- [ ] adjective conjugation: 10件
-- [ ] verb conjugation: 10件
-- [ ] connection internal label regression: 10件
-- [ ] compound candidate: 10件
-- [ ] proper noun / user dict: 10件
-- [ ] short input / latency sensitive: 5件
+- [ ] exact protection: 20件（現在8件）
+- [ ] prefix promotion: 15件（現在2件）
+- [ ] negative imperative: 10件（現在2件）
+- [ ] adjective conjugation: 10件（現在1件）
+- [ ] verb conjugation: 10件（現在4件）
+- [ ] connection internal label regression: 10件（現在2件）
+- [ ] compound candidate: 10件（現在2件）
+- [ ] proper noun / user dict: 10件（現在1件）
+- [ ] short input / latency sensitive: 5件（現在2件）
 
 初期候補例:
 
