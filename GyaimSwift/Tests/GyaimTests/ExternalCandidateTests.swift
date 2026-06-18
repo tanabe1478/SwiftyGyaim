@@ -23,6 +23,8 @@ final class ExternalCandidateTests: XCTestCase {
     func testURLIsInvalid() {
         XCTAssertFalse(GyaimController.isValidExternalCandidate("https://example.com"))
         XCTAssertFalse(GyaimController.isValidExternalCandidate("http://example.com/path"))
+        XCTAssertFalse(GyaimController.isValidExternalCandidate("chrome-extension://nhlnjhfioadlgjgcldooopafglkkmcab/app.html"))
+        XCTAssertFalse(GyaimController.isValidExternalCandidate("obsidian://open?vault=notes"))
     }
 
     func testGyazoHashIsInvalid() {
@@ -316,6 +318,20 @@ final class ExternalCandidateTests: XCTestCase {
         )
         let words = result.map(\.word)
         XCTAssertFalse(words.contains("https://example.com/path"))
+    }
+
+    func testBuildSelectedCandidateRejectsChromeExtensionURL() {
+        let url = "chrome-extension://nhlnjhfioadlgjgcldooopafglkkmcab/app.html"
+        let result = GyaimController.buildPrefixCandidates(
+            searchResults: [SearchCandidate(word: "対象", reading: "taisyou")],
+            inputPat: "taisyou",
+            clipboardCandidate: nil,
+            selectedCandidate: url,
+            hiragana: "たいしょう"
+        )
+        let words = result.map(\.word)
+        XCTAssertFalse(words.contains(url))
+        XCTAssertEqual(words.prefix(2), ["taisyou", "対象"])
     }
 
     func testBuildSelectedCandidateRejectsWhitespace() {
