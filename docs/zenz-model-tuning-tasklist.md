@@ -146,21 +146,23 @@ Definition of done:
 
 ### M2-1. dogfood log aggregator を作る
 
-- [ ] `~/.gyaim/gyaim.log` から fast-context 行を抽出する script を作る
-- [ ] outcome 別に集計する
-  - [ ] `heuristic`
-  - [ ] `protected-exact-skip`
-  - [ ] `review-fixed`
-  - [ ] `review-passed`
-  - [ ] `review-kept-local`
-  - [ ] `review-unavailable`
-- [ ] `topChanged=true/false` を集計する
-- [ ] input length 別 latency を集計する
-- [ ] candidate count 別 latency を集計する
+- [x] `~/.gyaim/gyaim.log` から fast-context 行を抽出する script を作る
+- [x] outcome 別に集計する
+  - [x] `heuristic`
+  - [x] `protected-exact-skip`
+  - [x] `review-fixed`
+  - [x] `review-passed`
+  - [x] `review-kept-local`
+  - [x] `review-unavailable`
+- [x] `topChanged=true/false` を集計する
+- [x] input length 別 latency を集計する
+- [x] candidate count 別 latency を集計する
+
+実装: `GyaimSwift/Tools/ai-rerank/aggregate-fast-context-log.py`
 
 Definition of done:
 
-- [ ] 1コマンドで直近30分 / 24時間の p50 / p95 / max が出る
+- [x] 1コマンドで直近30分 / 24時間の p50 / p95 / max が出る
 
 ### M2-2. review-unavailable の原因調査
 
