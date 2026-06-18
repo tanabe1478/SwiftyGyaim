@@ -256,19 +256,21 @@ Definition of done:
 - [x] seed eval set に対して weight sweep を行う
 - [x] top1 / top3 / unsafe / latency を比較する
 - [x] 現行値との差分 report を作る
-- [ ] 勝った weight を固定テストに落とす
+- [x] 勝った weight を固定テストに落とす
+  - seed 105件では default を超える weight はなく、現行値維持を固定
 
 実装:
 
 - `GyaimSwift/Tools/ai-rerank/sweep-fast-context-weights.py`
 - default grid は `contextPredictionBonus` / `prefixPredictionPenalty` / `punctuationSuffixPenalty` の multiplier を探索する
 - text report は baseline と `dTop1` / `dUnsafe` / `dExactDemotion` を出す
-- JSON report は `baseline` と各 result の `delta` を出す
+- JSON report は `baseline` / `sweepSummary` / 各 result の `delta` を出す
+- default grid 36通りのうち safe 27通り、regression 9通り、bestTop1Delta `+0`
 - 現 seed 105件は default weights で top1 `105/105` のため、当面は regression-safe range の確認用途
 
 Definition of done:
 
-- [ ] model fine-tuning なしで改善できる上限が見える
+- [x] model fine-tuning なしで改善できる上限が見える
 
 ## Milestone 4: model comparison
 

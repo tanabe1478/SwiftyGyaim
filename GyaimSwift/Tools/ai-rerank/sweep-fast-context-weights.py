@@ -130,7 +130,24 @@ def sort_key(item: dict[str, Any]) -> tuple:
     )
 
 
-def print_text(items: list[dict[str, Any]], *, baseline: dict[str, Any], limit: int) -> None:
+def sweep_summary(items: list[dict[str, Any]], baseline: dict[str, Any]) -> dict[str, Any]:
+    baseline_top1 = baseline["summary"]["top1Correct"]
+    safe_items = [item for item in items if item["delta"] == {
+        "top1Correct": 0,
+        "unsafeTopCount": 0,
+        "exactDemotionCount": 0,
+    }]
+    best_top1 = max((item["summary"]["top1Correct"] for item in items), default=baseline_top1)
+    return {
+        "totalWeightSets": len(items),
+        "safeWeightSets": len(safe_items),
+        "regressedWeightSets": len(items) - len(safe_items),
+        "bestTop1Correct": best_top1,
+        "bestTop1Delta": best_top1 - baseline_top1,
+    }
+
+
+def print_text(items: list[dict[str, Any]], *, baseline: dict[str, Any], summary: dict[str, Any], limit: int) -> None:
     print("# fast-context feature weight sweep")
     baseline_summary = baseline["summary"]
     print(
@@ -139,6 +156,13 @@ def print_text(items: list[dict[str, Any]], *, baseline: dict[str, Any], limit: 
         f"top3={baseline_summary['top3Accuracy']}\t"
         f"unsafe={baseline_summary['unsafeTopCount']}\t"
         f"exactDemotion={baseline_summary['exactDemotionCount']}\tweights={{}}"
+    )
+    print(
+        "summary\t"
+        f"total={summary['totalWeightSets']}\t"
+        f"safe={summary['safeWeightSets']}\t"
+        f"regressed={summary['regressedWeightSets']}\t"
+        f"bestTop1Delta={summary['bestTop1Delta']:+d}"
     )
     print("rank\ttop1\tdTop1\ttop3\tunsafe\tdUnsafe\texactDemotion\tdExactDemotion\tweights")
     for rank, item in enumerate(items[:limit], start=1):
@@ -179,10 +203,18 @@ def main() -> int:
         key=sort_key,
     )
 
+    summary = sweep_summary(items, baseline)
+
     if args.json:
-        print(json.dumps({"fixture": str(args.fixture), "sweep": sweep, "baseline": baseline, "results": items}, ensure_ascii=False, indent=2))
+        print(json.dumps({
+            "fixture": str(args.fixture),
+            "sweep": sweep,
+            "baseline": baseline,
+            "sweepSummary": summary,
+            "results": items,
+        }, ensure_ascii=False, indent=2))
     else:
-        print_text(items, baseline=baseline, limit=args.limit)
+        print_text(items, baseline=baseline, summary=summary, limit=args.limit)
     return 0
 
 

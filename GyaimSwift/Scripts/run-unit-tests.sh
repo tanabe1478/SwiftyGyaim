@@ -44,6 +44,8 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as f:
     report = json.load(f)
 assert "baseline" in report
+assert "sweepSummary" in report
+assert report["sweepSummary"]["totalWeightSets"] > 0
 assert report["results"]
 assert "delta" in report["results"][0]
 PY
