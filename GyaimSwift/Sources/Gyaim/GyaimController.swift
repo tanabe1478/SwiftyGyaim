@@ -666,15 +666,30 @@ class GyaimController: IMKInputController {
         // prefix match such as "gu" -> "具体的" or "maeno" -> "前のめり".
         // External candidates follow raw input so they appear at the top of the
         // candidate window, matching the original Gyaim registration workflow.
-        if let clip = clipboardCandidate, isValidExternalCandidate(clip) {
-            candidates.append(SearchCandidate(word: clip, source: .external, kind: .exact))
+        if let clip = clipboardCandidate {
+            if isValidExternalCandidate(clip) {
+                candidates.append(SearchCandidate(word: clip, source: .external, kind: .exact))
+            } else if isFastContextRerankLoggingEnabled {
+                Log.input.info("External clipboard candidate rejected: \"\(clip.prefix(50))\"")
+            }
         }
 
-        if let sel = selectedCandidate, isValidExternalCandidate(sel) {
-            candidates.append(SearchCandidate(word: sel, source: .external, kind: .exact))
+        if let sel = selectedCandidate {
+            if isValidExternalCandidate(sel) {
+                candidates.append(SearchCandidate(word: sel, source: .external, kind: .exact))
+            } else if isFastContextRerankLoggingEnabled {
+                Log.input.info("External selected-text candidate rejected: \"\(sel.prefix(50))\"")
+            }
         }
 
-        let dictionaryCandidates = fastContextRerankEnabled && isFastContextRerankEnabled
+        let shouldFastContextRerank = fastContextRerankEnabled && isFastContextRerankEnabled
+        if isFastContextRerankLoggingEnabled, !shouldFastContextRerank {
+            Log.input.info(
+                "Fast context rerank skipped: input=\"\(inputPat)\" "
+                    + "enabled=\(isFastContextRerankEnabled) testHook=\(fastContextRerankEnabled)"
+            )
+        }
+        let dictionaryCandidates = shouldFastContextRerank
             ? fastContextRerank(searchResults, inputPat: inputPat, hiragana: hiragana, context: context)
             : searchResults
         candidates.append(contentsOf: dictionaryCandidates)
@@ -699,7 +714,15 @@ class GyaimController: IMKInputController {
                                           inputPat: String,
                                           hiragana: String,
                                           context: String?) -> [SearchCandidate] {
-        guard searchResults.count >= 2 else { return searchResults }
+        guard searchResults.count >= 2 else {
+            if isFastContextRerankLoggingEnabled {
+                Log.input.info(
+                    "Fast context rerank skipped: input=\"\(inputPat)\" "
+                        + "reason=too-few-dictionary-candidates count=\(searchResults.count)"
+                )
+            }
+            return searchResults
+        }
 
         let start = CFAbsoluteTimeGetCurrent()
         let maxFastRerankCandidates = Self.maxFastContextRerankCandidates()
@@ -721,15 +744,20 @@ class GyaimController: IMKInputController {
             }
         )
         let response = fastContextRerankResponse(for: request)
+        let rerankedHead = AIReranker.apply(order: response.order, to: head)
         if isFastContextRerankLoggingEnabled {
             let elapsed = elapsedMilliseconds(since: start)
+            let beforeTop = head.prefix(8).map(\.word)
+            let afterTop = rerankedHead.prefix(8).map(\.word)
             Log.input.info(
                 "Fast context rerank finished: input=\"\(inputPat)\" "
                     + "model=\(response.model ?? "unknown") candidates=\(head.count)/\(searchResults.count) "
+                    + "context=\(trimmedContext.isEmpty ? "none" : "present") "
+                    + "order=\(response.order) before=\(beforeTop) after=\(afterTop) "
                     + "latency=\(formatMilliseconds(elapsed))ms"
             )
         }
-        return AIReranker.apply(order: response.order, to: head) + tail
+        return rerankedHead + tail
     }
 
     private static func fastContextRerankResponse(for request: AIRerankRequest) -> AIRerankResponse {
