@@ -728,7 +728,7 @@ class GyaimController: IMKInputController {
         let maxFastRerankCandidates = Self.maxFastContextRerankCandidates()
         let head = Array(searchResults.prefix(maxFastRerankCandidates))
         let tail = Array(searchResults.dropFirst(maxFastRerankCandidates))
-        let trimmedContext = context?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmedContext = limitedFastContext(context)
         let request = AIRerankRequest(
             version: 1,
             mode: "fast-context-rerank",
@@ -761,7 +761,7 @@ class GyaimController: IMKInputController {
     }
 
     private static func fastContextRerankResponse(for request: AIRerankRequest) -> AIRerankResponse {
-        if shouldUseModelForFastContextRerank() {
+        if shouldUseModelForFastContextRerank(inputPat: request.inputPat) {
             return InProcessAIReranker.shared.rerank(request)
         }
         return AIReranker.localRerank(request, model: "swift-fast-context-heuristic")
@@ -793,8 +793,23 @@ class GyaimController: IMKInputController {
         UserDefaults.standard.set(value, forKey: "aiRerankFastContextLoggingEnabled")
     }
 
-    private static func shouldUseModelForFastContextRerank() -> Bool {
-        isFastContextRerankModelEnabled
+    private static func shouldUseModelForFastContextRerank(inputPat: String) -> Bool {
+        guard isFastContextRerankModelEnabled else { return false }
+        return inputPat.count >= minFastContextModelInputLength()
+    }
+
+    private static func minFastContextModelInputLength() -> Int {
+        let configured = UserDefaults.standard.integer(forKey: "aiRerankFastContextModelMinInputLength")
+        guard configured > 0 else { return 4 }
+        return min(max(configured, 1), 12)
+    }
+
+    private static func limitedFastContext(_ context: String?) -> String {
+        let trimmed = context?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return "" }
+        let configured = UserDefaults.standard.integer(forKey: "aiRerankFastContextMaxContextLength")
+        let limit = configured > 0 ? min(max(configured, 1), 200) : 20
+        return String(trimmed.suffix(limit))
     }
 
     private static func maxFastContextRerankCandidates() -> Int {

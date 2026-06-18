@@ -82,6 +82,10 @@ final class BundledZenzRuntime: ZenzRuntime {
         let activeContext = context
         guard let activeContext else { return nil }
 
+        if request.mode == "fast-context-rerank" {
+            return fastContextReviewRerank(request, activeContext: activeContext)
+        }
+
         let runtimeStart = CFAbsoluteTimeGetCurrent()
         Log.input.info("Zenz rerank start: input=\"\(request.inputPat)\" candidates=\(request.candidates.count)")
         let heuristic = AIReranker.localRerank(request, model: identifier)
@@ -212,6 +216,65 @@ final class BundledZenzRuntime: ZenzRuntime {
         #endif
     }
 
+    #if canImport(llama)
+    private func fastContextReviewRerank(_ request: AIRerankRequest,
+                                         activeContext: LlamaZenzContext) -> AIRerankResponse? {
+        let runtimeStart = CFAbsoluteTimeGetCurrent()
+        let heuristic = AIReranker.localRerank(request, model: identifier)
+        let localOrder = AIReranker.validatedOrder(heuristic.order, candidateCount: request.candidates.count)
+        guard let bestIndex = localOrder.first,
+              let best = request.candidates.first(where: { $0.index == bestIndex }) else {
+            return heuristic
+        }
+
+        // Fast-context mode is latency-sensitive. Protect the strongest exact-reading
+        // decision and avoid evaluating every candidate. This mirrors Zenzai's
+        // review-style use: inspect the current best candidate once, then optionally
+        // convert the model's preferred prefix into an existing candidate order.
+        if Self.isProtectedExactReadingCandidate(best, request: request) {
+            Log.input.info("Zenz fast-context review skipped: input=\"\(request.inputPat)\" "
+                + "reason=protected-exact best=\"\(best.text)\"")
+            return AIRerankResponse(order: localOrder,
+                                    scores: heuristic.scores,
+                                    model: "swift-local-heuristic+zenz-review-skipped")
+        }
+
+        let prompt = Self.prompt(for: request)
+        Log.input.info("Zenz fast-context review start: input=\"\(request.inputPat)\" "
+            + "best=\"\(best.text)\" candidates=\(request.candidates.count)")
+        guard let evaluation = activeContext.evaluateCandidate(prompt: prompt,
+                                                              candidateText: best.text,
+                                                              alternativeLimit: 0) else {
+            Log.input.warning("Zenz fast-context review unavailable: input=\"\(request.inputPat)\"")
+            return heuristic
+        }
+
+        var order = localOrder
+        if let prefix = evaluation.fixRequiredPrefix,
+           let replacement = localOrder.first(where: { index in
+               guard let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
+               return candidate.text.hasPrefix(prefix)
+           }) {
+            order.removeAll { $0 == replacement }
+            order.insert(replacement, at: 0)
+            Log.input.info("Zenz fast-context review fixed: input=\"\(request.inputPat)\" "
+                + "prefix=\"\(prefix)\" replacementIndex=\(replacement)")
+        } else if let prefix = evaluation.fixRequiredPrefix {
+            Log.input.info("Zenz fast-context review kept local order: input=\"\(request.inputPat)\" "
+                + "unmatchedPrefix=\"\(prefix)\"")
+        } else {
+            Log.input.info("Zenz fast-context review passed: input=\"\(request.inputPat)\" best=\"\(best.text)\"")
+        }
+
+        let elapsed = (CFAbsoluteTimeGetCurrent() - runtimeStart) * 1000
+        Log.input.info("Zenz fast-context review finished: input=\"\(request.inputPat)\" "
+            + "order=\(order) latency=\(String(format: "%.1f", elapsed))ms")
+        return AIRerankResponse(order: order,
+                                scores: heuristic.scores,
+                                model: "bundled-zenz-v3.1-xsmall-review+swift-local-heuristic")
+    }
+    #endif
+
     private func appendAlternative(_ prefix: String,
                                    base: AIRerankCandidate,
                                    inputPat: String,
@@ -313,5 +376,16 @@ final class BundledZenzRuntime: ZenzRuntime {
                                             maxScoredCandidates: Int) -> Bool {
         guard candidate.kind != CandidateKind.raw.rawValue else { return false }
         return candidate.index < maxScoredCandidates || candidate.kind == CandidateKind.zenz.rawValue
+    }
+
+    private static func isProtectedExactReadingCandidate(_ candidate: AIRerankCandidate,
+                                                         request: AIRerankRequest) -> Bool {
+        guard candidate.reading == request.inputPat else { return false }
+        switch candidate.kind {
+        case CandidateKind.exact.rawValue, CandidateKind.compound.rawValue:
+            return true
+        default:
+            return false
+        }
     }
 }
