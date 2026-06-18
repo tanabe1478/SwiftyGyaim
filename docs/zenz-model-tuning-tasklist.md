@@ -1,7 +1,7 @@
 # Zenz / Zenzai model tuning tasklist
 
 > Status: Draft
-> Last updated: 2026-06-18
+> Last updated: 2026-06-19
 > Parent spec: `docs/specs/zenz-model-tuning.md`
 > Related PR: <https://github.com/tanabe1478/SwiftyGyaim/pull/52>
 
@@ -17,58 +17,58 @@
 
 ### M0-1. 現在の SwiftyGyaim Zenz 利用経路を棚卸しする
 
-- [ ] `BundledAIRerankModel.swift` の model resource path を記録する
-- [ ] `ZenzPrompt.swift` の tag 定義を記録する
-- [ ] `ZenzRuntime.swift` の用途を分ける
-  - [ ] full rerank scoring
-  - [ ] fast-context review path
-  - [ ] generation
-  - [ ] alternative candidate / review loop
-- [ ] `GyaimController.swift` の fast-context gating を記録する
-  - [ ] min input length
-  - [ ] max context length
-  - [ ] candidate limit
-  - [ ] protected exact skip
-- [ ] `docs/specs/ai-rerank.md` と `docs/specs/input-flow.md` の記述との差分を確認する
+- [x] `BundledAIRerankModel.swift` の model resource path を記録する
+- [x] `ZenzPrompt.swift` の tag 定義を記録する
+- [x] `ZenzRuntime.swift` の用途を分ける
+  - [x] full rerank scoring
+  - [x] fast-context review path
+  - [x] generation
+  - [x] alternative candidate / review loop
+- [x] `GyaimController.swift` の fast-context gating を記録する
+  - [x] min input length
+  - [x] max context length
+  - [x] candidate limit
+  - [x] protected exact skip
+- [x] `docs/specs/ai-rerank.md` と `docs/specs/input-flow.md` の記述との差分を確認する
 
 Definition of done:
 
-- [ ] `docs/specs/zenz-model-tuning.md` の「SwiftyGyaim での現在の使い方」がコードと一致している
+- [x] `docs/specs/zenz-model-tuning.md` の「SwiftyGyaim での現在の使い方」がコードと一致している
 
 ### M0-2. Zenz / Zenzai の公開情報を一次情報で確認する
 
-- [ ] AzooKeyKanaKanjiConverter `Docs/zenzai.md` を確認する
-- [ ] AzooKeyKanaKanjiConverter の `ZenzPromptBuilder.swift` を確認する
-- [ ] `Miwa-Keita/zenz-v3.1-xsmall` の HF model files を確認する
-  - [ ] license
-  - [ ] config
-  - [ ] tokenizer files
-  - [ ] README の有無と内容
-- [ ] `Miwa-Keita/zenz-v3.1-xsmall-gguf` の HF artifact を確認する
-- [ ] `Miwa-Keita/zenz-v1` の model card を確認する
-- [ ] `ku-nlp/gpt2-small-japanese-char` の model card / license / config を確認する
-- [ ] 「確認できた事実」と「推測」を分けて doc に追記する
+- [x] AzooKeyKanaKanjiConverter `Docs/zenzai.md` を確認する
+- [x] AzooKeyKanaKanjiConverter の Zenz prompt / candidate evaluation 実装を確認する
+- [x] `Miwa-Keita/zenz-v3.1-xsmall` の HF model files を確認する
+  - [x] license
+  - [x] config
+  - [x] tokenizer files
+  - [x] README の有無と内容
+- [x] `Miwa-Keita/zenz-v3.1-xsmall-gguf` の HF artifact を確認する
+- [x] `Miwa-Keita/zenz-v1` の model card を確認する
+- [x] `ku-nlp/gpt2-small-japanese-char` の model card / license / config を確認する
+- [x] 「確認できた事実」と「推測」を分けて doc に追記する
 
 Definition of done:
 
-- [ ] `zenz-v1` と `zenz-v3.1-xsmall` の由来を混同しない記述になっている
-- [ ] `zenz-v3.1-xsmall` の元モデルを断言しない理由が書かれている
+- [x] `zenz-v1` と `zenz-v3.1-xsmall` の由来を混同しない記述になっている
+- [x] `zenz-v3.1-xsmall` の元モデルを断言しない理由が書かれている
 
 ### M0-3. pi-tinker の適合性を確認する
 
-- [ ] `gvkhosla/pi-tinker` を clone / read する
-- [ ] README の位置づけを確認する
-  - [ ] training framework ではない
-  - [ ] Tinker / Tinker Cookbook operator
-  - [ ] chat JSONL / SFT workflow 中心
-- [ ] Tinker 対応 model family を確認する
-- [ ] SwiftyGyaim の local GGUF runtime との差分を整理する
-- [ ] 使える用途 / 使わない用途を doc に追記する
+- [x] `gvkhosla/pi-tinker` を clone / read する
+- [x] README の位置づけを確認する
+  - [x] training framework ではない
+  - [x] Tinker / Tinker Cookbook operator
+  - [x] chat JSONL / SFT workflow 中心
+- [x] Tinker 対応 model family を確認する
+- [x] SwiftyGyaim の local GGUF runtime との差分を整理する
+- [x] 使える用途 / 使わない用途を doc に追記する
 
 Definition of done:
 
-- [ ] pi-tinker を「直接 GGUF を作る本命手段」として扱わないことが明文化されている
-- [ ] 学習ロードマップ上の補助用途が明文化されている
+- [x] pi-tinker を「直接 GGUF を作る本命手段」として扱わないことが明文化されている
+- [x] 学習ロードマップ上の補助用途が明文化されている
 
 ## Milestone 1: 評価データ基盤
 

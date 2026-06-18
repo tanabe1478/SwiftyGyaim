@@ -35,6 +35,19 @@ python3 Tools/ai-rerank/validate-fast-context-eval-cases.py >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --json >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --feature-weight contextPredictionBonus=1.0 --json >/dev/null
 python3 Tools/ai-rerank/sweep-fast-context-weights.py --limit 1 >/dev/null
+sweep_json="$(mktemp)"
+python3 Tools/ai-rerank/sweep-fast-context-weights.py --json --limit 1 > "$sweep_json"
+python3 - "$sweep_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    report = json.load(f)
+assert "baseline" in report
+assert report["results"]
+assert "delta" in report["results"][0]
+PY
+rm -f "$sweep_json"
 review_cases_jsonl="$(mktemp)"
 python3 Tools/ai-rerank/extract-fast-context-review-cases.py --limit 1 > "$review_cases_jsonl"
 python3 Tools/ai-rerank/summarize-fast-context-review-labels.py "$review_cases_jsonl" >/dev/null
