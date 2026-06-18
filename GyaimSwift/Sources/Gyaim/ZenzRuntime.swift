@@ -16,8 +16,10 @@ enum ZenzRuntimeStatus: Equatable {
 /// Runtime boundary for the bundled Zenz/GGUF model.
 ///
 /// `BundledZenzRuntime` prepares the model file and, when the llama module is
-/// linked, creates a llama.cpp model/context/vocab in-process. Candidate scoring
-/// still falls back to Swift heuristic until the prompt/evaluation logic is added.
+/// linked, creates a llama.cpp model/context/vocab in-process. Rerank combines
+/// Swift heuristic scores with lightweight Zenz continuation scores for the top
+/// candidates, and returns nil so callers can fall back when runtime scoring is
+/// unavailable.
 protocol ZenzRuntime {
     var identifier: String { get }
     func prepare() -> ZenzRuntimeStatus
