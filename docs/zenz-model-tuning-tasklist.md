@@ -100,35 +100,35 @@ Definition of done:
 
 ### M1-2. seed eval set 100件を作る
 
-進捗: 30/100件。
+進捗: 105/100件。
 
 カテゴリ別目標:
 
-- [ ] exact protection: 20件（現在19件）
-- [ ] prefix promotion: 15件（現在5件）
-- [ ] negative imperative: 10件（現在5件）
-- [ ] adjective conjugation: 10件（現在5件）
-- [x] verb conjugation: 10件（現在11件）
-- [ ] connection internal label regression: 10件（現在6件）
-- [ ] compound candidate: 10件（現在9件）
-- [ ] proper noun / user dict: 10件（現在5件: proper noun 3件 + user-dict 2件）
-- [ ] short input / latency sensitive: 5件（現在4件）
+- [x] exact protection: 20件（現在79件）
+- [x] prefix promotion: 15件（現在15件）
+- [x] negative imperative: 10件（現在15件）
+- [x] adjective conjugation: 10件（現在10件）
+- [x] verb conjugation: 10件（現在26件）
+- [x] connection internal label regression: 10件（現在11件）
+- [x] compound candidate: 10件（現在24件）
+- [x] proper noun / user dict: 10件（現在15件: proper noun 8件 + user-dict 7件）
+- [x] short input / latency sensitive: 5件（現在 short-input 9件 + latency-sensitive 8件）
 
 初期候補例:
 
-- [ ] `shitagau`: `従う` vs `従うな`
-- [ ] `kiru`: `切る` vs `切るな`
-- [ ] `omoku`: `重く` / `重い形容詞` regression
-- [ ] `keiyoushi`: `形容詞` standalone should remain
-- [ ] `kyokushoka`: compound candidate kind
-- [ ] `sitehosii`: `してほしい`
-- [ ] `siteimasuka`: `していますか`
-- [ ] `kinou`: `機能` vs `昨日`
-- [ ] `rogu`: `ログ`
+- [x] `shitagau`: `従う` vs `従うな`
+- [x] `kiru`: `切る` vs `切るな`
+- [x] `omoku`: `重く` / `重い形容詞` regression
+- [x] `keiyoushi`: `形容詞` standalone should remain
+- [x] `kyokushoka`: compound candidate kind
+- [x] `sitehosii`: `してほしい`
+- [x] `siteimasuka`: `していますか`
+- [x] `kinou`: `機能` vs `昨日`
+- [x] `rogu`: `ログ`
 
 Definition of done:
 
-- [ ] seed 100件で現行 heuristic / model path の baseline が取れる
+- [x] seed 100件で現行 heuristic / model path の baseline が取れる
 
 ### M1-3. offline evaluator を作る
 
@@ -149,7 +149,7 @@ Definition of done:
 
 - `GyaimSwift/Tools/ai-rerank/evaluate-fast-context-rerank.py`
 - default は Swift `AIReranker.localRerank` の軽量 Python port
-- 現在の seed 30件 baseline: top1 `30/30`, top3 `30/30`, unsafe top `0`, exact demotion `0`
+- 現在の seed 105件 baseline: top1 `105/105`, top3 `105/105`, unsafe top `0`, exact demotion `0`
 
 Definition of done:
 
@@ -259,7 +259,7 @@ Definition of done:
 
 - `GyaimSwift/Tools/ai-rerank/sweep-fast-context-weights.py`
 - default grid は `contextPredictionBonus` / `prefixPredictionPenalty` / `punctuationSuffixPenalty` の multiplier を探索する
-- 現 seed 30件は default weights で top1 `30/30` のため、当面は regression-safe range の確認用途
+- 現 seed 105件は default weights で top1 `105/105` のため、当面は regression-safe range の確認用途
 
 Definition of done:
 
@@ -376,7 +376,7 @@ Definition of done:
 
 1. `M2-1 dogfood log aggregator`
 2. `M1-1 eval case schema`
-3. `M1-2 seed eval set 30件から開始`
+3. `M1-2 seed eval set 105件まで拡張済み`
 4. `M2-2 review-unavailable reason breakdown`
 5. `M3-1 feature breakdown`
 
