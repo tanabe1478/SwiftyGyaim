@@ -258,6 +258,7 @@ def local_score_breakdown(candidate: dict[str, Any], request: dict[str, Any]) ->
     if any(is_kanji(ch) for ch in candidate["text"]):
         contributions["kanjiBonus"] = 0.10
     contributions["naturalFunctionWordPhraseBonus"] = natural_function_word_phrase_bonus(candidate["text"])
+    contributions["punctuationSuffixPenalty"] = -punctuation_suffix_penalty(candidate["text"])
     if candidate["kind"] == "zenz" and is_all_kanji_word(candidate["text"]):
         contributions["zenzKanjiBonus"] = 0.50
     if candidate["text"] == request["inputPat"] and candidate["text"].isascii():
@@ -306,6 +307,10 @@ def natural_function_word_phrase_bonus(text: str) -> float:
     if text.endswith(("では", "には", "とは")):
         score += 0.70
     return score
+
+
+def punctuation_suffix_penalty(text: str) -> float:
+    return 0.10 if text.endswith(("？", "！")) else 0.0
 
 
 def source_bias(source: str) -> float:

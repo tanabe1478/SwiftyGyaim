@@ -78,6 +78,7 @@ enum AIReranker {
             score += 0.10
         }
         score += naturalFunctionWordPhraseBonus(candidate.text)
+        score -= punctuationSuffixPenalty(candidate.text)
         if candidate.kind == CandidateKind.zenz.rawValue && isAllKanjiWord(candidate.text) {
             score += 0.50
         }
@@ -130,6 +131,10 @@ enum AIReranker {
             score += 0.70
         }
         return score
+    }
+
+    private static func punctuationSuffixPenalty(_ text: String) -> Double {
+        text.hasSuffix("？") || text.hasSuffix("！") ? 0.10 : 0.0
     }
 
     private static func sourceBias(_ source: String) -> Double {

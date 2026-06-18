@@ -118,6 +118,35 @@ final class AIRerankerTests: XCTestCase {
     }
 
 
+    func testLocalRerankPrefersQuestionPhraseWithoutPunctuationWhenReadingTies() {
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "rerank",
+            inputPat: "siteimasuka",
+            hiragana: "していますか",
+            context: "今回はログは機能",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "していますか？",
+                                  reading: "siteimasuka",
+                                  source: "connection",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 1,
+                                  text: "していますか",
+                                  reading: "siteimasuka",
+                                  source: "connection",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 2,
+                                  text: "しています",
+                                  reading: "siteimasu",
+                                  source: "connection",
+                                  kind: "prefix")
+            ]
+        )
+
+        XCTAssertEqual(AIReranker.localRerank(request).order.first, 1)
+    }
+
     func testLocalRerankPenalizesLongerPrefixPredictionUnlessContextStronglySupportsIt() {
         let neutral = AIRerankRequest(
             version: 1,
