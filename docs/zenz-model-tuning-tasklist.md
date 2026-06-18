@@ -100,19 +100,19 @@ Definition of done:
 
 ### M1-2. seed eval set 100件を作る
 
-進捗: 12/100件。
+進捗: 30/100件。
 
 カテゴリ別目標:
 
-- [ ] exact protection: 20件（現在8件）
-- [ ] prefix promotion: 15件（現在2件）
-- [ ] negative imperative: 10件（現在2件）
-- [ ] adjective conjugation: 10件（現在1件）
-- [ ] verb conjugation: 10件（現在4件）
-- [ ] connection internal label regression: 10件（現在2件）
-- [ ] compound candidate: 10件（現在2件）
-- [ ] proper noun / user dict: 10件（現在1件）
-- [ ] short input / latency sensitive: 5件（現在2件）
+- [ ] exact protection: 20件（現在19件）
+- [ ] prefix promotion: 15件（現在5件）
+- [ ] negative imperative: 10件（現在5件）
+- [ ] adjective conjugation: 10件（現在5件）
+- [x] verb conjugation: 10件（現在11件）
+- [ ] connection internal label regression: 10件（現在6件）
+- [ ] compound candidate: 10件（現在9件）
+- [ ] proper noun / user dict: 10件（現在5件: proper noun 3件 + user-dict 2件）
+- [ ] short input / latency sensitive: 5件（現在4件）
 
 初期候補例:
 
@@ -149,7 +149,7 @@ Definition of done:
 
 - `GyaimSwift/Tools/ai-rerank/evaluate-fast-context-rerank.py`
 - default は Swift `AIReranker.localRerank` の軽量 Python port
-- 現在の seed 12件 baseline: top1 `12/12`, top3 `12/12`, unsafe top `0`, exact demotion `0`
+- 現在の seed 30件 baseline: top1 `30/30`, top3 `30/30`, unsafe top `0`, exact demotion `0`
 
 Definition of done:
 
