@@ -201,10 +201,17 @@ Definition of done:
 
 ### M2-3. review-fixed の品質確認
 
-- [ ] `review-fixed topChanged=true` のケースを抽出する
+- [x] `review-fixed topChanged=true` のケースを抽出する
 - [ ] 良化 / 悪化 / 不明に手動ラベルする
 - [ ] 悪化パターンを tag 化する
 - [ ] `prefix` が短すぎる場合の制約を検討する
+
+実装:
+
+- `GyaimSwift/Tools/ai-rerank/extract-fast-context-review-cases.py`
+- default は `~/.gyaim/gyaim.log(.1)` から `outcome=review-fixed` かつ `topChanged=true` を JSONL 出力
+- `--format markdown` で手動ラベル用 report を出力できる
+- 出力は private IME log を含むため、人間レビューなしで外部に送らない
 
 Definition of done:
 

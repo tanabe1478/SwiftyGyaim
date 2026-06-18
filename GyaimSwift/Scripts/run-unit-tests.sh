@@ -25,5 +25,10 @@ xcodebuild \
 LLVM_PROFILE_FILE="$PROFILE_DIR/${SCHEME}-%p.profraw" \
   xcrun xctest "$BUNDLE"
 
+python3 -m py_compile \
+  Tools/ai-rerank/validate-fast-context-eval-cases.py \
+  Tools/ai-rerank/evaluate-fast-context-rerank.py \
+  Tools/ai-rerank/extract-fast-context-review-cases.py
 python3 Tools/ai-rerank/validate-fast-context-eval-cases.py >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --json >/dev/null
+python3 Tools/ai-rerank/extract-fast-context-review-cases.py --limit 1 >/dev/null
