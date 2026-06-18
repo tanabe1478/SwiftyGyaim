@@ -242,11 +242,13 @@ final class BundledZenzRuntime: ZenzRuntime {
         let prompt = Self.prompt(for: request)
         Log.input.info("Zenz fast-context review start: input=\"\(request.inputPat)\" "
             + "best=\"\(best.text)\" candidates=\(request.candidates.count)")
+        var failureReason = "unknown"
         guard let evaluation = activeContext.evaluateCandidate(prompt: prompt,
                                                               candidateText: best.text,
-                                                              alternativeLimit: 0) else {
+                                                              alternativeLimit: 0,
+                                                              failureReason: { failureReason = $0 }) else {
             Log.input.warning("Zenz fast-context review unavailable: input=\"\(request.inputPat)\" "
-                + "reason=evaluate-candidate-nil best=\"\(best.text)\"")
+                + "reason=\(failureReason) best=\"\(best.text)\"")
             return AIRerankResponse(order: localOrder,
                                     scores: heuristic.scores,
                                     model: "bundled-zenz-v3.1-xsmall-review-unavailable+swift-local-heuristic")

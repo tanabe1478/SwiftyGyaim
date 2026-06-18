@@ -85,7 +85,7 @@ Definition of done:
   - [x] `mustNotTop[]`
   - [x] `tags[]`
   - [x] `reason`
-- [ ] fixture loader test を追加する
+- [x] fixture loader test を追加する
 - [x] malformed case を検出する validation を追加する
 
 実装:
@@ -96,7 +96,7 @@ Definition of done:
 Definition of done:
 
 - [x] JSONL fixture が validation script で parse される
-- [ ] schema mismatch が CI test failure になる
+- [x] schema mismatch が CI test failure になる
 
 ### M1-2. seed eval set 100件を作る
 
@@ -173,18 +173,24 @@ Definition of done:
 
 ### M2-2. review-unavailable の原因調査
 
-- [ ] `evaluateCandidate` が nil を返す理由を分解する
-  - [ ] prompt token empty
-  - [ ] candidate token empty
-  - [ ] logits failure
-  - [ ] best token decode failure
-  - [ ] prefix decode mismatch
-- [ ] log に reason を出す
-- [ ] reason 別に発生率を集計する
+- [x] `evaluateCandidate` が nil を返す理由を分解する
+  - [x] prompt token empty
+  - [x] candidate token empty
+  - [x] logits failure
+  - [x] best token decode failure
+  - [x] prefix decode mismatch
+- [x] log に reason を出す
+- [x] reason 別に発生率を集計する
+
+実装:
+
+- `LlamaZenzContext.evaluateCandidate(... failureReason:)`
+- `ZenzRuntime.fastContextReviewRerank` の `reason=<detailed-reason>` ログ
+- `aggregate-fast-context-log.py` の `reviewEvents.unavailable:<reason>` 集計
 
 Definition of done:
 
-- [ ] `review-unavailable` が `reason=evaluate-candidate-nil` だけでなく詳細 reason で分類される
+- [x] `review-unavailable` が `reason=evaluate-candidate-nil` だけでなく詳細 reason で分類される
 
 ### M2-3. review-fixed の品質確認
 
