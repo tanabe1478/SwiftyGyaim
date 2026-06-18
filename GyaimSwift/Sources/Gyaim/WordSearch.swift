@@ -193,6 +193,10 @@ class WordSearch {
             searchMode > 0 || reading == q ? .exact : .prefix
         }
 
+        func connectionCandidateKind(for result: ConnectionSearchResult) -> CandidateKind {
+            result.depth > 1 ? .compound : matchKind(for: result.pat)
+        }
+
         if exactPriority {
             // 4-bucket cross-dict ordering (BUG-004):
             //   1. studyDict exact   2. localDict exact
@@ -299,17 +303,15 @@ class WordSearch {
         }
 
         // Search connection dict
-        connectionDict.search(pat: q, searchMode: searchMode) { word, pat, _ in
+        connectionDict.searchDetailed(pat: q, searchMode: searchMode) { result in
             if limit > 0 { guard candidates.count < limit else { return } }
-            var w = word
-            if w.hasSuffix("*") { return }
-            w = w.replacingOccurrences(of: "*", with: "")
+            let w = result.word
             if Self.isSuspiciousConnectionSurface(w) { return }
             if !candfound.contains(w) {
                 candidates.append(SearchCandidate(word: w,
-                                                  reading: pat,
+                                                  reading: result.pat,
                                                   source: .connection,
-                                                  kind: matchKind(for: pat)))
+                                                  kind: connectionCandidateKind(for: result)))
                 candfound.insert(w)
             }
         }

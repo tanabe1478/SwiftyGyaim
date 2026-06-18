@@ -2,11 +2,45 @@ import Foundation
 
 struct DictEntry {
     let pat: String
+    let rawWord: String
     let word: String
     let inConnection: Int
     let outConnection: Int
+    let canStart: Bool
+    let canTerminate: Bool
+    let contributesSurface: Bool
     var keyLink: Int?
     var connectionLink: Int?
+
+    init(pat: String, word: String, inConnection: Int, outConnection: Int) {
+        self.pat = pat
+        self.rawWord = word
+        self.word = word.replacingOccurrences(of: "*", with: "")
+        self.inConnection = inConnection
+        self.outConnection = outConnection
+        self.canStart = !word.hasPrefix("*") && !Self.isInternalConnectionLabel(word)
+        self.canTerminate = !word.hasSuffix("*") && !Self.isInternalConnectionLabel(word)
+        self.contributesSurface = !Self.isInternalConnectionLabel(word)
+    }
+
+    private static func isInternalConnectionLabel(_ word: String) -> Bool {
+        [
+            "い形容詞",
+            "な形容詞",
+            "形容詞語尾",
+            "動詞語尾",
+            "名詞接続",
+            "終止接続",
+            "連用接続",
+        ].contains(word)
+    }
+}
+
+struct ConnectionSearchResult {
+    let word: String
+    let pat: String
+    let outConnection: Int
+    let depth: Int
 }
 
 /// Morphological connection dictionary for compound word matching.
@@ -48,7 +82,7 @@ class ConnectionDict {
         // Build keyLink: first character → linked list through dict
         var curKey: [Int: Int] = [:]
         for i in 0..<dict.count {
-            if dict[i].word.hasPrefix("*") { continue }
+            if !dict[i].canStart { continue }
             guard let firstScalar = dict[i].pat.unicodeScalars.first else { continue }
             let ind = Int(firstScalar.value)
             if keyLink[ind] == nil {
@@ -83,14 +117,22 @@ class ConnectionDict {
     ///   - callback: (word, matchedPat, outConnection) for each result
     func search(pat: String, searchMode: Int,
                 callback: (_ word: String, _ pat: String, _ outConnection: Int) -> Void) {
-        generateCand(connection: nil, pat: pat, foundWord: "", foundPat: "",
+        searchDetailed(pat: pat, searchMode: searchMode) { result in
+            callback(result.word, result.pat, result.outConnection)
+        }
+    }
+
+    /// Search the dictionary and include metadata about the connection path.
+    func searchDetailed(pat: String, searchMode: Int,
+                        callback: (_ result: ConnectionSearchResult) -> Void) {
+        generateCand(connection: nil, pat: pat, foundWord: "", foundPat: "", depth: 0,
                      searchMode: searchMode, callback: callback)
     }
 
     private func generateCand(connection: Int?, pat: String,
-                               foundWord: String, foundPat: String,
+                               foundWord: String, foundPat: String, depth: Int,
                                searchMode: Int,
-                               callback: (_ word: String, _ pat: String, _ outConnection: Int) -> Void) {
+                               callback: (_ result: ConnectionSearchResult) -> Void) {
         guard let firstScalar = pat.unicodeScalars.first else { return }
         var d: Int?
         if let conn = connection {
@@ -101,20 +143,32 @@ class ConnectionDict {
 
         while let idx = d {
             let entry = dict[idx]
+            let nextWord = entry.contributesSurface ? foundWord + entry.word : foundWord
+            let nextPat = foundPat + entry.pat
+            let nextDepth = depth + 1
             if pat == entry.pat {
                 // Exact match
-                callback(foundWord + entry.word, foundPat + entry.pat, entry.outConnection)
+                if entry.canTerminate {
+                    callback(ConnectionSearchResult(word: nextWord,
+                                                    pat: nextPat,
+                                                    outConnection: entry.outConnection,
+                                                    depth: nextDepth))
+                }
             } else if entry.pat.hasPrefix(pat) {
                 // Dict entry starts with pattern (prefix match)
-                if searchMode == 0 {
-                    callback(foundWord + entry.word, foundPat + entry.pat, entry.outConnection)
+                if searchMode == 0, entry.canTerminate {
+                    callback(ConnectionSearchResult(word: nextWord,
+                                                    pat: nextPat,
+                                                    outConnection: entry.outConnection,
+                                                    depth: nextDepth))
                 }
             } else if pat.hasPrefix(entry.pat) {
                 // Pattern starts with dict entry (potential compound via connection)
                 let restPat = String(pat.dropFirst(entry.pat.count))
                 generateCand(connection: entry.outConnection, pat: restPat,
-                             foundWord: foundWord + entry.word,
-                             foundPat: foundPat + entry.pat,
+                             foundWord: nextWord,
+                             foundPat: nextPat,
+                             depth: nextDepth,
                              searchMode: searchMode, callback: callback)
             }
 

@@ -75,6 +75,12 @@ final class WordSearchTests: XCTestCase {
         XCTAssertTrue(words.contains("形容詞"), "Standalone grammar term should remain valid: \(words)")
     }
 
+    func testConnectionCompoundExactUsesCompoundKind() throws {
+        try XCTSkipIf(ws == nil)
+        let results = ws.search(query: "kyokushoka", searchMode: 1)
+        XCTAssertEqual(results.first { $0.word == "局所化" }?.kind, .compound)
+    }
+
     func testTimestamp() throws {
         try XCTSkipIf(ws == nil)
         let results = ws.search(query: "ds", searchMode: 0)
