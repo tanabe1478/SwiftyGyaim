@@ -304,6 +304,7 @@ class WordSearch {
             var w = word
             if w.hasSuffix("*") { return }
             w = w.replacingOccurrences(of: "*", with: "")
+            if Self.isSuspiciousConnectionSurface(w) { return }
             if !candfound.contains(w) {
                 candidates.append(SearchCandidate(word: w,
                                                   reading: pat,
@@ -320,6 +321,22 @@ class WordSearch {
         }
 
         return candidates
+    }
+
+    private static let connectionInternalSurfaceSuffixes: Set<String> = [
+        "い形容詞",
+        "な形容詞",
+        "形容詞語尾",
+        "動詞語尾",
+        "名詞接続",
+        "終止接続",
+        "連用接続",
+    ]
+
+    private static func isSuspiciousConnectionSurface(_ word: String) -> Bool {
+        connectionInternalSurfaceSuffixes.contains { label in
+            word != label && word.hasSuffix(label)
+        }
     }
 
     private static func isSafeDisplayCandidate(_ word: String) -> Bool {

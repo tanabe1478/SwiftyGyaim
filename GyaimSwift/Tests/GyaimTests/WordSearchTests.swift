@@ -59,6 +59,22 @@ final class WordSearchTests: XCTestCase {
         XCTAssertFalse(words.contains { $0.contains("*") }, "Displayed candidates should strip internal markers: \(words)")
     }
 
+    func testSearchFiltersInternalConnectionSurfaceLabels() throws {
+        try XCTSkipIf(ws == nil)
+        let results = ws.search(query: "omoku", searchMode: 0)
+        let words = results.map(\.word)
+        XCTAssertTrue(words.contains("重く"), "Natural inflection should remain: \(words)")
+        XCTAssertFalse(words.contains("重い形容詞"), "Internal connection label should not be displayed: \(words)")
+        XCTAssertFalse(words.contains("おもい形容詞"), "Internal connection label should not be displayed: \(words)")
+    }
+
+    func testSearchAllowsStandaloneGrammarTermCandidate() throws {
+        try XCTSkipIf(ws == nil)
+        let results = ws.search(query: "keiyoushi", searchMode: 1)
+        let words = results.map(\.word)
+        XCTAssertTrue(words.contains("形容詞"), "Standalone grammar term should remain valid: \(words)")
+    }
+
     func testTimestamp() throws {
         try XCTSkipIf(ws == nil)
         let results = ws.search(query: "ds", searchMode: 0)

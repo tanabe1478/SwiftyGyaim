@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-06-17 (BUG-015追加)
+> Last updated: 2026-06-18 (BUG-016追加)
 
 ## 概要
 
@@ -220,6 +220,16 @@
 - **修正**: 外部候補検証で前後改行もtrimし、lowercase化した文字列が `://` を含む場合は無効とする。従来の `http` prefix と Gyazo hash 除外は維持。
 - **検証**: `ExternalCandidateTests` に `chrome-extension://...` / `obsidian://...` の無効化と、選択テキスト候補への混入防止テストを追加。
 - **教訓**: 外部候補は選択中テキスト・クリップボード由来で、アプリ内部URLやdeep linkも入りうる。URL判定は `http(s)` だけに限定せず、scheme形式全般を候補から除外する。
+
+### BUG-016: 接続辞書の内部ラベルが候補 surface に混入する
+
+- **発見日**: 2026-06-18
+- **症状**: `omoku` の候補で `重い形容詞` / `おもい形容詞` が `重く` より上位に表示される。誤って確定すると学習辞書にも登録される。
+- **影響**: 品詞説明・接続カテゴリのような内部ラベルが通常の日本語入力候補として露出し、fast-context-rerank の exact 優先でさらに目立ちやすくなる。
+- **原因**: 接続辞書の `word` が表示 surface と内部接続ラベルを兼ねている。`omoku = omo + ku = 重 + い形容詞` のように、`ku -> い形容詞` が接続探索で連結され、`WordSearch` 側では connection compound exact も通常の `.exact` として扱われていた。
+- **修正**: connection 候補追加直前に限定して、`い形容詞` / `な形容詞` など狭い内部ラベル suffix を持つ合成候補を除外する。`word == label` の単独語や study/local 候補には適用しない。
+- **検証**: `WordSearchTests` に `omoku` で `重い形容詞` / `おもい形容詞` が出ず、`重く` が残ること、および `keiyoushi -> 形容詞` が残ることを確認するテストを追加。
+- **教訓**: 接続辞書では表示 surface と接続制御ノードを同じ `word` に詰め込むと、内部カテゴリが候補に漏れる。短期は connection 候補限定フィルタで防ぎ、中期は `canStart` / `canTerminate` / `contributesSurface` のように接続用ノードと表示 surface を分離する。
 
 ## パターン集
 

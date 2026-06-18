@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-06-10 (prefix候補の軽量コンテキストrerank追加)
+> Last updated: 2026-06-18 (接続辞書の内部ラベル候補除外を追加)
 
 ## 概要
 
@@ -92,6 +92,8 @@ https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt
 ## 候補安全フィルタ
 
 `WordSearch.search()` は study/local/connection 由来候補を返す直前に表示安全性を検証する。空白のみ、80文字超、改行またはNULを含む候補は除外する。これは誤学習や外部テキスト混入で、複数行のメモ・設定・secret説明文などがIME候補やログに出ることを防ぐため。
+
+connection 候補については、追加直前に内部接続ラベル風 surface を狭く除外する。対象は connection 候補限定で、`重い形容詞` / `おもい形容詞` のように候補全体が `い形容詞` などの内部ラベル suffix で終わる場合のみ落とす。`形容詞` のような単独語や study/local 候補には適用しない。これは現行 dict format で `word` が表示 surface と接続制御ラベルを兼ねており、`omoku = omo + ku = 重 + い形容詞` のような不自然な候補が生成されるのを防ぐ短期対策である。中期的には接続用ノードの `canStart` / `canTerminate` / `contributesSurface` を分離する。
 
 ## 検索モード
 
