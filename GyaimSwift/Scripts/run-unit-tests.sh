@@ -28,7 +28,11 @@ LLVM_PROFILE_FILE="$PROFILE_DIR/${SCHEME}-%p.profraw" \
 python3 -m py_compile \
   Tools/ai-rerank/validate-fast-context-eval-cases.py \
   Tools/ai-rerank/evaluate-fast-context-rerank.py \
-  Tools/ai-rerank/extract-fast-context-review-cases.py
+  Tools/ai-rerank/extract-fast-context-review-cases.py \
+  Tools/ai-rerank/summarize-fast-context-review-labels.py
 python3 Tools/ai-rerank/validate-fast-context-eval-cases.py >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --json >/dev/null
-python3 Tools/ai-rerank/extract-fast-context-review-cases.py --limit 1 >/dev/null
+review_cases_jsonl="$(mktemp)"
+python3 Tools/ai-rerank/extract-fast-context-review-cases.py --limit 1 > "$review_cases_jsonl"
+python3 Tools/ai-rerank/summarize-fast-context-review-labels.py "$review_cases_jsonl" >/dev/null
+rm -f "$review_cases_jsonl"

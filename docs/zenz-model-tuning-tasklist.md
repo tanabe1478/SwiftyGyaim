@@ -209,13 +209,15 @@ Definition of done:
 実装:
 
 - `GyaimSwift/Tools/ai-rerank/extract-fast-context-review-cases.py`
-- default は `~/.gyaim/gyaim.log(.1)` から `outcome=review-fixed` かつ `topChanged=true` を JSONL 出力
-- `--format markdown` で手動ラベル用 report を出力できる
+  - default は `~/.gyaim/gyaim.log(.1)` から `outcome=review-fixed` かつ `topChanged=true` を JSONL 出力
+  - `--format markdown` で手動ラベル用 report を出力できる
+- `GyaimSwift/Tools/ai-rerank/summarize-fast-context-review-labels.py`
+  - 抽出 JSONL の `label` を `good` / `bad` / `unknown` に手動更新した後、precision / bad rate / unknown rate を集計する
 - 出力は private IME log を含むため、人間レビューなしで外部に送らない
 
 Definition of done:
 
-- [ ] `review-fixed precision` を計測できる
+- [x] `review-fixed precision` を計測できる
 
 ## Milestone 3: heuristic / rule tuning
 
