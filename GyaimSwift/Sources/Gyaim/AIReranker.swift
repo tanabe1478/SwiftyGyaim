@@ -23,6 +23,11 @@ struct AIRerankResponse: Codable, Equatable {
     let model: String?
 }
 
+struct AIRerankScoreBreakdown: Equatable {
+    let total: Double
+    let contributions: [String: Double]
+}
+
 enum AIReranker {
     static func validatedOrder(_ proposedOrder: [Int], candidateCount: Int) -> [Int] {
         guard candidateCount > 0 else { return [] }
@@ -60,33 +65,40 @@ enum AIReranker {
         return AIRerankResponse(order: order, scores: scores, model: model)
     }
 
-    private static func localScore(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
-        var score = 0.0
-        score -= Double(candidate.index) * 0.03
-        score += sourceBias(candidate.source)
-        score += kindBias(candidate.kind)
+    static func localScoreBreakdown(candidate: AIRerankCandidate, request: AIRerankRequest) -> AIRerankScoreBreakdown {
+        var contributions: [String: Double] = [
+            "positionPenalty": -Double(candidate.index) * 0.03,
+            "sourceBias": sourceBias(candidate.source),
+            "kindBias": kindBias(candidate.kind)
+        ]
         if candidate.reading == request.inputPat {
-            score += 0.20
+            contributions["exactReadingMatchBonus"] = 0.20
             if candidate.kind == CandidateKind.exact.rawValue {
-                score += exactReadingBonus(candidate.text)
+                contributions["exactReadingKindBonus"] = exactReadingBonus(candidate.text)
             }
         } else {
-            score -= prefixPredictionPenalty(candidate: candidate, inputPat: request.inputPat)
+            contributions["prefixPredictionPenalty"] = -prefixPredictionPenalty(candidate: candidate,
+                                                                                 inputPat: request.inputPat)
         }
-        score += contextPredictionBonus(candidate: candidate, request: request)
+        contributions["contextPredictionBonus"] = contextPredictionBonus(candidate: candidate, request: request)
         if candidate.text.contains(where: isKanji) {
-            score += 0.10
+            contributions["kanjiBonus"] = 0.10
         }
-        score += naturalFunctionWordPhraseBonus(candidate.text)
-        score -= punctuationSuffixPenalty(candidate.text)
+        contributions["naturalFunctionWordPhraseBonus"] = naturalFunctionWordPhraseBonus(candidate.text)
+        contributions["punctuationSuffixPenalty"] = -punctuationSuffixPenalty(candidate.text)
         if candidate.kind == CandidateKind.zenz.rawValue && isAllKanjiWord(candidate.text) {
-            score += 0.50
+            contributions["zenzKanjiBonus"] = 0.50
         }
         if candidate.text == request.inputPat && candidate.text.allSatisfy(\.isASCII) {
-            score -= 8.0
+            contributions["rawAsciiPenalty"] = -8.0
         }
-        score -= unnaturalScriptTransitionPenalty(candidate.text)
-        return score
+        contributions["scriptTransitionPenalty"] = -unnaturalScriptTransitionPenalty(candidate.text)
+        let nonZero = contributions.filter { $0.value != 0 }
+        return AIRerankScoreBreakdown(total: nonZero.values.reduce(0, +), contributions: nonZero)
+    }
+
+    private static func localScore(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
+        localScoreBreakdown(candidate: candidate, request: request).total
     }
 
     private static func exactReadingBonus(_ text: String) -> Double {

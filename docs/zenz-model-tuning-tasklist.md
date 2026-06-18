@@ -225,7 +225,8 @@ Definition of done:
 
 ### M3-1. feature weight を明示化する
 
-- [ ] `AIReranker.localScore` の feature breakdown を debug 可能にする
+- [x] `AIReranker.localScore` の feature breakdown を debug 可能にする
+  - `AIReranker.localScoreBreakdown(candidate:request:)`
 - [x] eval runner で候補ごとの feature contribution を出す
   - `evaluate-fast-context-rerank.py --show-features`
   - `negative-imperative-kiru-001` は `絶対に` を negative imperative cue に追加して改善済み
@@ -236,13 +237,13 @@ Definition of done:
 
 対象 feature:
 
-- [ ] source bias
-- [ ] kind bias
-- [ ] exact reading bonus
+- [x] source bias
+- [x] kind bias
+- [x] exact reading bonus
 - [x] prefix prediction penalty
 - [x] context prediction bonus
-- [ ] kanji bonus
-- [ ] natural phrase bonus
+- [x] kanji bonus
+- [x] natural phrase bonus
 - [x] script transition penalty
 - [ ] zenz score weight
 

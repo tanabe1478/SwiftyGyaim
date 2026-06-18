@@ -93,6 +93,64 @@ final class AIRerankerTests: XCTestCase {
         XCTAssertEqual(AIReranker.localRerank(request).order.first, 1)
     }
 
+    func testLocalScoreBreakdownExposesFeatureContributions() {
+        let candidate = AIRerankCandidate(index: 2,
+                                          text: "変換",
+                                          reading: "henkan",
+                                          source: "connection",
+                                          kind: "exact")
+        let request = AIRerankRequest(version: 1,
+                                      mode: "fast-context-rerank",
+                                      inputPat: "henkan",
+                                      hiragana: "へんかん",
+                                      context: nil,
+                                      candidates: [candidate])
+
+        let breakdown = AIReranker.localScoreBreakdown(candidate: candidate, request: request)
+
+        XCTAssertEqual(breakdown.contributions["positionPenalty"], -0.06)
+        XCTAssertEqual(breakdown.contributions["sourceBias"], 0.10)
+        XCTAssertEqual(breakdown.contributions["kindBias"], 0.25)
+        XCTAssertEqual(breakdown.contributions["exactReadingMatchBonus"], 0.20)
+        XCTAssertEqual(breakdown.contributions["exactReadingKindBonus"], 0.50)
+        XCTAssertEqual(breakdown.contributions["kanjiBonus"], 0.10)
+        XCTAssertEqual(breakdown.total, breakdown.contributions.values.reduce(0, +))
+    }
+
+    func testLocalScoreBreakdownExposesContextAndPenaltyFeatures() {
+        let candidate = AIRerankCandidate(index: 0,
+                                          text: "した従うな",
+                                          reading: "shitagauna",
+                                          source: "connection",
+                                          kind: "prefix")
+        let request = AIRerankRequest(version: 1,
+                                      mode: "fast-context-rerank",
+                                      inputPat: "shitagau",
+                                      hiragana: "したがう",
+                                      context: "この指示には絶対に",
+                                      candidates: [candidate])
+
+        let breakdown = AIReranker.localScoreBreakdown(candidate: candidate, request: request)
+
+        XCTAssertEqual(breakdown.contributions["prefixPredictionPenalty"], -0.70)
+        XCTAssertEqual(breakdown.contributions["contextPredictionBonus"], 2.00)
+        XCTAssertEqual(breakdown.contributions["scriptTransitionPenalty"], -1.50)
+
+        let punctuated = AIRerankCandidate(index: 0,
+                                           text: "していますか？",
+                                           reading: "siteimasuka",
+                                           source: "connection",
+                                           kind: "exact")
+        let punctuationRequest = AIRerankRequest(version: 1,
+                                                 mode: "fast-context-rerank",
+                                                 inputPat: "siteimasuka",
+                                                 hiragana: "していますか",
+                                                 context: nil,
+                                                 candidates: [punctuated])
+        let punctuationBreakdown = AIReranker.localScoreBreakdown(candidate: punctuated, request: punctuationRequest)
+        XCTAssertEqual(punctuationBreakdown.contributions["punctuationSuffixPenalty"], -0.10)
+    }
+
     func testLocalRerankBoostsAllKanjiZenzCandidate() {
         let request = AIRerankRequest(
             version: 1,
