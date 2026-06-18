@@ -12,7 +12,7 @@ import argparse
 import ast
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable
@@ -28,6 +28,12 @@ LOG_RE = re.compile(
     r'order=(?P<order>\[[^\]]*\]) '
     r'before=(?P<before>\[.*\]) after=(?P<after>\[.*\]) '
     r'latency=(?P<latency>[0-9.]+)ms$'
+)
+
+FIXED_RE = re.compile(
+    r'^\[(?P<timestamp>[^\]]+)\] \[input\] \[(?P<level>[^\]]+)\] '
+    r'Zenz fast-context review fixed: input="(?P<input>[^"]*)" '
+    r'prefix="(?P<prefix>[^"]*)" replacementIndex=(?P<replacement_index>\d+)$'
 )
 
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -50,6 +56,9 @@ class ReviewCase:
     context: str
     latencyMs: float
     model: str
+    fixRequiredPrefix: str | None = None
+    fixRequiredPrefixLength: int | None = None
+    replacementIndex: int | None = None
     label: str = "unlabeled"
     note: str = ""
 
@@ -123,6 +132,28 @@ def parse_case(line: str, index: int) -> ReviewCase | None:
     )
 
 
+def parse_cases(lines: Iterable[str]) -> list[ReviewCase]:
+    cases: list[ReviewCase] = []
+    pending_fixed: dict[str, tuple[str, int]] = {}
+    for index, line in enumerate(lines, start=1):
+        if fixed_match := FIXED_RE.match(line.rstrip("\n")):
+            prefix = fixed_match.group("prefix")
+            replacement_index = int(fixed_match.group("replacement_index"))
+            pending_fixed[fixed_match.group("input")] = (prefix, replacement_index)
+            continue
+        case = parse_case(line, index)
+        if case is None:
+            continue
+        if case.outcome == "review-fixed" and (fixed := pending_fixed.pop(case.input, None)) is not None:
+            prefix, replacement_index = fixed
+            case = replace(case,
+                           fixRequiredPrefix=prefix,
+                           fixRequiredPrefixLength=len(prefix),
+                           replacementIndex=replacement_index)
+        cases.append(case)
+    return cases
+
+
 def cutoff_for(cases: list[ReviewCase], minutes: int | None) -> datetime | None:
     if minutes is None:
         return None
@@ -165,6 +196,8 @@ def write_markdown(cases: list[ReviewCase]) -> str:
             f"- label: `{case.label}`",
             f"- beforeTop: `{case.beforeTop}`",
             f"- afterTop: `{case.afterTop}`",
+            f"- fixRequiredPrefix: `{case.fixRequiredPrefix}`",
+            f"- fixRequiredPrefixLength: `{case.fixRequiredPrefixLength}`",
             f"- before: `{case.before}`",
             f"- after: `{case.after}`",
             "- note: ",
@@ -184,7 +217,7 @@ def main() -> int:
     args = parser.parse_args()
 
     paths = args.paths or [Path.home() / ".gyaim/gyaim.log.1", Path.home() / ".gyaim/gyaim.log"]
-    parsed = [case for index, line in enumerate(iter_lines(paths), start=1) if (case := parse_case(line, index))]
+    parsed = parse_cases(iter_lines(paths))
     cutoff = cutoff_for(parsed, args.last_minutes)
     cases = filter_cases(parsed, outcome=args.outcome, changed_only=not args.all, cutoff=cutoff)[: args.limit]
 

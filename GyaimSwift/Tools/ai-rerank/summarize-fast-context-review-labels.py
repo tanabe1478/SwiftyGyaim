@@ -39,6 +39,7 @@ class LabeledCase:
     beforeTop: str | None
     afterTop: str | None
     outcome: str
+    fixRequiredPrefixLength: int | None
 
     @property
     def input_length_bucket(self) -> str:
@@ -54,6 +55,17 @@ class LabeledCase:
     @property
     def after_script(self) -> str:
         return script_class(self.afterTop or "")
+
+    @property
+    def fix_prefix_length_bucket(self) -> str:
+        length = self.fixRequiredPrefixLength
+        if length is None:
+            return "none"
+        if length <= 1:
+            return "01"
+        if length <= 3:
+            return "02-03"
+        return "04+"
 
 
 def load_jsonl(paths: Iterable[Path]) -> list[LabeledCase]:
@@ -87,6 +99,7 @@ def parse_record(record: dict[str, Any], *, path: Path, line_number: int) -> Lab
         beforeTop=optional_string(record, "beforeTop", path, line_number),
         afterTop=optional_string(record, "afterTop", path, line_number),
         outcome=require_string(record, "outcome", path, line_number),
+        fixRequiredPrefixLength=optional_int(record, "fixRequiredPrefixLength", path, line_number),
     )
 
 
@@ -103,6 +116,15 @@ def optional_string(record: dict[str, Any], field: str, path: Path, line_number:
         return None
     if not isinstance(value, str):
         raise LabelError(f"{path}:{line_number}: {field} must be a string or null")
+    return value
+
+
+def optional_int(record: dict[str, Any], field: str, path: Path, line_number: int) -> int | None:
+    value = record.get(field)
+    if value is None:
+        return None
+    if not isinstance(value, int):
+        raise LabelError(f"{path}:{line_number}: {field} must be an integer or null")
     return value
 
 
@@ -151,6 +173,7 @@ def summarize(cases: list[LabeledCase]) -> dict[str, Any]:
         "latency": latency_summary(cases),
         "byInputLength": summarize_groups(cases, lambda case: case.input_length_bucket),
         "byAfterScript": summarize_groups(cases, lambda case: case.after_script),
+        "byFixPrefixLength": summarize_groups(cases, lambda case: case.fix_prefix_length_bucket),
         "badExamples": [case_to_example(case) for case in cases if case.label == "bad"][:20],
     }
 
@@ -182,22 +205,26 @@ def case_to_example(case: LabeledCase) -> dict[str, Any]:
         "beforeTop": case.beforeTop,
         "afterTop": case.afterTop,
         "latencyMs": case.latencyMs,
+        "fixRequiredPrefixLength": case.fixRequiredPrefixLength,
     }
 
 
 def print_text(summary: dict[str, Any]) -> None:
     print("# fast-context review label summary")
-    print(json.dumps({k: v for k, v in summary.items() if k not in {"byInputLength", "byAfterScript", "badExamples"}}, ensure_ascii=False, indent=2))
+    print(json.dumps({k: v for k, v in summary.items() if k not in {"byInputLength", "byAfterScript", "byFixPrefixLength", "badExamples"}}, ensure_ascii=False, indent=2))
     print("\n## by input length")
     print_table(summary["byInputLength"])
     print("\n## by after-top script")
     print_table(summary["byAfterScript"])
+    print("\n## by fix-required prefix length")
+    print_table(summary["byFixPrefixLength"])
     if summary["badExamples"]:
         print("\n## bad examples")
         for example in summary["badExamples"]:
             print(
                 f"{example['id']} input={example['input']} "
-                f"before={example['beforeTop']} after={example['afterTop']} latency={example['latencyMs']}ms"
+                f"before={example['beforeTop']} after={example['afterTop']} "
+                f"fixPrefixLen={example['fixRequiredPrefixLength']} latency={example['latencyMs']}ms"
             )
 
 

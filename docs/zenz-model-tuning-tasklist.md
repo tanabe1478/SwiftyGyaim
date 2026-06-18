@@ -203,16 +203,18 @@ Definition of done:
 
 - [x] `review-fixed topChanged=true` のケースを抽出する
 - [ ] 良化 / 悪化 / 不明に手動ラベルする
-- [ ] 悪化パターンを tag 化する
-- [ ] `prefix` が短すぎる場合の制約を検討する
+- [x] 悪化パターンを tag 化する
+- [x] `prefix` が短すぎる場合の制約を検討する
 
 実装:
 
 - `GyaimSwift/Tools/ai-rerank/extract-fast-context-review-cases.py`
   - default は `~/.gyaim/gyaim.log(.1)` から `outcome=review-fixed` かつ `topChanged=true` を JSONL 出力
   - `--format markdown` で手動ラベル用 report を出力できる
+  - `fixRequiredPrefix` / `fixRequiredPrefixLength` / `replacementIndex` を同じ入力の `Zenz fast-context review fixed` ログから紐づける
 - `GyaimSwift/Tools/ai-rerank/summarize-fast-context-review-labels.py`
   - 抽出 JSONL の `label` を `good` / `bad` / `unknown` に手動更新した後、precision / bad rate / unknown rate を集計する
+  - `byFixPrefixLength` で短すぎる prefix 由来の悪化を集計できる
 - 出力は private IME log を含むため、人間レビューなしで外部に送らない
 
 Definition of done:
