@@ -639,10 +639,12 @@ class GyaimController: IMKInputController {
 
     /// Check if a string is a valid external candidate (not a Gyazo hash, not a URL).
     static func isValidExternalCandidate(_ s: String) -> Bool {
-        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return false }
         if ImageManager.isImageCandidate(trimmed) { return false }
-        if trimmed.hasPrefix("http") { return false }
+        let lowercased = trimmed.lowercased()
+        if lowercased.hasPrefix("http") { return false }
+        if lowercased.contains("://") { return false }
         return true
     }
 
