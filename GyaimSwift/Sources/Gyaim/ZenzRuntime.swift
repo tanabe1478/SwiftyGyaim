@@ -253,16 +253,19 @@ final class BundledZenzRuntime: ZenzRuntime {
         }
 
         var order = localOrder
+        var outcome = "passed"
         if let prefix = evaluation.fixRequiredPrefix,
            let replacement = localOrder.first(where: { index in
                guard let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
                return candidate.text.hasPrefix(prefix)
            }) {
+            outcome = "fixed"
             order.removeAll { $0 == replacement }
             order.insert(replacement, at: 0)
             Log.input.info("Zenz fast-context review fixed: input=\"\(request.inputPat)\" "
                 + "prefix=\"\(prefix)\" replacementIndex=\(replacement)")
         } else if let prefix = evaluation.fixRequiredPrefix {
+            outcome = "kept-local"
             Log.input.info("Zenz fast-context review kept local order: input=\"\(request.inputPat)\" "
                 + "unmatchedPrefix=\"\(prefix)\"")
         } else {
@@ -271,10 +274,10 @@ final class BundledZenzRuntime: ZenzRuntime {
 
         let elapsed = (CFAbsoluteTimeGetCurrent() - runtimeStart) * 1000
         Log.input.info("Zenz fast-context review finished: input=\"\(request.inputPat)\" "
-            + "order=\(order) latency=\(String(format: "%.1f", elapsed))ms")
+            + "outcome=\(outcome) order=\(order) latency=\(String(format: "%.1f", elapsed))ms")
         return AIRerankResponse(order: order,
                                 scores: heuristic.scores,
-                                model: "bundled-zenz-v3.1-xsmall-review+swift-local-heuristic")
+                                model: "bundled-zenz-v3.1-xsmall-review-\(outcome)+swift-local-heuristic")
     }
     #endif
 

@@ -753,7 +753,7 @@ class GyaimController: IMKInputController {
             Log.input.info(
                 "Fast context rerank finished: input=\"\(inputPat)\" "
                     + "model=\(model) outcome=\(fastContextRerankOutcome(model: model)) "
-                    + "candidates=\(head.count)/\(searchResults.count) "
+                    + "topChanged=\(beforeTop != afterTop) candidates=\(head.count)/\(searchResults.count) "
                     + "context=\(trimmedContext.isEmpty ? "none" : "present") "
                     + "order=\(response.order) before=\(beforeTop) after=\(afterTop) "
                     + "latency=\(formatMilliseconds(elapsed))ms"
@@ -803,6 +803,9 @@ class GyaimController: IMKInputController {
     private static func fastContextRerankOutcome(model: String) -> String {
         if model.contains("review-skipped") { return "protected-exact-skip" }
         if model.contains("review-unavailable") { return "review-unavailable" }
+        if model.contains("review-fixed") { return "review-fixed" }
+        if model.contains("review-kept-local") { return "review-kept-local" }
+        if model.contains("review-passed") { return "review-passed" }
         if model.contains("review") { return "review-applied" }
         if model.contains("swift-fast-context-heuristic") { return "heuristic" }
         return "fallback"
