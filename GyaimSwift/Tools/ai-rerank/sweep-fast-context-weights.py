@@ -83,13 +83,7 @@ def evaluate(evaluator, records: list[dict[str, Any]], weights: dict[str, float]
     summary = evaluator.summarize(results)
     return {
         "weights": weights,
-        "summary": {
-            "top1Accuracy": summary["top1Accuracy"],
-            "top1Correct": summary["top1Correct"],
-            "top3Accuracy": summary["top3Accuracy"],
-            "unsafeTopCount": summary["unsafeTopCount"],
-            "exactDemotionCount": summary["exactDemotionCount"],
-        },
+        "summary": compact_summary(summary),
         "failures": [
             {
                 "id": result.id,
@@ -104,6 +98,28 @@ def evaluate(evaluator, records: list[dict[str, Any]], weights: dict[str, float]
     }
 
 
+def compact_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "top1Accuracy": summary["top1Accuracy"],
+        "top1Correct": summary["top1Correct"],
+        "top3Accuracy": summary["top3Accuracy"],
+        "unsafeTopCount": summary["unsafeTopCount"],
+        "exactDemotionCount": summary["exactDemotionCount"],
+    }
+
+
+def with_delta(item: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
+    summary = item["summary"]
+    baseline_summary = baseline["summary"]
+    enriched = dict(item)
+    enriched["delta"] = {
+        "top1Correct": summary["top1Correct"] - baseline_summary["top1Correct"],
+        "unsafeTopCount": summary["unsafeTopCount"] - baseline_summary["unsafeTopCount"],
+        "exactDemotionCount": summary["exactDemotionCount"] - baseline_summary["exactDemotionCount"],
+    }
+    return enriched
+
+
 def sort_key(item: dict[str, Any]) -> tuple:
     summary = item["summary"]
     return (
@@ -114,14 +130,24 @@ def sort_key(item: dict[str, Any]) -> tuple:
     )
 
 
-def print_text(items: list[dict[str, Any]], *, limit: int) -> None:
+def print_text(items: list[dict[str, Any]], *, baseline: dict[str, Any], limit: int) -> None:
     print("# fast-context feature weight sweep")
-    print("rank\ttop1\ttop3\tunsafe\texactDemotion\tweights")
+    baseline_summary = baseline["summary"]
+    print(
+        "baseline\t"
+        f"top1={baseline_summary['top1Correct']}\t"
+        f"top3={baseline_summary['top3Accuracy']}\t"
+        f"unsafe={baseline_summary['unsafeTopCount']}\t"
+        f"exactDemotion={baseline_summary['exactDemotionCount']}\tweights={{}}"
+    )
+    print("rank\ttop1\tdTop1\ttop3\tunsafe\tdUnsafe\texactDemotion\tdExactDemotion\tweights")
     for rank, item in enumerate(items[:limit], start=1):
         summary = item["summary"]
+        delta = item["delta"]
         print(
-            f"{rank}\t{summary['top1Correct']}\t{summary['top3Accuracy']}\t"
-            f"{summary['unsafeTopCount']}\t{summary['exactDemotionCount']}\t"
+            f"{rank}\t{summary['top1Correct']}\t{delta['top1Correct']:+d}\t{summary['top3Accuracy']}\t"
+            f"{summary['unsafeTopCount']}\t{delta['unsafeTopCount']:+d}\t"
+            f"{summary['exactDemotionCount']}\t{delta['exactDemotionCount']:+d}\t"
             f"{json.dumps(item['weights'], ensure_ascii=False, sort_keys=True)}"
         )
         if item["failures"]:
@@ -147,15 +173,16 @@ def main() -> int:
     evaluator = load_evaluator()
     records = evaluator.load_and_validate(args.fixture)
     sweep = parse_sweep(args.sweep)
+    baseline = evaluate(evaluator, records, weights={}, context_mode=args.context_mode)
     items = sorted(
-        (evaluate(evaluator, records, weights, args.context_mode) for weights in iter_weight_sets(sweep)),
+        (with_delta(evaluate(evaluator, records, weights, args.context_mode), baseline) for weights in iter_weight_sets(sweep)),
         key=sort_key,
     )
 
     if args.json:
-        print(json.dumps({"fixture": str(args.fixture), "sweep": sweep, "results": items}, ensure_ascii=False, indent=2))
+        print(json.dumps({"fixture": str(args.fixture), "sweep": sweep, "baseline": baseline, "results": items}, ensure_ascii=False, indent=2))
     else:
-        print_text(items, limit=args.limit)
+        print_text(items, baseline=baseline, limit=args.limit)
     return 0
 
 
