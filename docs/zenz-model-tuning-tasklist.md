@@ -228,30 +228,38 @@ Definition of done:
   - `evaluate-fast-context-rerank.py --show-features`
   - `negative-imperative-kiru-001` は `絶対に` を negative imperative cue に追加して改善済み
   - `polite-question-siteimasuka-001` は文末 `？` penalty 追加で改善済み
-- [ ] feature weight を設定化するか、tuning script から sweep 可能にする
+- [x] feature weight を設定化するか、tuning script から sweep 可能にする
+  - `evaluate-fast-context-rerank.py --feature-weight FEATURE=MULTIPLIER`
+  - `sweep-fast-context-weights.py --sweep FEATURE=v1,v2,...`
 
 対象 feature:
 
 - [ ] source bias
 - [ ] kind bias
 - [ ] exact reading bonus
-- [ ] prefix prediction penalty
-- [ ] context prediction bonus
+- [x] prefix prediction penalty
+- [x] context prediction bonus
 - [ ] kanji bonus
 - [ ] natural phrase bonus
-- [ ] script transition penalty
+- [x] script transition penalty
 - [ ] zenz score weight
 
 Definition of done:
 
-- [ ] どの feature のせいで候補が上がったか説明できる
+- [x] どの feature のせいで候補が上がったか説明できる
 
 ### M3-2. grid search / random search
 
-- [ ] seed eval set に対して weight sweep を行う
-- [ ] top1 / top3 / unsafe / latency を比較する
+- [x] seed eval set に対して weight sweep を行う
+- [x] top1 / top3 / unsafe / latency を比較する
 - [ ] 現行値との差分 report を作る
 - [ ] 勝った weight を固定テストに落とす
+
+実装:
+
+- `GyaimSwift/Tools/ai-rerank/sweep-fast-context-weights.py`
+- default grid は `contextPredictionBonus` / `prefixPredictionPenalty` / `punctuationSuffixPenalty` の multiplier を探索する
+- 現 seed 30件は default weights で top1 `30/30` のため、当面は regression-safe range の確認用途
 
 Definition of done:
 

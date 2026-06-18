@@ -102,12 +102,12 @@ def expected_top(record: dict[str, Any], *, context_mode: str) -> str:
     return record["expectedTop"]
 
 
-def run_heuristic_backend(request: dict[str, Any]) -> dict[str, Any]:
+def run_heuristic_backend(request: dict[str, Any], feature_weights: dict[str, float] | None = None) -> dict[str, Any]:
     scores: dict[str, float] = {}
     features: dict[str, dict[str, Any]] = {}
     scored: list[CandidateScore] = []
     for candidate in request["candidates"]:
-        contributions = local_score_breakdown(candidate, request)
+        contributions = local_score_breakdown(candidate, request, feature_weights=feature_weights)
         score = sum(contributions.values())
         index = int(candidate["index"])
         scores[str(index)] = score
@@ -167,11 +167,12 @@ def evaluate_record(
     command: str | None,
     timeout_ms: int,
     context_mode: str,
+    feature_weights: dict[str, float] | None = None,
 ) -> CaseResult:
     request = make_request(record, context_mode=context_mode)
     start = time.perf_counter()
     if backend == "heuristic":
-        response = run_heuristic_backend(request)
+        response = run_heuristic_backend(request, feature_weights=feature_weights)
     elif backend == "command":
         if not command:
             raise EvaluationError("command backend requires --command or GYAIM_FAST_CONTEXT_EVAL_COMMAND")
@@ -242,7 +243,12 @@ def local_score(candidate: dict[str, Any], request: dict[str, Any]) -> float:
     return sum(local_score_breakdown(candidate, request).values())
 
 
-def local_score_breakdown(candidate: dict[str, Any], request: dict[str, Any]) -> dict[str, float]:
+def local_score_breakdown(
+    candidate: dict[str, Any],
+    request: dict[str, Any],
+    *,
+    feature_weights: dict[str, float] | None = None,
+) -> dict[str, float]:
     contributions: dict[str, float] = {
         "positionPenalty": -float(candidate["index"]) * 0.03,
         "sourceBias": source_bias(candidate["source"]),
@@ -264,7 +270,16 @@ def local_score_breakdown(candidate: dict[str, Any], request: dict[str, Any]) ->
     if candidate["text"] == request["inputPat"] and candidate["text"].isascii():
         contributions["rawAsciiPenalty"] = -8.0
     contributions["scriptTransitionPenalty"] = -unnatural_script_transition_penalty(candidate["text"])
-    return contributions
+    return apply_feature_weights(contributions, feature_weights)
+
+
+def apply_feature_weights(contributions: dict[str, float], feature_weights: dict[str, float] | None) -> dict[str, float]:
+    if not feature_weights:
+        return contributions
+    return {
+        feature: value * feature_weights.get(feature, 1.0)
+        for feature, value in contributions.items()
+    }
 
 
 def exact_reading_bonus(text: str) -> float:
@@ -458,6 +473,23 @@ def print_feature_breakdown(result: CaseResult) -> None:
         print(f"  features[{index}] {item.get('text')} ({'/'.join(role)}) total={item.get('total'):+.2f}: {formatted}")
 
 
+def parse_feature_weights(values: list[str]) -> dict[str, float]:
+    weights: dict[str, float] = {}
+    for value in values:
+        if "=" not in value:
+            raise EvaluationError(f"feature weight must be FEATURE=MULTIPLIER: {value}")
+        feature, raw_multiplier = value.split("=", 1)
+        feature = feature.strip()
+        if not feature:
+            raise EvaluationError(f"feature weight name must not be empty: {value}")
+        try:
+            multiplier = float(raw_multiplier)
+        except ValueError as exc:
+            raise EvaluationError(f"feature weight multiplier must be numeric: {value}") from exc
+        weights[feature] = multiplier
+    return weights
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate fast-context rerank fixtures offline.")
     parser.add_argument("fixture", nargs="?", type=Path, default=DEFAULT_FIXTURE)
@@ -468,10 +500,18 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--show-all", action="store_true")
     parser.add_argument("--show-features", action="store_true", help="Print heuristic feature contributions for shown cases.")
+    parser.add_argument(
+        "--feature-weight",
+        action="append",
+        default=[],
+        metavar="FEATURE=MULTIPLIER",
+        help="Scale a heuristic feature contribution in lightweight mode. Can be repeated.",
+    )
     args = parser.parse_args()
 
     run_zenz = os.environ.get("RUN_ZENZ") == "1"
     backend = args.backend or ("command" if run_zenz else "heuristic")
+    feature_weights = parse_feature_weights(args.feature_weight)
     records = load_and_validate(args.fixture)
     results = [
         evaluate_record(
@@ -480,6 +520,7 @@ def main() -> int:
             command=args.command,
             timeout_ms=args.timeout_ms,
             context_mode=args.context_mode,
+            feature_weights=feature_weights,
         )
         for record in records
     ]
@@ -488,6 +529,7 @@ def main() -> int:
         "fixture": str(args.fixture),
         "backend": backend,
         "contextMode": args.context_mode,
+        "featureWeights": feature_weights,
         "summary": summary,
         "failures": [asdict(result) for result in results if not result.top1 or result.unsafeTop or result.exactDemotion],
         "cases": [asdict(result) for result in results] if args.show_all else None,
