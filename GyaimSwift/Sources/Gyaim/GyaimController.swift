@@ -749,9 +749,11 @@ class GyaimController: IMKInputController {
             let elapsed = elapsedMilliseconds(since: start)
             let beforeTop = head.prefix(8).map(\.word)
             let afterTop = rerankedHead.prefix(8).map(\.word)
+            let model = response.model ?? "unknown"
             Log.input.info(
                 "Fast context rerank finished: input=\"\(inputPat)\" "
-                    + "model=\(response.model ?? "unknown") candidates=\(head.count)/\(searchResults.count) "
+                    + "model=\(model) outcome=\(fastContextRerankOutcome(model: model)) "
+                    + "candidates=\(head.count)/\(searchResults.count) "
                     + "context=\(trimmedContext.isEmpty ? "none" : "present") "
                     + "order=\(response.order) before=\(beforeTop) after=\(afterTop) "
                     + "latency=\(formatMilliseconds(elapsed))ms"
@@ -796,6 +798,14 @@ class GyaimController: IMKInputController {
     private static func shouldUseModelForFastContextRerank(inputPat: String) -> Bool {
         guard isFastContextRerankModelEnabled else { return false }
         return inputPat.count >= minFastContextModelInputLength()
+    }
+
+    private static func fastContextRerankOutcome(model: String) -> String {
+        if model.contains("review-skipped") { return "protected-exact-skip" }
+        if model.contains("review-unavailable") { return "review-unavailable" }
+        if model.contains("review") { return "review-applied" }
+        if model.contains("swift-fast-context-heuristic") { return "heuristic" }
+        return "fallback"
     }
 
     private static func minFastContextModelInputLength() -> Int {
