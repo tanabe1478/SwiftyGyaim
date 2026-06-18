@@ -132,21 +132,28 @@ Definition of done:
 
 ### M1-3. offline evaluator を作る
 
-- [ ] `GyaimSwift/Tools/ai-rerank/evaluate-fast-context-rerank.py` を作る
-- [ ] Swift test fixture と同じ schema を読む
-- [ ] 以下を出力する
-  - [ ] top1 accuracy
-  - [ ] top3 accuracy
-  - [ ] unsafe top count
-  - [ ] exact demotion count
-  - [ ] latency summary
-  - [ ] outcome summary
-- [ ] CI では lightweight mode のみ実行する
-- [ ] heavy Zenz mode は env opt-in にする
+- [x] `GyaimSwift/Tools/ai-rerank/evaluate-fast-context-rerank.py` を作る
+- [x] Swift test fixture と同じ schema を読む
+- [x] 以下を出力する
+  - [x] top1 accuracy
+  - [x] top3 accuracy
+  - [x] unsafe top count
+  - [x] exact demotion count
+  - [x] latency summary
+  - [x] outcome summary
+- [x] CI では lightweight mode のみ実行する
+- [x] heavy Zenz mode は env opt-in にする
+  - `RUN_ZENZ=1` または `--backend command` と `GYAIM_FAST_CONTEXT_EVAL_COMMAND` で、AIRerankRequest JSON を受け取る外部 backend に委譲できる
+
+実装:
+
+- `GyaimSwift/Tools/ai-rerank/evaluate-fast-context-rerank.py`
+- default は Swift `AIReranker.localRerank` の軽量 Python port
+- 現在の seed 12件 baseline: top1 `10/12`, top3 `12/12`, unsafe top `0`, exact demotion `1`
 
 Definition of done:
 
-- [ ] `RUN_ZENZ=0` で速い評価が通る
+- [x] `RUN_ZENZ=0` で速い評価が通る
 - [ ] `RUN_ZENZ=1` で local GGUF を使った評価ができる
 
 ## Milestone 2: dogfood log から改善する

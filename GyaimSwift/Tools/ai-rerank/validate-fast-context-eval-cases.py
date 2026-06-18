@@ -9,6 +9,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+GYAIM_SWIFT_DIR = Path(__file__).resolve().parents[2]
+DEFAULT_FIXTURE = GYAIM_SWIFT_DIR / "Tests/GyaimTests/Fixtures/fast-context-eval-cases.jsonl"
+
 REQUIRED_FIELDS = {
     "id",
     "inputPat",
@@ -165,7 +168,7 @@ def main() -> int:
         "paths",
         nargs="*",
         type=Path,
-        default=[Path("GyaimSwift/Tests/GyaimTests/Fixtures/fast-context-eval-cases.jsonl")],
+        default=[DEFAULT_FIXTURE],
     )
     args = parser.parse_args()
 
