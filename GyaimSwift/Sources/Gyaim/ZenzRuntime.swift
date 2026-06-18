@@ -257,10 +257,9 @@ final class BundledZenzRuntime: ZenzRuntime {
         var order = localOrder
         var outcome = "passed"
         if let prefix = evaluation.fixRequiredPrefix,
-           let replacement = localOrder.first(where: { index in
-               guard let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
-               return candidate.text.hasPrefix(prefix)
-           }) {
+           let replacement = Self.fastContextReplacementIndex(forFixRequiredPrefix: prefix,
+                                                              localOrder: localOrder,
+                                                              request: request) {
             outcome = "fixed"
             order.removeAll { $0 == replacement }
             order.insert(replacement, at: 0)
@@ -384,6 +383,18 @@ final class BundledZenzRuntime: ZenzRuntime {
                                             maxScoredCandidates: Int) -> Bool {
         guard candidate.kind != CandidateKind.raw.rawValue else { return false }
         return candidate.index < maxScoredCandidates || candidate.kind == CandidateKind.zenz.rawValue
+    }
+
+    static func fastContextReplacementIndex(forFixRequiredPrefix prefix: String,
+                                            localOrder: [Int],
+                                            request: AIRerankRequest) -> Int? {
+        let normalizedPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedPrefix.count >= 2, let currentBest = localOrder.first else { return nil }
+        return localOrder.first { index in
+            guard index != currentBest,
+                  let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
+            return candidate.text.hasPrefix(normalizedPrefix)
+        }
     }
 
     private static func isProtectedExactReadingCandidate(_ candidate: AIRerankCandidate,

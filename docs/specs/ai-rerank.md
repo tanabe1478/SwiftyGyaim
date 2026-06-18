@@ -132,6 +132,8 @@ Tab 候補集合を作った後、同梱Zenzで候補を評価する。azooKey/Z
 
 SwiftyGyaim ではまず Swift local rerank の順で上位候補を評価し、fixRequired prefix が出たらその prefix で `CandidateGenerator` の lattice を再探索する。pass 時の alternative constraint は確率比 `> 0.25` のものだけを補助候補として使う。追加候補が得られた場合は、更新された候補集合でもう一度 candidate evaluation を行う。現時点の review loop は既定2 round、UserDefaults `aiRerankZenzReviewRounds` で最大3 roundまで調整可能とし、azooKey のような `fixRequired -> prefix constraint付きlattice再探索 -> 再評価` の形へ寄せる。これは自由生成で候補を広げるのではなく、Zenz の評価結果で lattice 再探索を誘導するための経路である。
 
+fast-context rerank の model opt-in 経路では latency と安全性を優先し、Swift heuristic の最上位候補だけを1回 review する。`fixRequiredPrefix` は既存候補に prefix 一致する場合だけ先頭移動に使うが、1文字 prefix は `こうほ -> 高品質` や `つか... -> つかっちゃ` のような広すぎる置換を誘発しやすいため採用しない。また現在の最上位候補自身に一致する prefix は順位変更として扱わず、local order を維持する。
+
 ## Zenz candidate generation
 
 `aiRerankUseZenzGeneration` が未設定または `true` の場合、Tab 時に同梱Zenzへ `inputTag + 読み + outputTag` prompt を渡し、最大12 token の greedy generation を1候補だけ試す。生成結果は以下の安全フィルタを通った場合のみ `kind=zenz` として候補集合に追加する。
