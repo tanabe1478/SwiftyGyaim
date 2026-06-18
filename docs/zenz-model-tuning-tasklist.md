@@ -149,7 +149,7 @@ Definition of done:
 
 - `GyaimSwift/Tools/ai-rerank/evaluate-fast-context-rerank.py`
 - default は Swift `AIReranker.localRerank` の軽量 Python port
-- 現在の seed 12件 baseline: top1 `10/12`, top3 `12/12`, unsafe top `0`, exact demotion `1`
+- 現在の seed 12件 baseline: top1 `11/12`, top3 `12/12`, unsafe top `0`, exact demotion `1`
 
 Definition of done:
 
@@ -215,7 +215,10 @@ Definition of done:
 ### M3-1. feature weight を明示化する
 
 - [ ] `AIReranker.localScore` の feature breakdown を debug 可能にする
-- [ ] eval runner で候補ごとの feature contribution を出す
+- [x] eval runner で候補ごとの feature contribution を出す
+  - `evaluate-fast-context-rerank.py --show-features`
+  - `negative-imperative-kiru-001` は `絶対に` を negative imperative cue に追加して改善済み
+  - 残る `polite-question-siteimasuka-001` は同点近傍で元順が勝つことが見える
 - [ ] feature weight を設定化するか、tuning script から sweep 可能にする
 
 対象 feature:

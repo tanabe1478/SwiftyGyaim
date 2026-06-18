@@ -149,6 +149,27 @@ final class AIRerankerTests: XCTestCase {
             candidates: neutral.candidates
         )
         XCTAssertEqual(AIReranker.localRerank(negativeImperative).order.first, 0)
+
+        let zettainiImperative = AIRerankRequest(
+            version: 1,
+            mode: "rerank",
+            inputPat: "kiru",
+            hiragana: "きる",
+            context: "絶対に",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "切る",
+                                  reading: "kiru",
+                                  source: "connection",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 1,
+                                  text: "切るな",
+                                  reading: "kiruna",
+                                  source: "connection",
+                                  kind: "prefix")
+            ]
+        )
+        XCTAssertEqual(AIReranker.localRerank(zettainiImperative).order.first, 1)
     }
 
     func testLocalRerankModelLabelCanBeOverridden() {

@@ -49,6 +49,8 @@ class CaseResult:
     inputPat: str
     expectedTop: str
     predictedTop: str | None
+    expectedIndex: int | None
+    predictedIndex: int | None
     order: list[int]
     top1: bool
     top3: bool
@@ -57,6 +59,7 @@ class CaseResult:
     outcome: str
     latencyMs: float
     scores: dict[str, float] | None
+    featureBreakdown: dict[str, Any] | None
     tags: list[str]
     reason: str
 
@@ -101,14 +104,21 @@ def expected_top(record: dict[str, Any], *, context_mode: str) -> str:
 
 def run_heuristic_backend(request: dict[str, Any]) -> dict[str, Any]:
     scores: dict[str, float] = {}
+    features: dict[str, dict[str, Any]] = {}
     scored: list[CandidateScore] = []
     for candidate in request["candidates"]:
-        score = local_score(candidate, request)
+        contributions = local_score_breakdown(candidate, request)
+        score = sum(contributions.values())
         index = int(candidate["index"])
         scores[str(index)] = score
+        features[str(index)] = {
+            "text": candidate["text"],
+            "total": round(score, 6),
+            "contributions": {key: round(value, 6) for key, value in contributions.items() if value != 0},
+        }
         scored.append(CandidateScore(index=index, text=candidate["text"], score=score))
     order = [item.index for item in sorted(scored, key=lambda item: (-item.score, item.index))]
-    return {"order": order, "scores": scores, "model": "python-swift-local-heuristic"}
+    return {"order": order, "scores": scores, "features": features, "model": "python-swift-local-heuristic"}
 
 
 def run_command_backend(request: dict[str, Any], command: str, timeout_ms: int) -> dict[str, Any]:
@@ -171,8 +181,13 @@ def evaluate_record(
     latency_ms = (time.perf_counter() - start) * 1000.0
 
     order = validated_order(response.get("order", []), len(record["candidates"]))
-    predicted_top = record["candidates"][order[0]]["text"] if order else None
+    predicted_index = order[0] if order else None
+    predicted_top = record["candidates"][predicted_index]["text"] if predicted_index is not None else None
     expected = expected_top(record, context_mode=context_mode)
+    expected_index = next(
+        (index for index, candidate in enumerate(record["candidates"]) if candidate["text"] == expected),
+        None,
+    )
     top3_texts = [record["candidates"][index]["text"] for index in order[:3]]
     unsafe_top = predicted_top in set(record["mustNotTop"])
     exact_demotion = is_expected_protected_exact(record, expected) and predicted_top != expected
@@ -181,6 +196,8 @@ def evaluate_record(
         inputPat=record["inputPat"],
         expectedTop=expected,
         predictedTop=predicted_top,
+        expectedIndex=expected_index,
+        predictedIndex=predicted_index,
         order=order,
         top1=predicted_top == expected,
         top3=expected in top3_texts,
@@ -189,6 +206,7 @@ def evaluate_record(
         outcome=infer_outcome(response.get("model")),
         latencyMs=latency_ms,
         scores=response.get("scores"),
+        featureBreakdown=response.get("features"),
         tags=record["tags"],
         reason=record["reason"],
     )
@@ -221,26 +239,31 @@ def infer_outcome(model: Any) -> str:
 
 
 def local_score(candidate: dict[str, Any], request: dict[str, Any]) -> float:
-    score = 0.0
-    score -= float(candidate["index"]) * 0.03
-    score += source_bias(candidate["source"])
-    score += kind_bias(candidate["kind"])
+    return sum(local_score_breakdown(candidate, request).values())
+
+
+def local_score_breakdown(candidate: dict[str, Any], request: dict[str, Any]) -> dict[str, float]:
+    contributions: dict[str, float] = {
+        "positionPenalty": -float(candidate["index"]) * 0.03,
+        "sourceBias": source_bias(candidate["source"]),
+        "kindBias": kind_bias(candidate["kind"]),
+    }
     if candidate.get("reading") == request["inputPat"]:
-        score += 0.20
+        contributions["exactReadingMatchBonus"] = 0.20
         if candidate["kind"] == "exact":
-            score += exact_reading_bonus(candidate["text"])
+            contributions["exactReadingKindBonus"] = exact_reading_bonus(candidate["text"])
     else:
-        score -= prefix_prediction_penalty(candidate, request["inputPat"])
-    score += context_prediction_bonus(candidate, request)
+        contributions["prefixPredictionPenalty"] = -prefix_prediction_penalty(candidate, request["inputPat"])
+    contributions["contextPredictionBonus"] = context_prediction_bonus(candidate, request)
     if any(is_kanji(ch) for ch in candidate["text"]):
-        score += 0.10
-    score += natural_function_word_phrase_bonus(candidate["text"])
+        contributions["kanjiBonus"] = 0.10
+    contributions["naturalFunctionWordPhraseBonus"] = natural_function_word_phrase_bonus(candidate["text"])
     if candidate["kind"] == "zenz" and is_all_kanji_word(candidate["text"]):
-        score += 0.50
+        contributions["zenzKanjiBonus"] = 0.50
     if candidate["text"] == request["inputPat"] and candidate["text"].isascii():
-        score -= 8.0
-    score -= unnatural_script_transition_penalty(candidate["text"])
-    return score
+        contributions["rawAsciiPenalty"] = -8.0
+    contributions["scriptTransitionPenalty"] = -unnatural_script_transition_penalty(candidate["text"])
+    return contributions
 
 
 def exact_reading_bonus(text: str) -> float:
@@ -273,7 +296,7 @@ def context_prediction_bonus(candidate: dict[str, Any], request: dict[str, Any])
 
 
 def has_strong_negative_imperative_cue(context: str) -> bool:
-    return any(cue in context for cue in ["決して", "してはいけ", "してはなら", "禁止", "だめ", "ダメ", "ないで"])
+    return any(cue in context for cue in ["決して", "絶対に", "してはいけ", "してはなら", "禁止", "だめ", "ダメ", "ないで"])
 
 
 def natural_function_word_phrase_bonus(text: str) -> float:
@@ -387,7 +410,7 @@ def summarize_by_tag(results: list[CaseResult]) -> dict[str, dict[str, Any]]:
     return output
 
 
-def print_text_report(summary: dict[str, Any], results: list[CaseResult], *, show_all: bool) -> None:
+def print_text_report(summary: dict[str, Any], results: list[CaseResult], *, show_all: bool, show_features: bool) -> None:
     print("# fast-context eval")
     print(json.dumps({key: value for key, value in summary.items() if key != "byTag"}, ensure_ascii=False, indent=2))
     print("\n## by tag")
@@ -406,6 +429,28 @@ def print_text_report(summary: dict[str, Any], results: list[CaseResult], *, sho
             f"top3={result.top3}\tunsafe={result.unsafeTop}\texactDemotion={result.exactDemotion}\t"
             f"latency={result.latencyMs:.3f}ms"
         )
+        if show_features and result.featureBreakdown:
+            print_feature_breakdown(result)
+
+
+def print_feature_breakdown(result: CaseResult) -> None:
+    indexes = []
+    for index in [result.predictedIndex, result.expectedIndex]:
+        if index is not None and index not in indexes:
+            indexes.append(index)
+    for index in indexes:
+        item = result.featureBreakdown.get(str(index)) if result.featureBreakdown else None
+        if not item:
+            continue
+        contributions = item.get("contributions", {})
+        ordered = sorted(contributions.items(), key=lambda pair: abs(pair[1]), reverse=True)
+        formatted = ", ".join(f"{key}={value:+.2f}" for key, value in ordered)
+        role = []
+        if index == result.predictedIndex:
+            role.append("predicted")
+        if index == result.expectedIndex:
+            role.append("expected")
+        print(f"  features[{index}] {item.get('text')} ({'/'.join(role)}) total={item.get('total'):+.2f}: {formatted}")
 
 
 def main() -> int:
@@ -417,6 +462,7 @@ def main() -> int:
     parser.add_argument("--context-mode", choices=["fixture", "none"], default="fixture")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--show-all", action="store_true")
+    parser.add_argument("--show-features", action="store_true", help="Print heuristic feature contributions for shown cases.")
     args = parser.parse_args()
 
     run_zenz = os.environ.get("RUN_ZENZ") == "1"
@@ -445,7 +491,7 @@ def main() -> int:
     if args.json:
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
-        print_text_report(summary, results, show_all=args.show_all)
+        print_text_report(summary, results, show_all=args.show_all, show_features=args.show_features)
     return 0
 
 

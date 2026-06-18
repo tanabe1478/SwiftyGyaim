@@ -118,7 +118,7 @@ enum AIReranker {
     }
 
     private static func hasStrongNegativeImperativeCue(_ context: String) -> Bool {
-        ["決して", "してはいけ", "してはなら", "禁止", "だめ", "ダメ", "ないで"].contains { context.contains($0) }
+        ["決して", "絶対に", "してはいけ", "してはなら", "禁止", "だめ", "ダメ", "ないで"].contains { context.contains($0) }
     }
 
     private static func naturalFunctionWordPhraseBonus(_ text: String) -> Double {
