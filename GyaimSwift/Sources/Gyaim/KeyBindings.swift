@@ -138,7 +138,7 @@ struct KeyShortcut: Codable, Equatable {
     }
 }
 
-/// Persistent key binding configuration stored in UserDefaults.
+/// Persistent key binding configuration stored in settings file.
 class KeyBindings {
     static let shared = KeyBindings()
 
@@ -188,7 +188,7 @@ class KeyBindings {
     }
 
     func load() {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey) else { return }
+        guard let data = GyaimSettings.data(forKey: defaultsKey) else { return }
         let decoded: StoredBindings
         do {
             decoded = try JSONDecoder().decode(StoredBindings.self, from: data)
@@ -213,7 +213,7 @@ class KeyBindings {
                                     deleteCandidateChar: deleteCandidateChar)
         do {
             let data = try JSONEncoder().encode(stored)
-            UserDefaults.standard.set(data, forKey: defaultsKey)
+            GyaimSettings.set(data, forKey: defaultsKey)
         } catch {
             Log.config.error("Failed to encode key bindings: \(error.localizedDescription)")
         }

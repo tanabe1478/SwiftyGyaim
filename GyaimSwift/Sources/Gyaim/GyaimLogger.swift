@@ -7,11 +7,11 @@ enum Log {
     static let subsystem = "com.pitecan.inputmethod.SwiftyGyaim"
 
     static var isEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "loggingEnabled")
+        GyaimSettings.bool(forKey: "loggingEnabled")
     }
 
     static func setEnabled(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: "loggingEnabled")
+        GyaimSettings.set(value, forKey: "loggingEnabled")
     }
 
     // Raw os.Logger instances (internal, wrapped by GLogger)

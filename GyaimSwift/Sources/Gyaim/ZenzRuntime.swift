@@ -144,7 +144,7 @@ final class BundledZenzRuntime: ZenzRuntime {
                             context requestContext: String?,
                             limit: Int) -> [SearchCandidate] {
         #if canImport(llama)
-        let enabled = UserDefaults.standard.object(forKey: "aiRerankUseZenzGeneration") as? Bool ?? true
+        let enabled = GyaimSettings.bool(forKey: "aiRerankUseZenzGeneration", default: true)
         guard limit > 0, enabled else { return [] }
         lock.lock()
         defer { lock.unlock() }
@@ -365,17 +365,17 @@ final class BundledZenzRuntime: ZenzRuntime {
     }
 
     private static func scoreWeight() -> Double {
-        let configured = UserDefaults.standard.double(forKey: "aiRerankZenzWeight")
+        let configured = GyaimSettings.double(forKey: "aiRerankZenzWeight")
         return configured > 0 ? configured : 0.30
     }
 
     private static func generationBeamWidth() -> Int {
-        let configured = UserDefaults.standard.integer(forKey: "aiRerankZenzGenerationBeamWidth")
+        let configured = GyaimSettings.integer(forKey: "aiRerankZenzGenerationBeamWidth")
         return configured > 0 ? min(configured, 6) : 1
     }
 
     private static func maxScoredCandidates() -> Int {
-        let configured = UserDefaults.standard.integer(forKey: "aiRerankZenzMaxCandidates")
+        let configured = GyaimSettings.integer(forKey: "aiRerankZenzMaxCandidates")
         return configured > 0 ? configured : 8
     }
 

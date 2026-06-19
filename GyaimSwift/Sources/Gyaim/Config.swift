@@ -26,6 +26,10 @@ enum Config {
         "\(gyaimDir)/connectiondict.txt"
     }()
 
+    static let settingsFile: String = {
+        "\(gyaimDir)/settings.json"
+    }()
+
     static func activeConnectionDictFile(bundleDictPath: String) -> String {
         let fm = FileManager.default
         if fm.fileExists(atPath: importedConnectionDictFile),
@@ -55,6 +59,7 @@ enum Config {
                 fm.createFile(atPath: file, contents: nil)
             }
         }
+        GyaimSettings.synchronizeFileAndUserDefaults()
         Log.config.info("Config setup complete")
     }
 }

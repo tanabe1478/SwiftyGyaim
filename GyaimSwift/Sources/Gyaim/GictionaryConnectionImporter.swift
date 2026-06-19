@@ -51,11 +51,11 @@ enum GictionaryConnectionImporter {
     static let recommendedDict2URLString = "https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt"
 
     static var sourceURLString: String {
-        UserDefaults.standard.string(forKey: sourceURLDefaultsKey) ?? ""
+        GyaimSettings.string(forKey: sourceURLDefaultsKey) ?? ""
     }
 
     static func setSourceURLString(_ value: String) {
-        UserDefaults.standard.set(value, forKey: sourceURLDefaultsKey)
+        GyaimSettings.set(value, forKey: sourceURLDefaultsKey)
     }
 
     static func importFromURL(_ url: URL,
@@ -162,7 +162,7 @@ enum GictionaryConnectionImporter {
         if FileManager.default.fileExists(atPath: outputPath) {
             try FileManager.default.removeItem(atPath: outputPath)
         }
-        UserDefaults.standard.removeObject(forKey: sourceURLDefaultsKey)
+        GyaimSettings.removeObject(forKey: sourceURLDefaultsKey)
     }
 
     private static func parseGictionaryJSON(_ data: Data) throws -> [SourceEntry] {

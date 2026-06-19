@@ -5,15 +5,15 @@ enum CandidateDisplayMode: Int {
     case list = 0     // 現行の縦リスト (Google IME風)
     case classic = 1  // オリジナルGyaim風横並び (candwin.png背景)
 
-    /// Current display mode from UserDefaults (default: .classic).
+    /// Current display mode from settings file (default: .classic).
     static var current: CandidateDisplayMode {
-        let raw = UserDefaults.standard.object(forKey: "candidateDisplayMode") as? Int ?? 1
+        let raw = GyaimSettings.integer(forKey: "candidateDisplayMode", default: 1)
         return CandidateDisplayMode(rawValue: raw) ?? .classic
     }
 
-    /// Persist the display mode to UserDefaults.
+    /// Persist the display mode to settings file.
     static func setCurrent(_ mode: CandidateDisplayMode) {
-        UserDefaults.standard.set(mode.rawValue, forKey: "candidateDisplayMode")
+        GyaimSettings.set(mode.rawValue, forKey: "candidateDisplayMode")
     }
 
     /// Maximum number of visible candidates for this mode.

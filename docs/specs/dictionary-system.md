@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-06-18 (接続辞書の内部ラベル候補除外を追加)
+> Last updated: 2026-06-19 (設定画面の設定ファイル化)
 
 ## 概要
 
@@ -80,7 +80,7 @@ https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt
 
 `https://github.com/masui/Gictionary` のようなGitHubリポジトリURLを指定した場合は、自動的に `https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt` として扱う。`/blob/<branch>/dict2.txt` URLもraw URLへ正規化する。未入力でインポートした場合も推奨raw URLを使用する。
 
-- UserDefaultsキー: `connectionDictSourceURL`（最後に成功したインポート元URL）
+- 設定キー: `connectionDictSourceURL`（最後に成功したインポート元URL。`~/.gyaim/settings.json` に保存し、既存UserDefaults値は後方互換fallbackとして読む）
 - 保存先: `Config.importedConnectionDictFile` = `~/.gyaim/connectiondict.txt`
 - 起動時/再読み込み時は `Config.activeConnectionDictFile(bundleDictPath:)` で、インポート済みファイルが存在し非空ならそれを使用し、なければbundle内 `Resources/dict.txt` を使用する
 - インポート成功後は `GyaimController.reloadConnectionDictionary()` で現在の `WordSearch` を作り直し、再起動せずに反映する

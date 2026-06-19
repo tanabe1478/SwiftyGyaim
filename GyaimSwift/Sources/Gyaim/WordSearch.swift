@@ -65,11 +65,11 @@ class WordSearch {
     /// When enabled, candidates with exact reading match are prioritized over prefix-only matches.
     /// Default: false (preserves existing MRU-only behavior).
     static var isExactReadingMatchPriority: Bool {
-        UserDefaults.standard.bool(forKey: exactReadingMatchPriorityKey)
+        GyaimSettings.bool(forKey: exactReadingMatchPriorityKey)
     }
 
     static func setExactReadingMatchPriority(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: exactReadingMatchPriorityKey)
+        GyaimSettings.set(value, forKey: exactReadingMatchPriorityKey)
     }
 
     // MARK: - Study Hiragana Setting
@@ -77,13 +77,11 @@ class WordSearch {
     private static let studyHiraganaKey = "studyHiraganaEnabled"
 
     static var isStudyHiraganaEnabled: Bool {
-        UserDefaults.standard.object(forKey: studyHiraganaKey) == nil
-            ? true
-            : UserDefaults.standard.bool(forKey: studyHiraganaKey)
+        GyaimSettings.bool(forKey: studyHiraganaKey, default: true)
     }
 
     static func setStudyHiraganaEnabled(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: studyHiraganaKey)
+        GyaimSettings.set(value, forKey: studyHiraganaKey)
     }
 
     /// Returns true if the string consists entirely of hiragana characters (U+3040-U+309F).

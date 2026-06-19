@@ -570,23 +570,17 @@ class GyaimController: IMKInputController {
     /// Capture selected text and clipboard at input start.
     /// Called once when the first printable character is typed.
     static var isClipboardCandidateEnabled: Bool {
-        // Default true — UserDefaults returns false for unset booleans,
-        // so we use object(forKey:) to detect "never set" and default to true.
-        UserDefaults.standard.object(forKey: "clipboardCandidateEnabled") == nil
-            ? true
-            : UserDefaults.standard.bool(forKey: "clipboardCandidateEnabled")
+        GyaimSettings.bool(forKey: "clipboardCandidateEnabled", default: true)
     }
     static func setClipboardCandidateEnabled(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: "clipboardCandidateEnabled")
+        GyaimSettings.set(value, forKey: "clipboardCandidateEnabled")
     }
 
     static var isSelectedTextCandidateEnabled: Bool {
-        UserDefaults.standard.object(forKey: "selectedTextCandidateEnabled") == nil
-            ? true
-            : UserDefaults.standard.bool(forKey: "selectedTextCandidateEnabled")
+        GyaimSettings.bool(forKey: "selectedTextCandidateEnabled", default: true)
     }
     static func setSelectedTextCandidateEnabled(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: "selectedTextCandidateEnabled")
+        GyaimSettings.set(value, forKey: "selectedTextCandidateEnabled")
     }
 
     private func captureExternalCandidates(client sender: Any?) {
@@ -770,29 +764,27 @@ class GyaimController: IMKInputController {
     }
 
     static var isFastContextRerankEnabled: Bool {
-        UserDefaults.standard.object(forKey: "aiRerankFastContextEnabled") == nil
-            ? true
-            : UserDefaults.standard.bool(forKey: "aiRerankFastContextEnabled")
+        GyaimSettings.bool(forKey: "aiRerankFastContextEnabled", default: true)
     }
 
     static func setFastContextRerankEnabled(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: "aiRerankFastContextEnabled")
+        GyaimSettings.set(value, forKey: "aiRerankFastContextEnabled")
     }
 
     static var isFastContextRerankModelEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "aiRerankUseModelForFastContext")
+        GyaimSettings.bool(forKey: "aiRerankUseModelForFastContext")
     }
 
     static func setFastContextRerankModelEnabled(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: "aiRerankUseModelForFastContext")
+        GyaimSettings.set(value, forKey: "aiRerankUseModelForFastContext")
     }
 
     static var isFastContextRerankLoggingEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "aiRerankFastContextLoggingEnabled")
+        GyaimSettings.bool(forKey: "aiRerankFastContextLoggingEnabled")
     }
 
     static func setFastContextRerankLoggingEnabled(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: "aiRerankFastContextLoggingEnabled")
+        GyaimSettings.set(value, forKey: "aiRerankFastContextLoggingEnabled")
     }
 
     private static func shouldUseModelForFastContextRerank(inputPat: String) -> Bool {
@@ -812,7 +804,7 @@ class GyaimController: IMKInputController {
     }
 
     private static func minFastContextModelInputLength() -> Int {
-        let configured = UserDefaults.standard.integer(forKey: "aiRerankFastContextModelMinInputLength")
+        let configured = GyaimSettings.integer(forKey: "aiRerankFastContextModelMinInputLength")
         guard configured > 0 else { return 4 }
         return min(max(configured, 1), 12)
     }
@@ -820,13 +812,13 @@ class GyaimController: IMKInputController {
     private static func limitedFastContext(_ context: String?) -> String {
         let trimmed = context?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return "" }
-        let configured = UserDefaults.standard.integer(forKey: "aiRerankFastContextMaxContextLength")
+        let configured = GyaimSettings.integer(forKey: "aiRerankFastContextMaxContextLength")
         let limit = configured > 0 ? min(max(configured, 1), 200) : 20
         return String(trimmed.suffix(limit))
     }
 
     private static func maxFastContextRerankCandidates() -> Int {
-        let configured = UserDefaults.standard.integer(forKey: "aiRerankFastContextCandidateLimit")
+        let configured = GyaimSettings.integer(forKey: "aiRerankFastContextCandidateLimit")
         guard configured > 0 else { return 24 }
         return min(max(configured, 2), 48)
     }
@@ -1003,7 +995,7 @@ class GyaimController: IMKInputController {
                             modeLabel: "generated-local",
                             client: sender)
 
-        let googleEnabled = UserDefaults.standard.object(forKey: "aiRerankUseGoogle") as? Bool ?? false
+        let googleEnabled = GyaimSettings.bool(forKey: "aiRerankUseGoogle")
         guard googleEnabled else { return }
 
         // Stage 2: optional Google live update. Disabled by default because a second
@@ -1104,12 +1096,12 @@ class GyaimController: IMKInputController {
     }
 
     private static func zenzReviewRounds() -> Int {
-        let configured = UserDefaults.standard.integer(forKey: "aiRerankZenzReviewRounds")
+        let configured = GyaimSettings.integer(forKey: "aiRerankZenzReviewRounds")
         return configured > 0 ? min(configured, 3) : 2
     }
 
     private static func zenzAlternativeLimit() -> Int {
-        let configured = UserDefaults.standard.integer(forKey: "aiRerankZenzAlternativeLimit")
+        let configured = GyaimSettings.integer(forKey: "aiRerankZenzAlternativeLimit")
         return configured > 0 ? min(configured, 4) : 2
     }
 
@@ -1193,7 +1185,7 @@ class GyaimController: IMKInputController {
     }
 
     private static func shouldRunLegacyExternalAIReranker() -> Bool {
-        UserDefaults.standard.bool(forKey: "aiRerankUseLegacyExternalReranker")
+        GyaimSettings.bool(forKey: "aiRerankUseLegacyExternalReranker")
     }
 
     private func limitedAISnapshot(_ snapshot: [SearchCandidate], query: String) -> [SearchCandidate] {

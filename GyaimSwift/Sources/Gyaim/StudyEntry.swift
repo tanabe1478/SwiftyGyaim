@@ -29,10 +29,10 @@ enum EvictionMode: Int, CaseIterable {
     private static let key = "studyDictEvictionMode"
 
     static var current: EvictionMode {
-        EvictionMode(rawValue: UserDefaults.standard.integer(forKey: key)) ?? defaultMode
+        EvictionMode(rawValue: GyaimSettings.integer(forKey: key)) ?? defaultMode
     }
 
     static func setCurrent(_ mode: EvictionMode) {
-        UserDefaults.standard.set(mode.rawValue, forKey: key)
+        GyaimSettings.set(mode.rawValue, forKey: key)
     }
 }
