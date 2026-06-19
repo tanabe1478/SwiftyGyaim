@@ -81,6 +81,8 @@ enum AIReranker {
                                                                                  inputPat: request.inputPat)
         }
         contributions["contextPredictionBonus"] = contextPredictionBonus(candidate: candidate, request: request)
+        contributions["politeNegativePredictionPenalty"] = -politeNegativePredictionPenalty(candidate: candidate,
+                                                                                             request: request)
         if candidate.text.contains(where: isKanji) {
             contributions["kanjiBonus"] = 0.10
         }
@@ -132,6 +134,30 @@ enum AIReranker {
 
     private static func hasStrongNegativeImperativeCue(_ context: String) -> Bool {
         ["決して", "絶対に", "してはいけ", "してはなら", "禁止", "だめ", "ダメ", "ないで"].contains { context.contains($0) }
+    }
+
+    private static func politeNegativePredictionPenalty(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
+        guard isPoliteNegativePrediction(candidate.text), !inputExplicitlyRequestsPoliteNegative(request.inputPat) else {
+            return 0
+        }
+        if let context = request.context,
+           hasPoliteNegativeContextCue(context.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return 0
+        }
+        return 4.00
+    }
+
+    private static func isPoliteNegativePrediction(_ text: String) -> Bool {
+        text.hasSuffix("ません") || text.hasSuffix("ませんか") || text.hasSuffix("ません？") || text.hasSuffix("ませんか？")
+    }
+
+    private static func inputExplicitlyRequestsPoliteNegative(_ inputPat: String) -> Bool {
+        inputPat.contains("masen") || inputPat.contains("masenn")
+    }
+
+    private static func hasPoliteNegativeContextCue(_ context: String) -> Bool {
+        guard !context.isEmpty else { return false }
+        return ["ない", "ません", "ではなく", "じゃなく", "しない", "できない", "不要", "禁止"].contains { context.contains($0) }
     }
 
     private static func naturalFunctionWordPhraseBonus(_ text: String) -> Double {

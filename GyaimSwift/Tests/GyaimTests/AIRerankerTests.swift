@@ -205,6 +205,68 @@ final class AIRerankerTests: XCTestCase {
         XCTAssertEqual(AIReranker.localRerank(request).order.first, 1)
     }
 
+    func testLocalRerankPenalizesPoliteNegativePredictionUntilExplicitlyTyped() {
+        let prematureNegative = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "onegaisim",
+            hiragana: "おねがいしま",
+            context: "よろしく",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "お願いしません",
+                                  reading: "onegaisim",
+                                  source: "study",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 1,
+                                  text: "お願いします",
+                                  reading: "onegaisimasu",
+                                  source: "connection",
+                                  kind: "prefix")
+            ]
+        )
+        XCTAssertEqual(AIReranker.localRerank(prematureNegative).order.first, 1)
+
+        let explicitlyTypedNegative = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "onegaisimasen",
+            hiragana: "おねがいしません",
+            context: "よろしく",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "お願いしません",
+                                  reading: "onegaisimasen",
+                                  source: "study",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 1,
+                                  text: "お願いします",
+                                  reading: "onegaisimasu",
+                                  source: "connection",
+                                  kind: "prefix")
+            ]
+        )
+        XCTAssertEqual(AIReranker.localRerank(explicitlyTypedNegative).order.first, 0)
+    }
+
+    func testLocalScoreBreakdownExposesPoliteNegativePredictionPenalty() {
+        let candidate = AIRerankCandidate(index: 0,
+                                          text: "思いません",
+                                          reading: "omoim",
+                                          source: "study",
+                                          kind: "exact")
+        let request = AIRerankRequest(version: 1,
+                                      mode: "fast-context-rerank",
+                                      inputPat: "omoim",
+                                      hiragana: "おもいm",
+                                      context: "そう",
+                                      candidates: [candidate])
+
+        let breakdown = AIReranker.localScoreBreakdown(candidate: candidate, request: request)
+
+        XCTAssertEqual(breakdown.contributions["politeNegativePredictionPenalty"], -4.00)
+    }
+
     func testLocalRerankPenalizesLongerPrefixPredictionUnlessContextStronglySupportsIt() {
         let neutral = AIRerankRequest(
             version: 1,

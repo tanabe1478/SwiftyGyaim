@@ -53,6 +53,8 @@ KNOWN_TAGS = {
     "proper-noun",
     "short-input",
     "latency-sensitive",
+    "polite-negative",
+    "dogfood-regression",
 }
 
 

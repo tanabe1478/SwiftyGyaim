@@ -100,7 +100,7 @@ Definition of done:
 
 ### M1-2. seed eval set 100件を作る
 
-進捗: 105/100件。
+進捗: 107/100件。
 
 カテゴリ別目標:
 
@@ -149,7 +149,7 @@ Definition of done:
 
 - `GyaimSwift/Tools/ai-rerank/evaluate-fast-context-rerank.py`
 - default は Swift `AIReranker.localRerank` の軽量 Python port
-- 現在の seed 105件 baseline: top1 `105/105`, top3 `105/105`, unsafe top `0`, exact demotion `0`
+- 現在の seed 107件 baseline: top1 `107/107`, top3 `107/107`, unsafe top `0`, exact demotion `0`
 
 Definition of done:
 
@@ -257,7 +257,7 @@ Definition of done:
 - [x] top1 / top3 / unsafe / latency を比較する
 - [x] 現行値との差分 report を作る
 - [x] 勝った weight を固定テストに落とす
-  - seed 105件では default を超える weight はなく、現行値維持を固定
+  - seed 107件時点では default を超える weight はなく、現行値維持を固定
 
 実装:
 
@@ -265,8 +265,8 @@ Definition of done:
 - default grid は `contextPredictionBonus` / `prefixPredictionPenalty` / `punctuationSuffixPenalty` の multiplier を探索する
 - text report は baseline と `dTop1` / `dUnsafe` / `dExactDemotion` を出す
 - JSON report は `baseline` / `sweepSummary` / 各 result の `delta` を出す
-- default grid 36通りのうち safe 27通り、regression 9通り、bestTop1Delta `+0`
-- 現 seed 105件は default weights で top1 `105/105` のため、当面は regression-safe range の確認用途
+- default grid 36通りのうち safe 18通り、regression 18通り、bestTop1Delta `+0`
+- 現 seed 107件は default weights で top1 `107/107` のため、当面は regression-safe range の確認用途
 
 Definition of done:
 
@@ -383,7 +383,7 @@ Definition of done:
 
 1. `M2-1 dogfood log aggregator`
 2. `M1-1 eval case schema`
-3. `M1-2 seed eval set 105件まで拡張済み`
+3. `M1-2 seed eval set 107件まで拡張済み`
 4. `M2-2 review-unavailable reason breakdown`
 5. `M3-1 feature breakdown`
 

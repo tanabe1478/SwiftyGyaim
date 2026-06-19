@@ -261,6 +261,7 @@ def local_score_breakdown(
     else:
         contributions["prefixPredictionPenalty"] = -prefix_prediction_penalty(candidate, request["inputPat"])
     contributions["contextPredictionBonus"] = context_prediction_bonus(candidate, request)
+    contributions["politeNegativePredictionPenalty"] = -polite_negative_prediction_penalty(candidate, request)
     if any(is_kanji(ch) for ch in candidate["text"]):
         contributions["kanjiBonus"] = 0.10
     contributions["naturalFunctionWordPhraseBonus"] = natural_function_word_phrase_bonus(candidate["text"])
@@ -313,6 +314,29 @@ def context_prediction_bonus(candidate: dict[str, Any], request: dict[str, Any])
 
 def has_strong_negative_imperative_cue(context: str) -> bool:
     return any(cue in context for cue in ["決して", "絶対に", "してはいけ", "してはなら", "禁止", "だめ", "ダメ", "ないで"])
+
+
+def polite_negative_prediction_penalty(candidate: dict[str, Any], request: dict[str, Any]) -> float:
+    if not is_polite_negative_prediction(candidate["text"]):
+        return 0.0
+    if input_explicitly_requests_polite_negative(request["inputPat"]):
+        return 0.0
+    context = request.get("context")
+    if isinstance(context, str) and has_polite_negative_context_cue(context.strip()):
+        return 0.0
+    return 4.0
+
+
+def is_polite_negative_prediction(text: str) -> bool:
+    return text.endswith(("ません", "ませんか", "ません？", "ませんか？"))
+
+
+def input_explicitly_requests_polite_negative(input_pat: str) -> bool:
+    return "masen" in input_pat or "masenn" in input_pat
+
+
+def has_polite_negative_context_cue(context: str) -> bool:
+    return bool(context) and any(cue in context for cue in ["ない", "ません", "ではなく", "じゃなく", "しない", "できない", "不要", "禁止"])
 
 
 def natural_function_word_phrase_bonus(text: str) -> float:
