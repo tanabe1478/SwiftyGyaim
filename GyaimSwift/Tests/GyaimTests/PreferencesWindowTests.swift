@@ -86,6 +86,21 @@ final class PreferencesWindowTests: XCTestCase {
         return nil
     }
 
+    private func commandKeyEvent(_ key: String,
+                                 modifiers: NSEvent.ModifierFlags = .command,
+                                 keyCode: UInt16 = 0) -> NSEvent {
+        NSEvent.keyEvent(with: .keyDown,
+                         location: .zero,
+                         modifierFlags: modifiers,
+                         timestamp: 0,
+                         windowNumber: window.windowNumber,
+                         context: nil,
+                         characters: key,
+                         charactersIgnoringModifiers: key.lowercased(),
+                         isARepeat: false,
+                         keyCode: keyCode)!
+    }
+
     // MARK: - Checkbox existence
 
     func testClipboardToggleExists() {
@@ -327,5 +342,31 @@ final class PreferencesWindowTests: XCTestCase {
         toggle.state = .on
         toggle.sendAction(toggle.action, to: toggle.target)
         XCTAssertTrue(WordSearch.isStudyHiraganaEnabled)
+    }
+
+    // MARK: - Standard command shortcuts
+
+    func testCommandWClosesPreferencesWindowViaKeyEquivalent() {
+        window.makeKeyAndOrderFront(nil)
+        XCTAssertTrue(window.isVisible)
+
+        XCTAssertTrue(window.performKeyEquivalent(with: commandKeyEvent("w")))
+
+        XCTAssertFalse(window.isVisible)
+    }
+
+    func testCommandVDispatchesStandardPasteActionToFirstResponder() {
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 160, height: 24))
+        window.contentView?.addSubview(textField)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        XCTAssertTrue(window.makeFirstResponder(textField))
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString("貼り付け", forType: .string)
+
+        XCTAssertTrue(window.performKeyEquivalent(with: commandKeyEvent("v")))
+
+        XCTAssertEqual(textField.stringValue, "貼り付け")
     }
 }

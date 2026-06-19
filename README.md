@@ -104,6 +104,10 @@ GyaimSwift/dist/dmg/SwiftyGyaim-<version>.dmg
 2. **ユーザー辞書** (`~/.gyaim/localdict.txt`) — ユーザー登録語（最優先）
 3. **学習辞書** (`~/.gyaim/studydict.txt`) — 使用頻度に基づく学習（最大1000件）
 
+## 設定ファイル
+
+設定画面で変更した値は `~/.gyaim/settings.json` に保存されます。既存バージョンからの移行互換のため、同じキーの UserDefaults 値も fallback として読み込みます。
+
 ## 関連リンク
 
 - [SwiftyGyaim Scrapbox](https://scrapbox.io/swifty-gyaim/) — 開発メモ・ナレッジベース・フォーラム

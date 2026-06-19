@@ -11,11 +11,11 @@ enum GoogleTransliterate {
 
     /// The character suffix that triggers Google Transliterate (default: `` ` ``).
     static var triggerSuffix: String {
-        UserDefaults.standard.string(forKey: triggerKey) ?? defaultTrigger
+        GyaimSettings.string(forKey: triggerKey) ?? defaultTrigger
     }
 
     static func setTriggerSuffix(_ value: String) {
-        UserDefaults.standard.set(value, forKey: triggerKey)
+        GyaimSettings.set(value, forKey: triggerKey)
     }
 
     /// Check if a query string ends with the configured trigger suffix.
