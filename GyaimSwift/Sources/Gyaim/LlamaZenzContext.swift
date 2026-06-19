@@ -188,13 +188,22 @@ final class LlamaZenzContext {
 
     func evaluateCandidate(prompt: String,
                            candidateText: String,
-                           alternativeLimit: Int) -> CandidateEvaluation? {
+                           alternativeLimit: Int,
+                           failureReason: ((String) -> Void)? = nil) -> CandidateEvaluation? {
+        func fail(_ reason: String) -> CandidateEvaluation? {
+            failureReason?(reason)
+            return nil
+        }
+
         let promptTokens = encode(prompt, addBOS: true)
         let candidateTokens = encode(candidateText, addBOS: false)
-        guard !promptTokens.isEmpty, !candidateTokens.isEmpty else { return nil }
+        guard !promptTokens.isEmpty else { return fail("empty-prompt-tokens") }
+        guard !candidateTokens.isEmpty else { return fail("empty-candidate-tokens") }
         let tokens = promptTokens + candidateTokens
         let startOffset = promptTokens.count - 1
-        guard let logits = logits(tokens: tokens, startOffset: startOffset, seqId: generationSeqId) else { return nil }
+        guard let logits = logits(tokens: tokens, startOffset: startOffset, seqId: generationSeqId) else {
+            return fail("logits-unavailable")
+        }
         let vocabCount = vocabSize
         let promptText = promptTokens.compactMap(piece(for:)).joined()
         var alternatives: [CandidateEvaluation.Alternative] = []
@@ -202,11 +211,13 @@ final class LlamaZenzContext {
         for (tokenIndex, tokenID) in tokens.enumerated().dropFirst(promptTokens.count) {
             let startIndex = (tokenIndex - 1 - startOffset) * vocabCount
             let top = topTokens(from: logits.advanced(by: startIndex), limit: max(1, alternativeLimit + 1))
-            guard let best = top.first else { return nil }
+            guard let best = top.first else { return fail("empty-top-token-list") }
             if best.token != tokenID {
-                guard best.token != llama_vocab_eos(vocab),
-                      let prefix = decodedCandidatePrefix(tokens: Array(tokens[..<tokenIndex]) + [best.token],
-                                                          promptText: promptText) else { return nil }
+                guard best.token != llama_vocab_eos(vocab) else { return fail("best-token-is-eos") }
+                guard let prefix = decodedCandidatePrefix(tokens: Array(tokens[..<tokenIndex]) + [best.token],
+                                                          promptText: promptText) else {
+                    return fail("decoded-prefix-mismatch")
+                }
                 return CandidateEvaluation(fixRequiredPrefix: prefix, alternatives: [])
             }
 

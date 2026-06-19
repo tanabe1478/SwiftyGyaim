@@ -53,6 +53,27 @@ final class ConnectionDictTests: XCTestCase {
                       "Expected compound containing '言' in results: \(words)")
     }
 
+    func testDetailedSearchReportsCompoundDepth() throws {
+        var results: [ConnectionSearchResult] = []
+        dict.searchDetailed(pat: "kyokushoka", searchMode: 1) { result in
+            results.append(result)
+        }
+        let match = results.first { $0.word == "局所化" }
+        XCTAssertNotNil(match, "Expected 局所化 in results: \(results.map(\.word))")
+        XCTAssertGreaterThan(match?.depth ?? 0, 1)
+    }
+
+    func testInternalConnectionLabelsDoNotContributeSurface() throws {
+        var results: [ConnectionSearchResult] = []
+        dict.searchDetailed(pat: "omoku", searchMode: 0) { result in
+            results.append(result)
+        }
+        let words = results.map(\.word)
+        XCTAssertFalse(words.contains("重い形容詞"), "Internal label should not be surfaced: \(words)")
+        XCTAssertFalse(words.contains("おもい形容詞"), "Internal label should not be surfaced: \(words)")
+        XCTAssertTrue(words.contains("重く"), "Natural inflection should remain: \(words)")
+    }
+
     func testSearchMigratedTechnicalTerms() throws {
         let expectations = [
             ("ripojitori", "リポジトリ"),

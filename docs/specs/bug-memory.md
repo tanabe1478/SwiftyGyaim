@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-06-17 (BUG-015追加)
+> Last updated: 2026-06-19 (BUG-018追加)
 
 ## 概要
 
@@ -220,6 +220,36 @@
 - **修正**: 外部候補検証で前後改行もtrimし、lowercase化した文字列が `://` を含む場合は無効とする。従来の `http` prefix と Gyazo hash 除外は維持。
 - **検証**: `ExternalCandidateTests` に `chrome-extension://...` / `obsidian://...` の無効化と、選択テキスト候補への混入防止テストを追加。
 - **教訓**: 外部候補は選択中テキスト・クリップボード由来で、アプリ内部URLやdeep linkも入りうる。URL判定は `http(s)` だけに限定せず、scheme形式全般を候補から除外する。
+
+### BUG-016: 接続辞書の内部ラベルが候補 surface に混入する
+
+- **発見日**: 2026-06-18
+- **症状**: `omoku` の候補で `重い形容詞` / `おもい形容詞` が `重く` より上位に表示される。誤って確定すると学習辞書にも登録される。
+- **影響**: 品詞説明・接続カテゴリのような内部ラベルが通常の日本語入力候補として露出し、fast-context-rerank の exact 優先でさらに目立ちやすくなる。
+- **原因**: 接続辞書の `word` が表示 surface と内部接続ラベルを兼ねている。`omoku = omo + ku = 重 + い形容詞` のように、`ku -> い形容詞` が接続探索で連結され、`WordSearch` 側では connection compound exact も通常の `.exact` として扱われていた。
+- **修正**: `ConnectionDict` が `word` を `canStart` / `canTerminate` / `contributesSurface` に正規化して扱うようにし、`い形容詞` / `な形容詞` などの内部ラベル風ノードは探索用に残しつつ surface に寄与させない。さらに `WordSearch` の connection 候補追加直前にも狭い suffix フィルタを置き、インポート済み辞書などへの防御層にする。connection compound exact は通常 `.exact` ではなく `.compound` として扱う。
+- **検証**: `ConnectionDictTests` / `WordSearchTests` に `omoku` で `重い形容詞` / `おもい形容詞` が出ず、`重く` が残ること、`keiyoushi -> 形容詞` が残ること、`kyokushoka -> 局所化` が connection compound metadata を持つことを確認するテストを追加。
+- **教訓**: 接続辞書では表示 surface と接続制御ノードを同じ `word` に詰め込むと、内部カテゴリが候補に漏れる。`*` だけで全ての内部ノード意味を表現しようとせず、`canStart` / `canTerminate` / `contributesSurface` のように接続用ノードと表示 surface を分離する。
+
+### BUG-017: fast-context Zenz review が1文字 prefix で広すぎる置換を行う
+
+- **発見日**: 2026-06-19
+- **症状**: dogfood log の `review-fixed` で、`kouh -> 高品質`、`tukat -> つかっちゃ`、`kaiz -> 会場` のように、Swift heuristic の最上位候補から文脈に合わない候補へ先頭が大きく入れ替わるケースが目立つ。
+- **影響**: model backend を ON にした dogfood で、fast-context の安全な exact / prefix heuristic を Zenz review が上書きし、通常入力中の第一候補品質が不安定になる。
+- **原因**: `evaluateCandidate` の `fixRequiredPrefix` は、最初に不一致になった model 最尤 token までの prefix を返す。ログ上の `review fixed` 160件中157件が1文字 prefix で、`高` / `つ` / `ど` のような短すぎる prefix が既存候補の `hasPrefix` 判定に一致し、広すぎる候補移動を許していた。
+- **修正**: fast-context review の既存候補置換では、trim 後2文字未満の `fixRequiredPrefix` を採用しない。また prefix が現在の最上位候補自身に一致する場合は順位変更として扱わず、local order を維持する。
+- **検証**: `ZenzRuntimeTests` に、1文字 prefix が置換されないこと、2文字以上の prefix は既存候補へ移動できること、現在の最上位候補自身は replacement にならないことを確認するテストを追加。
+- **教訓**: token 単位の model review 結果を候補順位へ変換するとき、1 token / 1文字 prefix は制約として弱すぎる。特に IME の通常入力中 rerank では、候補集合内 `hasPrefix` に直接流す前に prefix 長・現在候補との同一性・安全性を検証する。
+
+### BUG-018: 途中入力で polite negative 候補が先頭化する
+
+- **発見日**: 2026-06-19
+- **症状**: dogfood log で `onegaisim` の `お願いします -> お願いしません`、`omoim` の `おもいます -> 思いません` のように、`masen` まで入力していない段階で polite negative 候補が第一候補になる。
+- **影響**: 肯定・依頼表現を入力している途中で否定表現が先頭化し、Enter 確定時に意味が反転する可能性がある。
+- **原因**: 学習済み候補や prefix 候補の metadata によっては、`〜ません` が exact / 高スコア候補として扱われ、prefix penalty だけでは `お願いします` / `思います` 系を守りきれない。
+- **修正**: `masen` / `masenn` が inputPat に含まれず、左文脈にも否定 cue がない場合、`ません` / `ませんか` / `ません？` / `ませんか？` で終わる候補へ `politeNegativePredictionPenalty` を与える。Python offline evaluator にも同じ feature を追加し、dogfood 由来 fixture を2件追加。
+- **検証**: `AIRerankerTests` に premature polite negative の抑制と、`masen` まで明示入力した場合は抑制しないテストを追加。fast-context eval fixture は 107件で top1 `107/107`。
+- **教訓**: 通常入力中の prefix prediction では、長い候補が「文法的にあり得る」だけでは先頭にしない。特に否定・依頼・疑問など意味を反転させる接尾表現は、入力文字列または左文脈で明示されるまで保守的に扱う。
 
 ## パターン集
 
