@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-06-17 (軽量コンテキストrerank・URL scheme形式の外部候補除外)
+> Last updated: 2026-06-20 (Google Transliterate復活とrerank-only廃止)
 
 ## 概要
 
@@ -30,7 +30,7 @@ handle(_:client:) → routeEvent() → HandleResult
             ├─ BS → inputPat末尾削除
             ├─ F6/F7/shortcut → fixAsKana()
             ├─ Tab → AI候補生成 + rerankを明示起動
-            └─ Shift+Tab / ` → 現在候補のAI rerankだけを明示起動
+            └─ Google Transliterate suffix/shortcut → Google候補を取得
 ```
 
 ## routeEvent() の設計意図
@@ -49,9 +49,13 @@ handle(_:client:) → routeEvent() → HandleResult
 
 ## AI rerank
 
-AIによる候補生成は通常入力・候補生成時には自動実行しない。変換中に Tab を押した時だけ `requestAIRerankIfAvailable()` を呼び、ローカル lattice 候補・補完候補を追加する。候補追加後は Swift in-process heuristic / 同梱 Zenz で即 rerank し、server 未起動でも候補順を補正する。Google Input Tools は `aiRerankUseGoogle=true` の明示 opt-in 時だけ後追い候補追加に使う（2回目の候補更新が発生するため既定OFF）。GPT-2 server / external command は legacy 比較用で、`aiRerankUseLegacyExternalReranker=true` の明示 opt-in 時だけ後追い rerank する。Shift+Tab または `` ` `` は `requestAIRerankOnlyIfAvailable()` を呼び、候補追加を行わず現在の候補リストだけを同様に rerank する。単体の Google Transliterate suffix/shortcut は廃止済み。
+AIによる候補生成は通常入力・候補生成時には自動実行しない。変換中に Tab を押した時だけ `requestAIRerankIfAvailable()` を呼び、ローカル lattice 候補・補完候補を追加する。候補追加後は Swift in-process heuristic / 同梱 Zenz で即 rerank し、server 未起動でも候補順を補正する。Google Input Tools は Tab pipeline では `aiRerankUseGoogle=true` の明示 opt-in 時だけ後追い候補追加に使う（2回目の候補更新が発生するため既定OFF）。GPT-2 server / external command は legacy 比較用で、`aiRerankUseLegacyExternalReranker=true` の明示 opt-in 時だけ後追い rerank する。Shift+Tab による rerank-only は廃止し、変換中は副作用なしで消費する。`` ` `` は既定の Google Transliterate suffix として扱う。
 
 通常入力では、`aiRerankFastContextEnabled=true`（デフォルトON）のとき、生成を伴わない軽量な `fast-context-rerank` だけを同期実行する。対象は prefix mode の辞書候補上位24件（`aiRerankFastContextCandidateLimit` で 2〜48 に調整可能）で、raw input と外部候補（クリップボード/選択テキスト）は順序固定。既定では `AIReranker.localRerank` の Swift heuristic のみを使い、読み完全一致候補を長い予測候補より優先しつつ、直前文脈に強い否定命令 cue（例: `決して`, `禁止`, `してはいけ`）がある場合だけ `従うな` のような予測候補を上げられる。`aiRerankUseModelForFastContext=true` の場合だけ in-process model backend を使うが、短い入力では走らせない（`aiRerankFastContextModelMinInputLength`、デフォルト4）。モデル経路では候補ごとの全件scoringではなく、Swift heuristic の最上位候補をZenzで1回だけreviewし、必要な場合だけ既存候補内のprefix一致候補を先頭へ移動する。読み完全一致の `.exact` / `.compound` 最上位候補はモデルで沈めない。文脈は末尾だけに制限する（`aiRerankFastContextMaxContextLength`、デフォルト20）。入力ごとの latency・before/after ログは `aiRerankFastContextLoggingEnabled=true` のときだけ出す。ログには `outcome=heuristic|protected-exact-skip|review-fixed|review-passed|review-kept-local|review-unavailable` と `topChanged` を含め、dogfood時にmodel reviewの効果と無駄撃ちを集計できるようにする。
+
+## Google Transliterate
+
+`GoogleTransliterate.triggerSuffix`（デフォルト `` ` ``）を入力末尾に付けるか、設定画面で登録した Google Transliterate shortcut を押すと、現在の読みをひらがな化して Google Input Tools API に送る。API応答後は `searchMode = 2` として Google候補・ひらがな・カタカナを表示する。suffix入力時は `inputPat` からsuffixを取り除いてから検索し、API応答時に `pendingGoogleQuery` と現在の `inputPat` が一致しない古い結果は破棄する。
 
 ## IMEライフサイクル
 
