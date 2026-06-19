@@ -2,9 +2,10 @@ import Foundation
 
 /// First-choice reranker that runs inside the IME process.
 ///
-/// It tries backends in priority order. The bundled Zenz/GGUF backend currently
-/// validates and keeps the model resident, then uses Swift heuristic scoring;
-/// the backend boundary is where llama.cpp token inference will be connected.
+/// It tries backends in priority order. The bundled Zenz/GGUF backend keeps the
+/// model resident and, when llama.cpp is available, adds token-level Zenz scores
+/// to the Swift heuristic. If the model cannot run or produces no score, the
+/// heuristic backend remains the fallback.
 final class InProcessAIReranker {
     static let shared = InProcessAIReranker()
 

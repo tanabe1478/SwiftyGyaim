@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Cocoa
 
 /// Preferences window for Gyaim keybinding configuration.
@@ -18,6 +19,9 @@ class PreferencesWindow: NSWindow {
     private var evictionModeControl: NSSegmentedControl?
     private var studyHiraganaToggle: NSButton?
     private var exactReadingMatchToggle: NSButton?
+    private var fastContextRerankToggle: NSButton?
+    private var fastContextRerankModelToggle: NSButton?
+    private var fastContextRerankLoggingToggle: NSButton?
     private var connectionDictURLField: NSTextField?
     private var connectionDictStatusLabel: NSTextField?
     private var connectionDictImportButton: NSButton?
@@ -198,6 +202,8 @@ class PreferencesWindow: NSWindow {
         erHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
         contentBox.addSubview(erHint)
 
+        addFastContextRerankControls(y: &y)
+
         // Google Transliterate section
         y -= 40
         let googleTitle = makeLabel("Google変換", bold: true)
@@ -321,6 +327,42 @@ class PreferencesWindow: NSWindow {
         resetBtn.frame = NSRect(x: 20, y: 12, width: 120, height: 32)
         resetBtn.bezelStyle = .rounded
         contentBox.addSubview(resetBtn)
+    }
+
+    private func addFastContextRerankControls(y: inout CGFloat) {
+        y -= 28
+        let frToggle = NSButton(checkboxWithTitle: "通常入力で軽量rerankを使う",
+                                target: self,
+                                action: #selector(toggleFastContextRerank(_:)))
+        frToggle.frame = NSRect(x: 20, y: y, width: 300, height: 20)
+        frToggle.state = GyaimController.isFastContextRerankEnabled ? .on : .off
+        contentBox.addSubview(frToggle)
+        fastContextRerankToggle = frToggle
+
+        y -= 20
+        let frHint = makeLabel("読み完全一致を優先しつつ、直前文脈で予測候補を並び替えます")
+        frHint.font = NSFont.systemFont(ofSize: 11)
+        frHint.textColor = .secondaryLabelColor
+        frHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
+        contentBox.addSubview(frHint)
+
+        y -= 24
+        let modelToggle = NSButton(checkboxWithTitle: "軽量rerankでモデルbackendを使う（実験的）",
+                                   target: self,
+                                   action: #selector(toggleFastContextRerankModel(_:)))
+        modelToggle.frame = NSRect(x: 36, y: y, width: 360, height: 20)
+        modelToggle.state = GyaimController.isFastContextRerankModelEnabled ? .on : .off
+        contentBox.addSubview(modelToggle)
+        fastContextRerankModelToggle = modelToggle
+
+        y -= 24
+        let logToggle = NSButton(checkboxWithTitle: "軽量rerankのレイテンシをログに出す",
+                                 target: self,
+                                 action: #selector(toggleFastContextRerankLogging(_:)))
+        logToggle.frame = NSRect(x: 36, y: y, width: 320, height: 20)
+        logToggle.state = GyaimController.isFastContextRerankLoggingEnabled ? .on : .off
+        contentBox.addSubview(logToggle)
+        fastContextRerankLoggingToggle = logToggle
     }
 
     private func loadBindings() {
@@ -494,6 +536,8 @@ class PreferencesWindow: NSWindow {
         y -= 18
         erHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
         contentBox.addSubview(erHint)
+
+        addFastContextRerankControls(y: &y)
 
         // Google Transliterate section in rebuildLayout
         y -= 40
@@ -687,8 +731,11 @@ class PreferencesWindow: NSWindow {
             katakanaRecorders.append(row)
         }
 
-        // Reset trigger suffix to default
+        // Reset trigger suffix and fast context rerank settings to defaults
         UserDefaults.standard.removeObject(forKey: "googleTransliterateTrigger")
+        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled")
+        UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
+        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
         googleTriggerField?.stringValue = GoogleTransliterate.triggerSuffix
 
         rebuildLayout()
@@ -711,6 +758,18 @@ class PreferencesWindow: NSWindow {
 
     @objc private func toggleExactReadingMatchPriority(_ sender: NSButton) {
         WordSearch.setExactReadingMatchPriority(sender.state == .on)
+    }
+
+    @objc private func toggleFastContextRerank(_ sender: NSButton) {
+        GyaimController.setFastContextRerankEnabled(sender.state == .on)
+    }
+
+    @objc private func toggleFastContextRerankModel(_ sender: NSButton) {
+        GyaimController.setFastContextRerankModelEnabled(sender.state == .on)
+    }
+
+    @objc private func toggleFastContextRerankLogging(_ sender: NSButton) {
+        GyaimController.setFastContextRerankLoggingEnabled(sender.state == .on)
     }
 
     @objc private func toggleClipboardCandidate(_ sender: NSButton) {

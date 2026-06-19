@@ -60,6 +60,96 @@ final class ExternalCandidateTests: XCTestCase {
         XCTAssertTrue(words.contains("まん"))
     }
 
+    func testBuildReranksExactReadingBeforeLongerPrediction() {
+        let searchResults = [
+            SearchCandidate(word: "従うな", reading: "shitagauna", source: .connection, kind: .prefix),
+            SearchCandidate(word: "従う", reading: "shitagau", source: .connection, kind: .exact),
+        ]
+        let result = GyaimController.buildPrefixCandidates(
+            searchResults: searchResults,
+            inputPat: "shitagau",
+            clipboardCandidate: nil,
+            selectedCandidate: nil,
+            hiragana: "したがう"
+        )
+        let words = result.map(\.word)
+        XCTAssertEqual(words[0], "shitagau")
+        XCTAssertEqual(words[1], "従う")
+        XCTAssertEqual(words[2], "従うな")
+    }
+
+    func testBuildKeepsExternalCandidatesBeforeFastRerankedDictionaryCandidates() {
+        let searchResults = [
+            SearchCandidate(word: "切るな", reading: "kiruna", source: .connection, kind: .prefix),
+            SearchCandidate(word: "切る", reading: "kiru", source: .connection, kind: .exact),
+        ]
+        let result = GyaimController.buildPrefixCandidates(
+            searchResults: searchResults,
+            inputPat: "kiru",
+            clipboardCandidate: "コピー済み",
+            selectedCandidate: nil,
+            hiragana: "きる"
+        )
+        let words = result.map(\.word)
+        XCTAssertEqual(words[0], "kiru")
+        XCTAssertEqual(words[1], "コピー済み")
+        XCTAssertEqual(words[2], "切る")
+        XCTAssertEqual(words[3], "切るな")
+    }
+
+    func testBuildFastContextRerankHonorsCandidateLimit() {
+        UserDefaults.standard.set(2, forKey: "aiRerankFastContextCandidateLimit")
+        defer { UserDefaults.standard.removeObject(forKey: "aiRerankFastContextCandidateLimit") }
+
+        let searchResults = [
+            SearchCandidate(word: "従うな", reading: "shitagauna", source: .connection, kind: .prefix),
+            SearchCandidate(word: "従う", reading: "shitagau", source: .connection, kind: .exact),
+            SearchCandidate(word: "随う", reading: "shitagau", source: .connection, kind: .exact),
+        ]
+        let result = GyaimController.buildPrefixCandidates(
+            searchResults: searchResults,
+            inputPat: "shitagau",
+            clipboardCandidate: nil,
+            selectedCandidate: nil,
+            hiragana: "したがう"
+        )
+        XCTAssertEqual(result.map(\.word).prefix(4), ["shitagau", "従う", "従うな", "随う"])
+    }
+
+    func testBuildHonorsGlobalFastContextRerankDisabledSetting() {
+        GyaimController.setFastContextRerankEnabled(false)
+        defer { UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled") }
+
+        let searchResults = [
+            SearchCandidate(word: "従うな", reading: "shitagauna", source: .connection, kind: .prefix),
+            SearchCandidate(word: "従う", reading: "shitagau", source: .connection, kind: .exact),
+        ]
+        let result = GyaimController.buildPrefixCandidates(
+            searchResults: searchResults,
+            inputPat: "shitagau",
+            clipboardCandidate: nil,
+            selectedCandidate: nil,
+            hiragana: "したがう"
+        )
+        XCTAssertEqual(result.map(\.word).prefix(3), ["shitagau", "従うな", "従う"])
+    }
+
+    func testBuildCanDisableFastContextRerankForLegacyOrder() {
+        let searchResults = [
+            SearchCandidate(word: "従うな", reading: "shitagauna", source: .connection, kind: .prefix),
+            SearchCandidate(word: "従う", reading: "shitagau", source: .connection, kind: .exact),
+        ]
+        let result = GyaimController.buildPrefixCandidates(
+            searchResults: searchResults,
+            inputPat: "shitagau",
+            clipboardCandidate: nil,
+            selectedCandidate: nil,
+            hiragana: "したがう",
+            fastContextRerankEnabled: false
+        )
+        XCTAssertEqual(result.map(\.word).prefix(3), ["shitagau", "従うな", "従う"])
+    }
+
     func testBuildWithClipboardCandidate() {
         let searchResults = [
             SearchCandidate(word: "万", reading: "man"),

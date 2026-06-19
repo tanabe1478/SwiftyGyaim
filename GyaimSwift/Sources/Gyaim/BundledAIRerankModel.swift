@@ -1,11 +1,11 @@
 import Foundation
 
-/// Resolves and keeps the bundled in-process AI model resident.
+/// Resolves and memory-maps the bundled in-process AI model.
 ///
-/// This is the first step toward azooKey-style on-device inference: the GGUF
-/// weight is shipped in the app bundle and memory-mapped inside the IME process,
-/// avoiding Python/HTTP process boundaries. Actual token inference will be wired
-/// to this resident model in a later step.
+/// The GGUF weight is shipped in the app bundle and mapped inside the IME
+/// process, avoiding Python/HTTP process boundaries. `BundledZenzRuntime` owns
+/// the llama.cpp context that uses this model for optional on-device scoring and
+/// candidate generation.
 final class BundledAIRerankModel {
     static let shared = BundledAIRerankModel()
 

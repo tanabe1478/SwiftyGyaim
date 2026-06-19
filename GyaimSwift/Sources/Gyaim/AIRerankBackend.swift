@@ -3,8 +3,9 @@ import Foundation
 /// Backend interface for in-process reranking.
 ///
 /// This keeps `GyaimController` independent from the concrete implementation:
-/// the current backends still use Swift heuristic scoring, while a future
-/// llama.cpp/GGUF backend can implement the same entry point.
+/// the default path is the Swift heuristic, while the bundled Zenz/GGUF backend
+/// can optionally add in-process llama.cpp scoring and fall back to the heuristic
+/// when the model or runtime score is unavailable.
 protocol AIRerankBackend {
     var identifier: String { get }
     func canRun() -> Bool

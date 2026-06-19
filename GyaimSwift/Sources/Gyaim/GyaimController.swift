@@ -655,7 +655,9 @@ class GyaimController: IMKInputController {
         inputPat: String,
         clipboardCandidate: String?,
         selectedCandidate: String?,
-        hiragana: String
+        hiragana: String,
+        context: String? = nil,
+        fastContextRerankEnabled: Bool = true
     ) -> [SearchCandidate] {
         var candidates: [SearchCandidate] = [SearchCandidate(word: inputPat, kind: .raw)]
 
@@ -664,15 +666,33 @@ class GyaimController: IMKInputController {
         // prefix match such as "gu" -> "具体的" or "maeno" -> "前のめり".
         // External candidates follow raw input so they appear at the top of the
         // candidate window, matching the original Gyaim registration workflow.
-        if let clip = clipboardCandidate, isValidExternalCandidate(clip) {
-            candidates.append(SearchCandidate(word: clip, source: .external, kind: .exact))
+        if let clip = clipboardCandidate {
+            if isValidExternalCandidate(clip) {
+                candidates.append(SearchCandidate(word: clip, source: .external, kind: .exact))
+            } else if isFastContextRerankLoggingEnabled {
+                Log.input.info("External clipboard candidate rejected: \"\(clip.prefix(50))\"")
+            }
         }
 
-        if let sel = selectedCandidate, isValidExternalCandidate(sel) {
-            candidates.append(SearchCandidate(word: sel, source: .external, kind: .exact))
+        if let sel = selectedCandidate {
+            if isValidExternalCandidate(sel) {
+                candidates.append(SearchCandidate(word: sel, source: .external, kind: .exact))
+            } else if isFastContextRerankLoggingEnabled {
+                Log.input.info("External selected-text candidate rejected: \"\(sel.prefix(50))\"")
+            }
         }
 
-        candidates.append(contentsOf: searchResults)
+        let shouldFastContextRerank = fastContextRerankEnabled && isFastContextRerankEnabled
+        if isFastContextRerankLoggingEnabled, !shouldFastContextRerank {
+            Log.input.info(
+                "Fast context rerank skipped: input=\"\(inputPat)\" "
+                    + "enabled=\(isFastContextRerankEnabled) testHook=\(fastContextRerankEnabled)"
+            )
+        }
+        let dictionaryCandidates = shouldFastContextRerank
+            ? fastContextRerank(searchResults, inputPat: inputPat, hiragana: hiragana, context: context)
+            : searchResults
+        candidates.append(contentsOf: dictionaryCandidates)
 
         // Add hiragana if few candidates
         if candidates.count < CandidateDisplayMode.current.maxVisible, !hiragana.isEmpty {
@@ -688,6 +708,127 @@ class GyaimController: IMKInputController {
         }
 
         return candidates
+    }
+
+    private static func fastContextRerank(_ searchResults: [SearchCandidate],
+                                          inputPat: String,
+                                          hiragana: String,
+                                          context: String?) -> [SearchCandidate] {
+        guard searchResults.count >= 2 else {
+            if isFastContextRerankLoggingEnabled {
+                Log.input.info(
+                    "Fast context rerank skipped: input=\"\(inputPat)\" "
+                        + "reason=too-few-dictionary-candidates count=\(searchResults.count)"
+                )
+            }
+            return searchResults
+        }
+
+        let start = CFAbsoluteTimeGetCurrent()
+        let maxFastRerankCandidates = Self.maxFastContextRerankCandidates()
+        let head = Array(searchResults.prefix(maxFastRerankCandidates))
+        let tail = Array(searchResults.dropFirst(maxFastRerankCandidates))
+        let trimmedContext = limitedFastContext(context)
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: inputPat,
+            hiragana: hiragana,
+            context: trimmedContext.isEmpty ? nil : trimmedContext,
+            candidates: head.enumerated().map { index, candidate in
+                AIRerankCandidate(index: index,
+                                  text: candidate.word,
+                                  reading: candidate.reading,
+                                  source: String(describing: candidate.source),
+                                  kind: candidate.kind.rawValue)
+            }
+        )
+        let response = fastContextRerankResponse(for: request)
+        let rerankedHead = AIReranker.apply(order: response.order, to: head)
+        if isFastContextRerankLoggingEnabled {
+            let elapsed = elapsedMilliseconds(since: start)
+            let beforeTop = head.prefix(8).map(\.word)
+            let afterTop = rerankedHead.prefix(8).map(\.word)
+            let model = response.model ?? "unknown"
+            Log.input.info(
+                "Fast context rerank finished: input=\"\(inputPat)\" "
+                    + "model=\(model) outcome=\(fastContextRerankOutcome(model: model)) "
+                    + "topChanged=\(beforeTop != afterTop) candidates=\(head.count)/\(searchResults.count) "
+                    + "context=\(trimmedContext.isEmpty ? "none" : "present") "
+                    + "order=\(response.order) before=\(beforeTop) after=\(afterTop) "
+                    + "latency=\(formatMilliseconds(elapsed))ms"
+            )
+        }
+        return rerankedHead + tail
+    }
+
+    private static func fastContextRerankResponse(for request: AIRerankRequest) -> AIRerankResponse {
+        if shouldUseModelForFastContextRerank(inputPat: request.inputPat) {
+            return InProcessAIReranker.shared.rerank(request)
+        }
+        return AIReranker.localRerank(request, model: "swift-fast-context-heuristic")
+    }
+
+    static var isFastContextRerankEnabled: Bool {
+        UserDefaults.standard.object(forKey: "aiRerankFastContextEnabled") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "aiRerankFastContextEnabled")
+    }
+
+    static func setFastContextRerankEnabled(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: "aiRerankFastContextEnabled")
+    }
+
+    static var isFastContextRerankModelEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "aiRerankUseModelForFastContext")
+    }
+
+    static func setFastContextRerankModelEnabled(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: "aiRerankUseModelForFastContext")
+    }
+
+    static var isFastContextRerankLoggingEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "aiRerankFastContextLoggingEnabled")
+    }
+
+    static func setFastContextRerankLoggingEnabled(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: "aiRerankFastContextLoggingEnabled")
+    }
+
+    private static func shouldUseModelForFastContextRerank(inputPat: String) -> Bool {
+        guard isFastContextRerankModelEnabled else { return false }
+        return inputPat.count >= minFastContextModelInputLength()
+    }
+
+    private static func fastContextRerankOutcome(model: String) -> String {
+        if model.contains("review-skipped") { return "protected-exact-skip" }
+        if model.contains("review-unavailable") { return "review-unavailable" }
+        if model.contains("review-fixed") { return "review-fixed" }
+        if model.contains("review-kept-local") { return "review-kept-local" }
+        if model.contains("review-passed") { return "review-passed" }
+        if model.contains("review") { return "review-applied" }
+        if model.contains("swift-fast-context-heuristic") { return "heuristic" }
+        return "fallback"
+    }
+
+    private static func minFastContextModelInputLength() -> Int {
+        let configured = UserDefaults.standard.integer(forKey: "aiRerankFastContextModelMinInputLength")
+        guard configured > 0 else { return 4 }
+        return min(max(configured, 1), 12)
+    }
+
+    private static func limitedFastContext(_ context: String?) -> String {
+        let trimmed = context?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return "" }
+        let configured = UserDefaults.standard.integer(forKey: "aiRerankFastContextMaxContextLength")
+        let limit = configured > 0 ? min(max(configured, 1), 200) : 20
+        return String(trimmed.suffix(limit))
+    }
+
+    private static func maxFastContextRerankCandidates() -> Int {
+        let configured = UserDefaults.standard.integer(forKey: "aiRerankFastContextCandidateLimit")
+        guard configured > 0 else { return 24 }
+        return min(max(configured, 2), 48)
     }
 
     // MARK: - Search & Display
@@ -752,7 +893,8 @@ class GyaimController: IMKInputController {
                 inputPat: inputPat,
                 clipboardCandidate: clipboardCandidate,
                 selectedCandidate: selectedCandidate,
-                hiragana: hiragana
+                hiragana: hiragana,
+                context: recentCommittedText
             )
         }
 

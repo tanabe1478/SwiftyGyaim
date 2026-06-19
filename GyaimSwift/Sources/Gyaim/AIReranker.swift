@@ -23,6 +23,11 @@ struct AIRerankResponse: Codable, Equatable {
     let model: String?
 }
 
+struct AIRerankScoreBreakdown: Equatable {
+    let total: Double
+    let contributions: [String: Double]
+}
+
 enum AIReranker {
     static func validatedOrder(_ proposedOrder: [Int], candidateCount: Int) -> [Int] {
         guard candidateCount > 0 else { return [] }
@@ -60,33 +65,99 @@ enum AIReranker {
         return AIRerankResponse(order: order, scores: scores, model: model)
     }
 
-    private static func localScore(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
-        var score = 0.0
-        score -= Double(candidate.index) * 0.03
-        score += sourceBias(candidate.source)
-        score += kindBias(candidate.kind)
+    static func localScoreBreakdown(candidate: AIRerankCandidate, request: AIRerankRequest) -> AIRerankScoreBreakdown {
+        var contributions: [String: Double] = [
+            "positionPenalty": -Double(candidate.index) * 0.03,
+            "sourceBias": sourceBias(candidate.source),
+            "kindBias": kindBias(candidate.kind)
+        ]
         if candidate.reading == request.inputPat {
-            score += 0.20
+            contributions["exactReadingMatchBonus"] = 0.20
             if candidate.kind == CandidateKind.exact.rawValue {
-                score += exactReadingBonus(candidate.text)
+                contributions["exactReadingKindBonus"] = exactReadingBonus(candidate.text)
             }
+        } else {
+            contributions["prefixPredictionPenalty"] = -prefixPredictionPenalty(candidate: candidate,
+                                                                                 inputPat: request.inputPat)
         }
+        contributions["contextPredictionBonus"] = contextPredictionBonus(candidate: candidate, request: request)
+        contributions["politeNegativePredictionPenalty"] = -politeNegativePredictionPenalty(candidate: candidate,
+                                                                                             request: request)
         if candidate.text.contains(where: isKanji) {
-            score += 0.10
+            contributions["kanjiBonus"] = 0.10
         }
-        score += naturalFunctionWordPhraseBonus(candidate.text)
+        contributions["naturalFunctionWordPhraseBonus"] = naturalFunctionWordPhraseBonus(candidate.text)
+        contributions["punctuationSuffixPenalty"] = -punctuationSuffixPenalty(candidate.text)
         if candidate.kind == CandidateKind.zenz.rawValue && isAllKanjiWord(candidate.text) {
-            score += 0.50
+            contributions["zenzKanjiBonus"] = 0.50
         }
         if candidate.text == request.inputPat && candidate.text.allSatisfy(\.isASCII) {
-            score -= 8.0
+            contributions["rawAsciiPenalty"] = -8.0
         }
-        score -= unnaturalScriptTransitionPenalty(candidate.text)
-        return score
+        contributions["scriptTransitionPenalty"] = -unnaturalScriptTransitionPenalty(candidate.text)
+        let nonZero = contributions.filter { $0.value != 0 }
+        return AIRerankScoreBreakdown(total: nonZero.values.reduce(0, +), contributions: nonZero)
+    }
+
+    private static func localScore(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
+        localScoreBreakdown(candidate: candidate, request: request).total
     }
 
     private static func exactReadingBonus(_ text: String) -> Double {
         text.count >= 5 ? 2.00 : 0.50
+    }
+
+    private static func prefixPredictionPenalty(candidate: AIRerankCandidate, inputPat: String) -> Double {
+        guard candidate.kind == CandidateKind.prefix.rawValue,
+              let reading = candidate.reading,
+              reading.hasPrefix(inputPat),
+              reading != inputPat else { return 0 }
+        return min(1.50, Double(reading.count - inputPat.count) * 0.35)
+    }
+
+    private static func contextPredictionBonus(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
+        guard candidate.kind == CandidateKind.prefix.rawValue,
+              let reading = candidate.reading,
+              reading.hasPrefix(request.inputPat),
+              reading != request.inputPat,
+              let context = request.context else { return 0 }
+
+        let trimmed = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return 0 }
+
+        var score = 0.0
+        if candidate.text.hasSuffix("な"), hasStrongNegativeImperativeCue(trimmed) {
+            score += 2.00
+        }
+        return score
+    }
+
+    private static func hasStrongNegativeImperativeCue(_ context: String) -> Bool {
+        ["決して", "絶対に", "してはいけ", "してはなら", "禁止", "だめ", "ダメ", "ないで"].contains { context.contains($0) }
+    }
+
+    private static func politeNegativePredictionPenalty(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
+        guard isPoliteNegativePrediction(candidate.text), !inputExplicitlyRequestsPoliteNegative(request.inputPat) else {
+            return 0
+        }
+        if let context = request.context,
+           hasPoliteNegativeContextCue(context.trimmingCharacters(in: .whitespacesAndNewlines)) {
+            return 0
+        }
+        return 4.00
+    }
+
+    private static func isPoliteNegativePrediction(_ text: String) -> Bool {
+        text.hasSuffix("ません") || text.hasSuffix("ませんか") || text.hasSuffix("ません？") || text.hasSuffix("ませんか？")
+    }
+
+    private static func inputExplicitlyRequestsPoliteNegative(_ inputPat: String) -> Bool {
+        inputPat.contains("masen") || inputPat.contains("masenn")
+    }
+
+    private static func hasPoliteNegativeContextCue(_ context: String) -> Bool {
+        guard !context.isEmpty else { return false }
+        return ["ない", "ません", "ではなく", "じゃなく", "しない", "できない", "不要", "禁止"].contains { context.contains($0) }
     }
 
     private static func naturalFunctionWordPhraseBonus(_ text: String) -> Double {
@@ -98,6 +169,10 @@ enum AIReranker {
             score += 0.70
         }
         return score
+    }
+
+    private static func punctuationSuffixPenalty(_ text: String) -> Double {
+        text.hasSuffix("？") || text.hasSuffix("！") ? 0.10 : 0.0
     }
 
     private static func sourceBias(_ source: String) -> Double {

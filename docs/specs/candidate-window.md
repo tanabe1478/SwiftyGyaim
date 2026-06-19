@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-05-07 (接続辞書インポートURL説明更新)
+> Last updated: 2026-06-15 (軽量rerank設定を追加)
 
 ## 概要
 
@@ -82,6 +82,14 @@ NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackV
 - UserDefaultsキー: `exactReadingMatchPriority` (Bool, デフォルトfalse)
 - `toggleExactReadingMatchPriority(_:)` アクションで即座にUserDefaultsに保存
 - ON時は前方一致検索 (searchMode==0) で4バケット順序 (study-exact → local-exact → study-prefix → local-prefix → connection) で候補を並べる（詳細は dictionary-system.md）
+- **通常入力で軽量rerankを使う**: チェックボックス（デフォルトON）
+- UserDefaultsキー: `aiRerankFastContextEnabled` (Bool, デフォルトtrue)
+- `toggleFastContextRerank(_:)` アクションで即座にUserDefaultsに保存
+- **軽量rerankでモデルbackendを使う（実験的）**: チェックボックス（デフォルトOFF）
+- UserDefaultsキー: `aiRerankUseModelForFastContext` (Bool, デフォルトfalse)
+- **軽量rerankのレイテンシをログに出す**: チェックボックス（デフォルトOFF）
+- UserDefaultsキー: `aiRerankFastContextLoggingEnabled` (Bool, デフォルトfalse)
+- ログ出力は入力ごとに発生するため既定OFF。dogfoodや性能確認時だけONにする
 
 ## 既知の制約
 

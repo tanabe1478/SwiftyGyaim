@@ -12,6 +12,9 @@ final class PreferencesWindowTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "selectedTextCandidateEnabled")
         UserDefaults.standard.removeObject(forKey: "candidateDisplayMode")
         UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
+        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled")
+        UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
+        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
         window = PreferencesWindow()
     }
 
@@ -23,6 +26,9 @@ final class PreferencesWindowTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "selectedTextCandidateEnabled")
         UserDefaults.standard.removeObject(forKey: "candidateDisplayMode")
         UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
+        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled")
+        UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
+        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
         super.tearDown()
     }
 
@@ -97,6 +103,21 @@ final class PreferencesWindowTests: XCTestCase {
         XCTAssertNotNil(toggle, "ログトグルが見つからない")
     }
 
+    func testFastContextRerankToggleExists() {
+        let toggle = findCheckbox(titled: "通常入力で軽量rerankを使う")
+        XCTAssertNotNil(toggle, "軽量rerankトグルが見つからない")
+    }
+
+    func testFastContextRerankModelToggleExists() {
+        let toggle = findCheckbox(titled: "軽量rerankでモデルbackendを使う（実験的）")
+        XCTAssertNotNil(toggle, "軽量rerankモデルbackendトグルが見つからない")
+    }
+
+    func testFastContextRerankLoggingToggleExists() {
+        let toggle = findCheckbox(titled: "軽量rerankのレイテンシをログに出す")
+        XCTAssertNotNil(toggle, "軽量rerankログトグルが見つからない")
+    }
+
     func testConnectionDictionaryImportUsageHintExists() {
         let hint = findLabel(containing: "リポジトリURLまたは raw の dict2.txt URL")
         XCTAssertNotNil(hint, "接続辞書インポートで指定すべきURLの説明が見つからない")
@@ -112,6 +133,21 @@ final class PreferencesWindowTests: XCTestCase {
     func testSelectedTextToggleDefaultOn() {
         let toggle = findCheckbox(titled: "選択テキストを候補に表示する")!
         XCTAssertEqual(toggle.state, .on, "デフォルトでONであるべき")
+    }
+
+    func testFastContextRerankToggleDefaultOn() {
+        let toggle = findCheckbox(titled: "通常入力で軽量rerankを使う")!
+        XCTAssertEqual(toggle.state, .on, "軽量rerankはデフォルトでONであるべき")
+    }
+
+    func testFastContextRerankModelToggleDefaultOff() {
+        let toggle = findCheckbox(titled: "軽量rerankでモデルbackendを使う（実験的）")!
+        XCTAssertEqual(toggle.state, .off, "モデルbackendはデフォルトでOFFであるべき")
+    }
+
+    func testFastContextRerankLoggingToggleDefaultOff() {
+        let toggle = findCheckbox(titled: "軽量rerankのレイテンシをログに出す")!
+        XCTAssertEqual(toggle.state, .off, "軽量rerankログはデフォルトでOFFであるべき")
     }
 
     // MARK: - Toggle reflects pre-set UserDefaults
@@ -158,6 +194,39 @@ final class PreferencesWindowTests: XCTestCase {
         toggle.state = .on
         toggle.sendAction(toggle.action, to: toggle.target)
         XCTAssertTrue(GyaimController.isSelectedTextCandidateEnabled)
+    }
+
+    func testClickFastContextRerankToggleUpdatesUserDefaults() {
+        let toggle = findCheckbox(titled: "通常入力で軽量rerankを使う")!
+        toggle.state = .off
+        toggle.sendAction(toggle.action, to: toggle.target)
+        XCTAssertFalse(GyaimController.isFastContextRerankEnabled)
+
+        toggle.state = .on
+        toggle.sendAction(toggle.action, to: toggle.target)
+        XCTAssertTrue(GyaimController.isFastContextRerankEnabled)
+    }
+
+    func testClickFastContextRerankModelToggleUpdatesUserDefaults() {
+        let toggle = findCheckbox(titled: "軽量rerankでモデルbackendを使う（実験的）")!
+        toggle.state = .on
+        toggle.sendAction(toggle.action, to: toggle.target)
+        XCTAssertTrue(GyaimController.isFastContextRerankModelEnabled)
+
+        toggle.state = .off
+        toggle.sendAction(toggle.action, to: toggle.target)
+        XCTAssertFalse(GyaimController.isFastContextRerankModelEnabled)
+    }
+
+    func testClickFastContextRerankLoggingToggleUpdatesUserDefaults() {
+        let toggle = findCheckbox(titled: "軽量rerankのレイテンシをログに出す")!
+        toggle.state = .on
+        toggle.sendAction(toggle.action, to: toggle.target)
+        XCTAssertTrue(GyaimController.isFastContextRerankLoggingEnabled)
+
+        toggle.state = .off
+        toggle.sendAction(toggle.action, to: toggle.target)
+        XCTAssertFalse(GyaimController.isFastContextRerankLoggingEnabled)
     }
 
     // MARK: - Display mode control
