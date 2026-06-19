@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+
+# Stop the running input method before replacing the bundle.
+/usr/bin/killall SwiftyGyaim 2>/dev/null || true
+
+exit 0

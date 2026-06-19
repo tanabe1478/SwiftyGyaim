@@ -1,6 +1,8 @@
 DERIVED_DATA = $(PWD)/.build
+CONFIGURATION ?= Debug
+APP_NAME = SwiftyGyaim
 
-.PHONY: generate build install kill update test clean dmg
+.PHONY: generate build install kill update test clean pkg dmg
 
 generate:
 	xcodegen generate
@@ -9,15 +11,15 @@ build: generate
 	xcodebuild build \
 		-project Gyaim.xcodeproj \
 		-scheme Gyaim \
-		-configuration Debug \
+		-configuration $(CONFIGURATION) \
 		-derivedDataPath $(DERIVED_DATA)
 
 install: build
-	rm -rf ~/Library/Input\ Methods/Gyaim.app
-	cp -r $(DERIVED_DATA)/Build/Products/Debug/Gyaim.app ~/Library/Input\ Methods/
+	rm -rf ~/Library/Input\ Methods/$(APP_NAME).app
+	cp -r $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/$(APP_NAME).app ~/Library/Input\ Methods/
 
 kill:
-	-killall Gyaim
+	-killall $(APP_NAME)
 
 update: kill install
 
@@ -28,8 +30,10 @@ test: generate
 		-derivedDataPath $(DERIVED_DATA)
 
 clean:
-	rm -rf $(DERIVED_DATA) Gyaim.xcodeproj
+	rm -rf $(DERIVED_DATA) Gyaim.xcodeproj dist
 
-dmg: build
-	hdiutil create -srcfolder $(DERIVED_DATA)/Build/Products/Release/Gyaim.app \
-		-volname Gyaim -o Gyaim.dmg
+pkg:
+	Scripts/build-pkg.sh
+
+dmg:
+	Scripts/build-dmg.sh
