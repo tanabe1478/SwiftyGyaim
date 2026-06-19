@@ -254,15 +254,19 @@ class GyaimController: IMKInputController {
             return true
         }
 
-        // Manual AI shortcuts while converting:
+        // Google Transliterate shortcut while converting.
+        if converting, KeyBindings.shared.matchesGoogleTransliterate(event: event) {
+            triggerGoogleTransliterate(client: sender)
+            return true
+        }
+
+        // Manual AI shortcut while converting:
         // - Tab: candidate generation + rerank
-        // - Shift+Tab or backtick (`): rerank current candidates only
-        if converting, event.keyCode == 48 || event.characters == "`" {
-            if modifierFlags.contains(.shift) || event.characters == "`" {
-                requestAIRerankOnlyIfAvailable(client: sender)
-            } else {
-                requestAIRerankIfAvailable(client: sender)
-            }
+        // Shift+Tab no longer reranks current candidates because normal input already
+        // applies fast-context rerank continuously.
+        if converting, event.keyCode == 48 {
+            if modifierFlags.contains(.shift) { return true }
+            requestAIRerankIfAvailable(client: sender)
             return true
         }
 
@@ -379,8 +383,8 @@ class GyaimController: IMKInputController {
                 captureExternalCandidates(client: sender)
             }
             inputPat += eventString
-            searchAndShowCands(client: sender)
             searchMode = 0
+            searchAndShowCands(client: sender)
             handled = true
         }
 
@@ -414,7 +418,6 @@ class GyaimController: IMKInputController {
             case undoThenInsertChar
             case googleTransliterate
             case aiRerank
-            case aiRerankOnly
             case deleteCandidate
         }
     }
@@ -458,11 +461,19 @@ class GyaimController: IMKInputController {
             return HandleResult(handled: true, action: .fixAsKana(hiragana: false))
         }
 
-        // Manual AI shortcuts: Tab reranks with candidate generation,
-        // Shift+Tab or backtick (`) reranks current candidates only.
-        if converting, keyCode == 48 || character == 0x60 {
-            let action: HandleResult.HandleAction = (modifierFlags.contains(.shift) || character == 0x60) ? .aiRerankOnly : .aiRerank
-            return HandleResult(handled: true, action: action)
+        // Google Transliterate shortcut.
+        if converting, matchesGoogleTransliterateShortcut {
+            return HandleResult(handled: true, action: .googleTransliterate)
+        }
+
+        // Manual AI shortcut: Tab reranks with candidate generation.
+        // Shift+Tab is consumed as a no-op; backtick is handled as a printable
+        // Google Transliterate suffix below.
+        if converting, keyCode == 48 {
+            if modifierFlags.contains(.shift) {
+                return HandleResult(handled: true, action: .none)
+            }
+            return HandleResult(handled: true, action: .aiRerank)
         }
         // Delete candidate shortcut (modifier-key based, e.g. Ctrl+X)
         if converting, matchesDeleteCandidateShortcut, nthCand > 0 || searchMode > 0 {
@@ -832,6 +843,7 @@ class GyaimController: IMKInputController {
         guard !q.isEmpty else { return }
 
         pendingGoogleQuery = q
+        searchMode = 2
         Log.input.info("Google Transliterate triggered: \"\(q)\"")
 
         // Show query as marked text while waiting
@@ -842,7 +854,8 @@ class GyaimController: IMKInputController {
         GoogleTransliterate.searchCands(q) { [weak self] results in
             guard let self else { return }
             // Stale guard: discard if inputPat has changed
-            guard self.pendingGoogleQuery == q else {
+            guard self.pendingGoogleQuery == q,
+                  self.inputPat == q else {
                 Log.input.debug("Google Transliterate stale result discarded for \"\(q)\"")
                 return
             }
@@ -858,8 +871,12 @@ class GyaimController: IMKInputController {
     private func searchAndShowCands(client sender: Any?) {
         guard let ws else { return }
 
-        // Standalone Google suffix trigger was removed. Google Input Tools is now used
-        // only inside the explicit Tab AI generation pipeline.
+        if GoogleTransliterate.hasTriggerSuffix(inputPat) {
+            let query = GoogleTransliterate.stripTriggerSuffix(inputPat)
+            inputPat = query
+            triggerGoogleTransliterate(query: query, client: sender)
+            return
+        }
 
         if searchMode == 1 {
             candidates = PerfLog.measure("search(\(inputPat), exact)", logger: Log.input) {
@@ -936,20 +953,6 @@ class GyaimController: IMKInputController {
         candWindow?.updateCandidates(candList, selectedIndex: -1, hasMore: hasMore, hasPrev: hasPrev)
     }
 
-    private func requestAIRerankOnlyIfAvailable(client sender: Any?) {
-        guard searchMode == 0,
-              !inputPat.isEmpty,
-              candidates.count >= 2 else { return }
-
-        Log.input.info("AI rerank-only requested: input=\"\(self.inputPat)\" candidates=\(self.candidates.count)")
-        pendingAIRerankQuery = inputPat
-        pendingAIRerankRevision += 1
-        sendAIRerankRequest(query: inputPat,
-                            snapshot: candidates,
-                            revision: pendingAIRerankRevision,
-                            modeLabel: "rerank-only",
-                            client: sender)
-    }
     private func requestAIRerankIfAvailable(client sender: Any?) {
         guard searchMode == 0,
               !inputPat.isEmpty else { return }

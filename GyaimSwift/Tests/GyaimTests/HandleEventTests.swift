@@ -485,7 +485,7 @@ final class HandleEventTests: XCTestCase {
         XCTAssertEqual(result, Result(handled: true, action: .aiRerank))
     }
 
-    func testShiftTabWhenConverting_returnsAIRerankOnly() {
+    func testShiftTabWhenConverting_isConsumedWithoutRerank() {
         let result = route(
             character: 0x09,
             keyCode: 48,
@@ -493,17 +493,28 @@ final class HandleEventTests: XCTestCase {
             converting: true,
             hasEventString: true
         )
-        XCTAssertEqual(result, Result(handled: true, action: .aiRerankOnly))
+        XCTAssertEqual(result, Result(handled: true, action: .none))
     }
 
-    func testBacktickWhenConverting_returnsAIRerankOnly() {
+    func testBacktickWhenConverting_isPrintableGoogleTriggerSuffix() {
         let result = route(
             character: 0x60,
             keyCode: 50,
             converting: true,
             hasEventString: true
         )
-        XCTAssertEqual(result, Result(handled: true, action: .aiRerankOnly))
+        XCTAssertEqual(result, Result(handled: true, action: .searchAndShow))
+    }
+
+    func testGoogleTransliterateShortcutWhenConverting_returnsGoogleTransliterate() {
+        let result = route(
+            character: 0,
+            keyCode: 5,
+            converting: true,
+            matchesGoogleTransliterateShortcut: true,
+            hasEventString: true
+        )
+        XCTAssertEqual(result, Result(handled: true, action: .googleTransliterate))
     }
 
     func testTabWhenNotConverting_ignored() {
@@ -514,7 +525,6 @@ final class HandleEventTests: XCTestCase {
             hasEventString: true
         )
         XCTAssertNotEqual(result.action, .aiRerank)
-        XCTAssertNotEqual(result.action, .aiRerankOnly)
     }
 
     // MARK: - Edge: 0x08 (backspace alt) treated same as 0x7F

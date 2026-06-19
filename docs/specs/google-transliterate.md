@@ -1,7 +1,7 @@
 # Spec: Google Transliterate連携
 
 > Trigger: GoogleTransliterate.swift
-> Last updated: 2026-03-17
+> Last updated: 2026-06-20 (suffix/shortcut trigger復活)
 
 ## 概要
 
@@ -17,9 +17,11 @@
 ## トリガー方式
 
 1. **サフィックス文字**: inputPatの末尾にトリガー文字（デフォルト`` ` ``）を付ける
-   - UserDefaultsキー: `googleTransliterateTrigger`
+   - 設定キー: `googleTransliterateTrigger`（`~/.gyaim/settings.json`、既存UserDefaults fallbackあり）
 2. **キーボードショートカット**: 変換中に押すとGoogle変換を発動
    - KeyBindingsで永続化
+
+Shift+Tab / `` ` `` の rerank-only shortcut は廃止済み。`` ` `` は再びGoogle Transliterate suffixとして扱う。
 
 ## 非同期処理フロー
 
@@ -28,7 +30,7 @@ triggerGoogleTransliterate()
   → pendingGoogleQuery = inputPat   ← stale guard用
   → URLSession.dataTask (async)
       → callback:
-          guard pendingGoogleQuery == originalQuery  ← staleチェック
+          guard pendingGoogleQuery == originalQuery && inputPat == originalQuery  ← staleチェック
           → combineSegments() → 直積結合 (max 20件)
           → filterCandidates() → ひらがな重複除去
           → DispatchQueue.main で候補更新
@@ -36,7 +38,7 @@ triggerGoogleTransliterate()
 
 ## Stale Guard
 
-APIレスポンスが返る前にユーザーが入力を変更した場合、古い結果を破棄する。`pendingGoogleQuery` に発行時のクエリを保存し、コールバックで一致を確認。
+APIレスポンスが返る前にユーザーが入力を変更した場合、古い結果を破棄する。`pendingGoogleQuery` に発行時のクエリを保存し、コールバックで `pendingGoogleQuery` と現在の `inputPat` の一致を確認。
 
 ## セグメント結合
 
