@@ -1,4 +1,4 @@
-// swiftlint:disable file_length
+// swiftlint:disable file_length type_body_length
 import Cocoa
 
 /// Preferences window for Gyaim keybinding configuration.
@@ -59,13 +59,53 @@ class PreferencesWindow: NSWindow {
         NSApp.setActivationPolicy(.prohibited)
     }
 
-    override func keyDown(with event: NSEvent) {
-        // Cmd+W to close
-        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "w" {
-            close()
-            return
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown,
+              event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
+              !event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.control),
+              !event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.option),
+              let key = event.charactersIgnoringModifiers?.lowercased() else {
+            return super.performKeyEquivalent(with: event)
         }
-        super.keyDown(with: event)
+
+        let hasShift = event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.shift)
+        switch (key, hasShift) {
+        case ("w", _):
+            close()
+            return true
+        case ("x", false):
+            return sendStandardAction(#selector(NSText.cut(_:)), fallbackEvent: event)
+        case ("c", false):
+            return sendStandardAction(#selector(NSText.copy(_:)), fallbackEvent: event)
+        case ("v", false):
+            return sendStandardAction(#selector(NSText.paste(_:)), fallbackEvent: event)
+        case ("a", false):
+            return sendStandardAction(#selector(NSText.selectAll(_:)), fallbackEvent: event)
+        case ("z", false):
+            return sendStandardAction(Selector(("undo:")), fallbackEvent: event)
+        case ("z", true):
+            return sendStandardAction(Selector(("redo:")), fallbackEvent: event)
+        default:
+            return super.performKeyEquivalent(with: event)
+        }
+    }
+
+    private func sendStandardAction(_ action: Selector, fallbackEvent event: NSEvent) -> Bool {
+        if let target = targetForStandardAction(action), target.tryToPerform(action, with: self) {
+            return true
+        }
+        return NSApp.sendAction(action, to: nil, from: self) || super.performKeyEquivalent(with: event)
+    }
+
+    private func targetForStandardAction(_ action: Selector) -> NSResponder? {
+        var responder = firstResponder
+        while let current = responder {
+            if current.responds(to: action) {
+                return current
+            }
+            responder = current.nextResponder
+        }
+        return nil
     }
 
     private func buildUI() {

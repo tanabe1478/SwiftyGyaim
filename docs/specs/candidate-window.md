@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-06-15 (軽量rerank設定を追加)
+> Last updated: 2026-06-19 (設定画面の標準Commandショートカット)
 
 ## 概要
 
@@ -90,6 +90,18 @@ NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackV
 - **軽量rerankのレイテンシをログに出す**: チェックボックス（デフォルトOFF）
 - UserDefaultsキー: `aiRerankFastContextLoggingEnabled` (Bool, デフォルトfalse)
 - ログ出力は入力ごとに発生するため既定OFF。dogfoodや性能確認時だけONにする
+
+## PreferencesWindow: 標準Commandショートカット
+
+IME本体は `LSBackgroundOnly` で通常のメインメニューを持たないため、設定画面では `Cmd+W` / `Cmd+V` などのメニュー由来ショートカットがそのままでは届かない場合がある。
+
+`PreferencesWindow.performKeyEquivalent(with:)` で以下を明示的に扱う:
+
+- `Cmd+W`: 設定画面を閉じる
+- `Cmd+X` / `Cmd+C` / `Cmd+V` / `Cmd+A`: first responder へ標準 text action を送る
+- `Cmd+Z` / `Shift+Cmd+Z`: undo / redo action を送る
+
+ショートカット記録中は local event monitor が keyDown を先に消費するため、記録UIでは従来どおり Command 系ショートカットを登録できる。
 
 ## 既知の制約
 
