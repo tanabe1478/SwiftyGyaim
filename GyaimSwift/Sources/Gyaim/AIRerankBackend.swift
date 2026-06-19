@@ -43,7 +43,7 @@ final class BundledZenzAIRerankBackend: AIRerankBackend, AICandidateGenerationBa
     }
 
     func canRun() -> Bool {
-        let enabled = UserDefaults.standard.object(forKey: Self.enabledDefaultsKey) as? Bool ?? true
+        let enabled = GyaimSettings.bool(forKey: Self.enabledDefaultsKey, default: true)
         return enabled && runtime.prepare().isReady
     }
 

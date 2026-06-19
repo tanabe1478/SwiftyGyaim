@@ -772,10 +772,10 @@ class PreferencesWindow: NSWindow {
         }
 
         // Reset trigger suffix and fast context rerank settings to defaults
-        UserDefaults.standard.removeObject(forKey: "googleTransliterateTrigger")
-        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled")
-        UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
-        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
+        GyaimSettings.removeObject(forKey: "googleTransliterateTrigger")
+        GyaimSettings.removeObject(forKey: "aiRerankFastContextEnabled")
+        GyaimSettings.removeObject(forKey: "aiRerankUseModelForFastContext")
+        GyaimSettings.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
         googleTriggerField?.stringValue = GoogleTransliterate.triggerSuffix
 
         rebuildLayout()

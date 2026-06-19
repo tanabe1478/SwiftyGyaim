@@ -249,13 +249,13 @@ final class HTTPAIReranker {
 
     static func configured() -> HTTPAIReranker? {
         let envURL = ProcessInfo.processInfo.environment[serverURLEnvironmentKey]
-        let defaultsURL = UserDefaults.standard.string(forKey: serverURLDefaultsKey)
+        let defaultsURL = GyaimSettings.string(forKey: serverURLDefaultsKey)
         guard let value = envURL ?? defaultsURL,
               let url = URL(string: value),
               !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
-        let configuredTimeout = UserDefaults.standard.integer(forKey: timeoutDefaultsKey)
+        let configuredTimeout = GyaimSettings.integer(forKey: timeoutDefaultsKey)
         let timeout = configuredTimeout > 0 ? configuredTimeout : 1200
         return HTTPAIReranker(url: url, timeoutMs: timeout)
     }
@@ -314,13 +314,13 @@ final class ExternalCommandAIReranker {
 
     static func configured() -> ExternalCommandAIReranker? {
         let envCommand = ProcessInfo.processInfo.environment[commandEnvironmentKey]
-        let defaultsCommand = UserDefaults.standard.string(forKey: commandDefaultsKey)
+        let defaultsCommand = GyaimSettings.string(forKey: commandDefaultsKey)
         guard let command = envCommand ?? defaultsCommand,
               !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
 
-        let configuredTimeout = UserDefaults.standard.integer(forKey: timeoutDefaultsKey)
+        let configuredTimeout = GyaimSettings.integer(forKey: timeoutDefaultsKey)
         let timeout = configuredTimeout > 0 ? configuredTimeout : 800
         return ExternalCommandAIReranker(command: command, timeoutMs: timeout)
     }
