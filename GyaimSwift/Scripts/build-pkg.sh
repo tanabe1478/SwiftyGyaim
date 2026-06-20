@@ -31,17 +31,29 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+BUILD_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist")"
 PKG_VERSION="${PKG_VERSION:-$VERSION}"
 PKG_DIR="$DIST_DIR/pkg"
 PKG_PATH="$PKG_DIR/$APP_NAME-$VERSION.pkg"
 STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/swiftygyaim-pkg.XXXXXX")"
+SCRIPTS_STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/swiftygyaim-pkg-scripts.XXXXXX")"
+COMPONENT_PLIST="$(mktemp "${TMPDIR:-/tmp}/swiftygyaim-components.XXXXXX")"
 cleanup() {
-  rm -rf "$STAGING_DIR"
+  rm -rf "$STAGING_DIR" "$SCRIPTS_STAGING_DIR"
+  rm -f "$COMPONENT_PLIST"
 }
 trap cleanup EXIT
 
 mkdir -p "$STAGING_DIR$INSTALL_LOCATION" "$PKG_DIR"
 /usr/bin/ditto --norsrc --noextattr "$APP_PATH" "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app"
+/usr/bin/ditto --norsrc --noextattr "$PKG_SCRIPTS_DIR" "$SCRIPTS_STAGING_DIR"
+/usr/bin/sed -i '' \
+  -e "s/__SWIFTGYAIM_EXPECTED_SHORT_VERSION__/$VERSION/g" \
+  -e "s/__SWIFTGYAIM_EXPECTED_BUNDLE_VERSION__/$BUILD_VERSION/g" \
+  "$SCRIPTS_STAGING_DIR/postinstall"
+/usr/bin/xattr -cr "$SCRIPTS_STAGING_DIR" 2>/dev/null || true
+/usr/bin/find "$SCRIPTS_STAGING_DIR" \
+  \( -name '.DS_Store' -o -name '._*' -o -name '.__*' \) -delete
 /usr/bin/xattr -cr "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app" 2>/dev/null || true
 /usr/bin/find "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app" \
   \( -name '.DS_Store' -o -name '._*' -o -name '.__*' \) -delete
@@ -55,13 +67,28 @@ mkdir -p "$STAGING_DIR$INSTALL_LOCATION" "$PKG_DIR"
   \( -name '.DS_Store' -o -name '._*' -o -name '.__*' \) -delete
 /usr/bin/codesign --verify --deep --strict "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app"
 
+/usr/bin/pkgbuild --analyze --root "$STAGING_DIR" "$COMPONENT_PLIST"
+/usr/bin/python3 - "$COMPONENT_PLIST" <<'PY'
+import plistlib
+import sys
+
+path = sys.argv[1]
+with open(path, "rb") as file:
+    components = plistlib.load(file)
+for component in components:
+    component["BundleIsRelocatable"] = False
+with open(path, "wb") as file:
+    plistlib.dump(components, file)
+PY
+
 PKGBUILD_ARGS=(
   --root "$STAGING_DIR"
+  --component-plist "$COMPONENT_PLIST"
   --identifier "$PACKAGE_IDENTIFIER"
   --version "$PKG_VERSION"
   --install-location "/"
   --ownership recommended
-  --scripts "$PKG_SCRIPTS_DIR"
+  --scripts "$SCRIPTS_STAGING_DIR"
 )
 if [[ -n "$INSTALLER_SIGN_IDENTITY" ]]; then
   PKGBUILD_ARGS+=(--sign "$INSTALLER_SIGN_IDENTITY")
