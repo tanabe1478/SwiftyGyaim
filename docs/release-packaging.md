@@ -56,5 +56,7 @@ Notarization/stapling is not automated yet.
 
 The package includes minimal installer scripts:
 
-- `preinstall`: stops a running `SwiftyGyaim` process before replacement
-- `postinstall`: verifies and registers `/Library/Input Methods/SwiftyGyaim.app` with Launch Services
+- `preinstall`: stops a running `SwiftyGyaim` process, removes legacy per-user `~/Library/Input Methods/SwiftyGyaim.app` copies, and clears the system-wide app path before replacement
+- `postinstall`: fails if `/Library/Input Methods/SwiftyGyaim.app` is missing or its version/build does not match the package, then verifies and registers it with Launch Services
+
+`build-pkg.sh` writes a component plist with `BundleIsRelocatable=false` so Installer.app does not relocate the payload to an existing per-user copy with the same bundle identifier.

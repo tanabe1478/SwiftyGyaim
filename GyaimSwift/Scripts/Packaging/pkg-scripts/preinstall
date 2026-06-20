@@ -1,7 +1,33 @@
 #!/bin/sh
 set -eu
 
+APP_NAME="SwiftyGyaim.app"
+SYSTEM_APP_PATH="/Library/Input Methods/$APP_NAME"
+
 # Stop the running input method before replacing the bundle.
 /usr/bin/killall SwiftyGyaim 2>/dev/null || true
+
+# Older dogfood builds were installed per-user under ~/Library/Input Methods.
+# The system-wide package must remove those copies, otherwise macOS may keep
+# launching the old per-user input method instead of /Library/Input Methods.
+for user_app in /Users/*/Library/Input\ Methods/$APP_NAME; do
+  if [ -d "$user_app" ]; then
+    echo "Removing legacy per-user input method: $user_app"
+    /bin/rm -rf "$user_app"
+  fi
+done
+
+if [ -n "${HOME:-}" ] && [ "$HOME" != "/var/root" ]; then
+  home_app="$HOME/Library/Input Methods/$APP_NAME"
+  if [ -d "$home_app" ]; then
+    echo "Removing legacy per-user input method: $home_app"
+    /bin/rm -rf "$home_app"
+  fi
+fi
+
+# Ensure a clean replacement at the fixed system-wide location.
+if [ -d "$SYSTEM_APP_PATH" ]; then
+  /bin/rm -rf "$SYSTEM_APP_PATH"
+fi
 
 exit 0

@@ -2,11 +2,40 @@
 set -eu
 
 APP_PATH="/Library/Input Methods/SwiftyGyaim.app"
+EXPECTED_SHORT_VERSION="__SWIFTGYAIM_EXPECTED_SHORT_VERSION__"
+EXPECTED_BUNDLE_VERSION="__SWIFTGYAIM_EXPECTED_BUNDLE_VERSION__"
+PLACEHOLDER_PREFIX="__SWIFTGYAIM_EXPECTED_"
 
-if [ -d "$APP_PATH" ]; then
-  /usr/bin/codesign --verify --deep --strict "$APP_PATH" 2>/dev/null || true
-  /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
-    -f -R -trusted "$APP_PATH" 2>/dev/null || true
+if [ ! -d "$APP_PATH" ]; then
+  echo "error: expected app bundle was not installed: $APP_PATH" >&2
+  exit 1
 fi
+
+installed_short_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)"
+installed_bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist" 2>/dev/null || true)"
+
+case "$EXPECTED_SHORT_VERSION" in
+  "$PLACEHOLDER_PREFIX"*) ;;
+  *)
+    if [ "$installed_short_version" != "$EXPECTED_SHORT_VERSION" ]; then
+      echo "error: installed short version mismatch: expected $EXPECTED_SHORT_VERSION, got ${installed_short_version:-missing}" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+case "$EXPECTED_BUNDLE_VERSION" in
+  "$PLACEHOLDER_PREFIX"*) ;;
+  *)
+    if [ "$installed_bundle_version" != "$EXPECTED_BUNDLE_VERSION" ]; then
+      echo "error: installed bundle version mismatch: expected $EXPECTED_BUNDLE_VERSION, got ${installed_bundle_version:-missing}" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+/usr/bin/codesign --verify --deep --strict "$APP_PATH" 2>/dev/null || true
+/System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister \
+  -f -R -trusted "$APP_PATH" 2>/dev/null || true
 
 exit 0
