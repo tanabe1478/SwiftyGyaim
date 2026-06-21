@@ -805,6 +805,10 @@ class GyaimController: IMKInputController {
 
     private static func fastContextRerankOutcome(model: String) -> String {
         if model.contains("review-skipped") { return "protected-exact-skip" }
+        if model.contains("review-exact-homophone-unavailable") { return "exact-homophone-unavailable" }
+        if model.contains("review-exact-homophone-fixed") { return "exact-homophone-fixed" }
+        if model.contains("review-exact-homophone-kept-local") { return "exact-homophone-kept-local" }
+        if model.contains("review-exact-homophone-passed") { return "exact-homophone-passed" }
         if model.contains("review-unavailable") { return "review-unavailable" }
         if model.contains("review-fixed") { return "review-fixed" }
         if model.contains("review-kept-local") { return "review-kept-local" }

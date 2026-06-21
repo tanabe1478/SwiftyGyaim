@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-06-20 (rerank-only shortcut廃止)
+> Last updated: 2026-06-22 (exact同音異義語のfast-context model review)
 
 ## 概要
 
@@ -134,7 +134,9 @@ Tab 候補集合を作った後、同梱Zenzで候補を評価する。azooKey/Z
 
 SwiftyGyaim ではまず Swift local rerank の順で上位候補を評価し、fixRequired prefix が出たらその prefix で `CandidateGenerator` の lattice を再探索する。pass 時の alternative constraint は確率比 `> 0.25` のものだけを補助候補として使う。追加候補が得られた場合は、更新された候補集合でもう一度 candidate evaluation を行う。現時点の review loop は既定2 round、設定キー `aiRerankZenzReviewRounds` で最大3 roundまで調整可能とし、azooKey のような `fixRequired -> prefix constraint付きlattice再探索 -> 再評価` の形へ寄せる。これは自由生成で候補を広げるのではなく、Zenz の評価結果で lattice 再探索を誘導するための経路である。
 
-fast-context rerank の model opt-in 経路では latency と安全性を優先し、Swift heuristic の最上位候補だけを1回 review する。`fixRequiredPrefix` は既存候補に prefix 一致する場合だけ先頭移動に使うが、1文字 prefix は `こうほ -> 高品質` や `つか... -> つかっちゃ` のような広すぎる置換を誘発しやすいため採用しない。また現在の最上位候補自身に一致する prefix は順位変更として扱わず、local order を維持する。
+fast-context rerank の model opt-in 経路では latency と安全性を優先し、Swift heuristic の最上位候補だけを1回 review する。`fixRequiredPrefix` は既存候補に prefix 一致する場合だけ先頭移動に使うが、通常のprefix予測では1文字 prefix を採用しない（`こうほ -> 高品質` や `つか... -> つかっちゃ` のような広すぎる置換を誘発しやすいため）。また現在の最上位候補自身に一致する prefix は順位変更として扱わず、local order を維持する。
+
+読み完全一致の `.exact` / `.compound` 最上位候補は、原則として model review で prefix 予測候補へ沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`、`kinou` の `機能` / `昨日`）は exact 同音異義語レビューとして扱う。この場合は Zenz の `fixRequiredPrefix` による置換先を同じ読みの `.exact` / `.compound` 候補に限定し、prefix 予測候補へは移動しない。この制限下では `向` のような1文字prefixも安全に採用できる。ログ outcome は `exact-homophone-fixed` / `exact-homophone-kept-local` / `exact-homophone-passed` / `exact-homophone-unavailable` を使う。
 
 ## Zenz candidate generation
 

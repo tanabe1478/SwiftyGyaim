@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-06-19 (BUG-019追加)
+> Last updated: 2026-06-22 (BUG-020追加)
 
 ## 概要
 
@@ -260,6 +260,16 @@
 - **修正**: `PreferencesWindow.performKeyEquivalent(with:)` で `Cmd+W` を直接処理し、`Cmd+X/C/V/A/Z` と `Shift+Cmd+Z` は `NSApp.sendAction` で first responder へ標準 text / undo action として送る。
 - **検証**: `PreferencesWindowTests` に `Cmd+W` が window を閉じること、`Cmd+V` が first responder の `paste(_:)` に dispatch されることを確認するテストを追加。
 - **教訓**: `LSBackgroundOnly` なIMEが一時的に設定画面を出す場合、通常アプリのメニュー由来ショートカットを前提にしない。`keyDown` ではなく `performKeyEquivalent` または明示的なメニュー構築で標準Command操作を補う。
+
+### BUG-020: fast-context model reviewがexact同音異義語を比較できない
+
+- **発見日**: 2026-06-22
+- **症状**: `どちらの` の後に `muki` を入力した場合、文脈上は `向き` が自然でも `無機` が上位に出ることがある。
+- **影響**: `向き` / `無機`、`機能` / `昨日` のような同じ読みの候補が、左文脈を使わず学習・元順・heuristicだけで選ばれる。
+- **原因**: fast-context の model opt-in 経路は `.exact` / `.compound` の最上位候補を `protected-exact-skip` として常にZenz reviewから除外していた。これはprefix予測候補へ沈めない安全策として有効だが、同じ読みのexact候補同士の比較まで禁止していた。
+- **修正**: 左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合だけ exact 同音異義語 review を許可する。Zenz の `fixRequiredPrefix` による置換先は同じ読みの `.exact` / `.compound` 候補に限定し、prefix予測候補への移動は引き続き禁止する。
+- **検証**: `ZenzRuntimeTests` に、exact同音異義語レビューの発火条件と、置換先制限がprefix候補を拒否することを確認するテストを追加。
+- **教訓**: 「exact保護」は prefix 予測への誤沈降を防ぐための制約であり、同じ読みの候補間比較まで一律に止めると文脈rerankの価値が出ない。安全境界は候補kindだけでなく、同一reading内/外で分ける。
 
 ## パターン集
 

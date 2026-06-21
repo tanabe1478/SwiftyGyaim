@@ -102,6 +102,14 @@ def parse_list_head(value: str) -> str | None:
 def infer_outcome(model: str) -> str:
     if "review-skipped" in model:
         return "protected-exact-skip"
+    if "review-exact-homophone-unavailable" in model:
+        return "exact-homophone-unavailable"
+    if "review-exact-homophone-fixed" in model:
+        return "exact-homophone-fixed"
+    if "review-exact-homophone-kept-local" in model:
+        return "exact-homophone-kept-local"
+    if "review-exact-homophone-passed" in model:
+        return "exact-homophone-passed"
     if "review-unavailable" in model:
         return "review-unavailable"
     if "review-fixed" in model:

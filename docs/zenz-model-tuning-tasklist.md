@@ -1,7 +1,7 @@
 # Zenz / Zenzai model tuning tasklist
 
 > Status: Draft
-> Last updated: 2026-06-19
+> Last updated: 2026-06-22
 > Parent spec: `docs/specs/zenz-model-tuning.md`
 > Related PR: <https://github.com/tanabe1478/SwiftyGyaim/pull/52>
 
@@ -271,6 +271,20 @@ Definition of done:
 Definition of done:
 
 - [x] model fine-tuning なしで改善できる上限が見える
+
+### M3-3. exact同音異義語のcontext rerank
+
+- [x] exact読み候補をprefix予測候補から守る方針は維持する
+- [x] 左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合だけ model review を許す
+- [x] Zenz の `fixRequiredPrefix` による置換先を同じ読みの `.exact` / `.compound` 候補に限定する
+- [x] outcome に `exact-homophone-*` を追加し、dogfood log aggregator / evaluator が分類できるようにする
+- [ ] dogfood log から `exact-homophone-fixed` / `exact-homophone-kept-local` を抽出し、良化 / 悪化 / 不明を手動ラベルする
+- [ ] `muki`: `どちらの -> 向き`, `この素材は -> 無機` のような eval cases を追加する
+- [ ] exact同音異義語の context cue を heuristic feature に落とせるか確認する
+
+Definition of done:
+
+- [ ] exact同音異義語レビューの precision / latency / 悪化パターンが集計できる
 
 ## Milestone 4: model comparison
 

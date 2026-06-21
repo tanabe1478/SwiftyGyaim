@@ -224,6 +224,14 @@ def infer_outcome(model: Any) -> str:
     value = str(model or "unknown")
     if "review-skipped" in value:
         return "protected-exact-skip"
+    if "review-exact-homophone-unavailable" in value:
+        return "exact-homophone-unavailable"
+    if "review-exact-homophone-fixed" in value:
+        return "exact-homophone-fixed"
+    if "review-exact-homophone-kept-local" in value:
+        return "exact-homophone-kept-local"
+    if "review-exact-homophone-passed" in value:
+        return "exact-homophone-passed"
     if "review-unavailable" in value:
         return "review-unavailable"
     if "review-fixed" in value:
