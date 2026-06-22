@@ -1,7 +1,7 @@
 # Zenz / Zenzai model tuning tasklist
 
 > Status: Draft
-> Last updated: 2026-06-22
+> Last updated: 2026-06-23
 > Parent spec: `docs/specs/zenz-model-tuning.md`
 > Related PR: <https://github.com/tanabe1478/SwiftyGyaim/pull/52>
 
@@ -278,7 +278,9 @@ Definition of done:
 - [x] 左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合だけ model review を許す
 - [x] Zenz の `fixRequiredPrefix` による置換先を同じ読みの `.exact` / `.compound` 候補に限定する
 - [x] outcome に `exact-homophone-*` を追加し、dogfood log aggregator / evaluator が分類できるようにする
-- [ ] dogfood log から `exact-homophone-fixed` / `exact-homophone-kept-local` を抽出し、良化 / 悪化 / 不明を手動ラベルする
+- [x] dogfood log から `exact-homophone-fixed` / `exact-homophone-kept-local` を抽出し、良化 / 悪化 / 不明を手動ラベルする
+  - 2026-06-23 first pass: fixed 30件中 good 15 / bad 1 / unknown 10 / noop 4
+  - bad: `kudasa` で `ください -> くださ`。末尾 `い` 1文字だけ削るひらがな短縮を拒否する regression guard を追加。
 - [ ] `muki`: `どちらの -> 向き`, `この素材は -> 無機` のような eval cases を追加する
 - [ ] exact同音異義語の context cue を heuristic feature に落とせるか確認する
 

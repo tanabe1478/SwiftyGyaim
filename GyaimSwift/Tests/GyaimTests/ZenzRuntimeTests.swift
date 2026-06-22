@@ -83,6 +83,28 @@ final class ZenzRuntimeTests: XCTestCase {
         XCTAssertNil(replacement)
     }
 
+    func testExactHomophoneReplacementRejectsIncompleteHiraganaISuffixRegression() {
+        let request = makeKudasaRegressionRequest()
+
+        let replacement = BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "くださ",
+                                                                         localOrder: [0, 1, 2],
+                                                                         request: request,
+                                                                         restrictToExactReading: true)
+
+        XCTAssertNil(replacement)
+    }
+
+    func testExactHomophoneReplacementAllowsOtherHiraganaShortening() {
+        let request = makeTameniRequest()
+
+        let replacement = BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "ため",
+                                                                         localOrder: [0, 1, 2],
+                                                                         request: request,
+                                                                         restrictToExactReading: true)
+
+        XCTAssertEqual(replacement, 1)
+    }
+
     func testShouldReviewExactHomophonesRequiresContextAndAlternative() {
         let request = makeExactHomophoneRequest(context: "どちらの")
         let best = request.candidates[0]
@@ -143,6 +165,60 @@ final class ZenzRuntimeTests: XCTestCase {
                                   reading: "mukou",
                                   source: "connection",
                                   kind: "prefix")
+            ]
+        )
+    }
+
+    private func makeKudasaRegressionRequest() -> AIRerankRequest {
+        AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "kudasa",
+            hiragana: "くださ",
+            context: "文脈あり",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "ください",
+                                  reading: "kudasa",
+                                  source: "connection",
+                                  kind: "compound"),
+                AIRerankCandidate(index: 1,
+                                  text: "くださ",
+                                  reading: "kudasa",
+                                  source: "connection",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 2,
+                                  text: "下さ",
+                                  reading: "kudasa",
+                                  source: "connection",
+                                  kind: "exact")
+            ]
+        )
+    }
+
+    private func makeTameniRequest() -> AIRerankRequest {
+        AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "tameni",
+            hiragana: "ために",
+            context: "文脈あり",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "ために",
+                                  reading: "tameni",
+                                  source: "connection",
+                                  kind: "compound"),
+                AIRerankCandidate(index: 1,
+                                  text: "ため",
+                                  reading: "tameni",
+                                  source: "connection",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 2,
+                                  text: "溜めに",
+                                  reading: "tameni",
+                                  source: "connection",
+                                  kind: "exact")
             ]
         )
     }

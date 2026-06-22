@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-06-22 (exact同音異義語のfast-context model review)
+> Last updated: 2026-06-23 (exact同音異義語reviewの短縮しすぎ抑制)
 
 ## 概要
 
@@ -136,7 +136,7 @@ SwiftyGyaim ではまず Swift local rerank の順で上位候補を評価し、
 
 fast-context rerank の model opt-in 経路では latency と安全性を優先し、Swift heuristic の最上位候補だけを1回 review する。`fixRequiredPrefix` は既存候補に prefix 一致する場合だけ先頭移動に使うが、通常のprefix予測では1文字 prefix を採用しない（`こうほ -> 高品質` や `つか... -> つかっちゃ` のような広すぎる置換を誘発しやすいため）。また現在の最上位候補自身に一致する prefix は順位変更として扱わず、local order を維持する。
 
-読み完全一致の `.exact` / `.compound` 最上位候補は、原則として model review で prefix 予測候補へ沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`、`kinou` の `機能` / `昨日`）は exact 同音異義語レビューとして扱う。この場合は Zenz の `fixRequiredPrefix` による置換先を同じ読みの `.exact` / `.compound` 候補に限定し、prefix 予測候補へは移動しない。この制限下では `向` のような1文字prefixも安全に採用できる。ログ outcome は `exact-homophone-fixed` / `exact-homophone-kept-local` / `exact-homophone-passed` / `exact-homophone-unavailable` を使う。
+読み完全一致の `.exact` / `.compound` 最上位候補は、原則として model review で prefix 予測候補へ沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`、`kinou` の `機能` / `昨日`）は exact 同音異義語レビューとして扱う。この場合は Zenz の `fixRequiredPrefix` による置換先を同じ読みの `.exact` / `.compound` 候補に限定し、prefix 予測候補へは移動しない。この制限下では `向` のような1文字prefixも安全に採用できる。ただし、`ください -> くださ` のように、ひらがな候補を末尾 `い` 1文字だけ削った未完成候補へ短縮する置換は拒否する。ログ outcome は `exact-homophone-fixed` / `exact-homophone-kept-local` / `exact-homophone-passed` / `exact-homophone-unavailable` を使う。
 
 ## Zenz candidate generation
 

@@ -405,14 +405,37 @@ final class BundledZenzRuntime: ZenzRuntime {
                                             restrictToExactReading: Bool = false) -> Int? {
         let normalizedPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
         let minimumPrefixLength = restrictToExactReading ? 1 : 2
-        guard normalizedPrefix.count >= minimumPrefixLength, let currentBest = localOrder.first else { return nil }
+        guard normalizedPrefix.count >= minimumPrefixLength,
+              let currentBest = localOrder.first,
+              let currentBestCandidate = request.candidates.first(where: { $0.index == currentBest }) else { return nil }
         return localOrder.first { index in
             guard index != currentBest,
                   let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
-            if restrictToExactReading, !isProtectedExactReadingCandidate(candidate, request: request) {
-                return false
+            if restrictToExactReading {
+                guard isProtectedExactReadingCandidate(candidate, request: request),
+                      !isUnsafeExactHomophoneReplacement(from: currentBestCandidate, to: candidate) else {
+                    return false
+                }
             }
             return candidate.text.hasPrefix(normalizedPrefix)
+        }
+    }
+
+    private static func isUnsafeExactHomophoneReplacement(from current: AIRerankCandidate,
+                                                          to replacement: AIRerankCandidate) -> Bool {
+        let currentText = current.text
+        let replacementText = replacement.text
+        guard currentText != replacementText,
+              currentText.hasPrefix(replacementText),
+              isAllHiragana(currentText),
+              isAllHiragana(replacementText) else { return false }
+        let suffix = currentText.dropFirst(replacementText.count)
+        return suffix.count == 1 && suffix.first == "い"
+    }
+
+    private static func isAllHiragana(_ text: String) -> Bool {
+        !text.isEmpty && text.unicodeScalars.allSatisfy { scalar in
+            0x3041...0x3096 ~= scalar.value || scalar.value == 0x30FC
         }
     }
 
