@@ -94,6 +94,17 @@ final class ZenzRuntimeTests: XCTestCase {
         XCTAssertNil(replacement)
     }
 
+    func testExactHomophoneReplacementSkipsIncompleteHiraganaISuffixWhenCurrentBestIsKanjiStem() {
+        let request = makeKudasaRegressionRequest()
+
+        let replacement = BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "く",
+                                                                         localOrder: [2, 1, 0],
+                                                                         request: request,
+                                                                         restrictToExactReading: true)
+
+        XCTAssertEqual(replacement, 0)
+    }
+
     func testExactHomophoneReplacementAllowsOtherHiraganaShortening() {
         let request = makeTameniRequest()
 

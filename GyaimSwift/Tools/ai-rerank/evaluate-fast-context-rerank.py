@@ -274,6 +274,8 @@ def local_score_breakdown(
         contributions["kanjiBonus"] = 0.10
     contributions["naturalFunctionWordPhraseBonus"] = natural_function_word_phrase_bonus(candidate["text"])
     contributions["punctuationSuffixPenalty"] = -punctuation_suffix_penalty(candidate["text"])
+    contributions["punctuatedInputMismatchPenalty"] = -punctuated_input_mismatch_penalty(candidate, request)
+    contributions["incompleteISuffixStemPenalty"] = -incomplete_i_suffix_stem_penalty(candidate, request)
     if candidate["kind"] == "zenz" and is_all_kanji_word(candidate["text"]):
         contributions["zenzKanjiBonus"] = 0.50
     if candidate["text"] == request["inputPat"] and candidate["text"].isascii():
@@ -358,6 +360,35 @@ def natural_function_word_phrase_bonus(text: str) -> float:
 
 def punctuation_suffix_penalty(text: str) -> float:
     return 0.10 if text.endswith(("？", "！")) else 0.0
+
+
+def punctuated_input_mismatch_penalty(candidate: dict[str, Any], request: dict[str, Any]) -> float:
+    input_pat = request["inputPat"]
+    if input_pat.endswith("?"):
+        expected = ("?", "？")
+    elif input_pat.endswith("!"):
+        expected = ("!", "！")
+    else:
+        return 0.0
+    return 0.0 if any(mark in candidate["text"] for mark in expected) else 3.0
+
+
+def incomplete_i_suffix_stem_penalty(candidate: dict[str, Any], request: dict[str, Any]) -> float:
+    text = candidate["text"]
+    if not is_potential_incomplete_i_suffix_stem(text):
+        return 0.0
+    for other in request["candidates"]:
+        if other["index"] != candidate["index"] and is_i_suffix_completion(text, other["text"]):
+            return 4.0
+    return 0.0
+
+
+def is_potential_incomplete_i_suffix_stem(text: str) -> bool:
+    return bool(text) and not all(is_kanji(ch) for ch in text) and any("\u3041" <= ch <= "\u3096" for ch in text)
+
+
+def is_i_suffix_completion(stem: str, completed: str) -> bool:
+    return completed != stem and completed.startswith(stem) and completed[len(stem):] == "い"
 
 
 def source_bias(source: str) -> float:

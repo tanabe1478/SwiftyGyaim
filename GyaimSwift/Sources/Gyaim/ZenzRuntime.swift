@@ -413,7 +413,8 @@ final class BundledZenzRuntime: ZenzRuntime {
                   let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
             if restrictToExactReading {
                 guard isProtectedExactReadingCandidate(candidate, request: request),
-                      !isUnsafeExactHomophoneReplacement(from: currentBestCandidate, to: candidate) else {
+                      !isUnsafeExactHomophoneReplacement(from: currentBestCandidate, to: candidate),
+                      !isUnsafeExactHomophoneReplacement(candidate, in: request) else {
                     return false
                 }
             }
@@ -423,14 +424,30 @@ final class BundledZenzRuntime: ZenzRuntime {
 
     private static func isUnsafeExactHomophoneReplacement(from current: AIRerankCandidate,
                                                           to replacement: AIRerankCandidate) -> Bool {
-        let currentText = current.text
-        let replacementText = replacement.text
-        guard currentText != replacementText,
-              currentText.hasPrefix(replacementText),
-              isAllHiragana(currentText),
-              isAllHiragana(replacementText) else { return false }
-        let suffix = currentText.dropFirst(replacementText.count)
+        isIncompleteISuffixReplacement(stem: replacement.text, completed: current.text)
+    }
+
+    private static func isUnsafeExactHomophoneReplacement(_ replacement: AIRerankCandidate,
+                                                          in request: AIRerankRequest) -> Bool {
+        request.candidates.contains { candidate in
+            candidate.index != replacement.index
+                && isProtectedExactReadingCandidate(candidate, request: request)
+                && isIncompleteISuffixReplacement(stem: replacement.text, completed: candidate.text)
+        }
+    }
+
+    private static func isIncompleteISuffixReplacement(stem: String, completed: String) -> Bool {
+        guard stem != completed,
+              isPotentialIncompleteISuffixStem(stem),
+              completed.hasPrefix(stem) else { return false }
+        let suffix = completed.dropFirst(stem.count)
         return suffix.count == 1 && suffix.first == "い"
+    }
+
+    private static func isPotentialIncompleteISuffixStem(_ text: String) -> Bool {
+        guard !text.isEmpty,
+              !text.unicodeScalars.allSatisfy({ 0x4E00...0x9FFF ~= $0.value }) else { return false }
+        return text.unicodeScalars.contains { 0x3041...0x3096 ~= $0.value }
     }
 
     private static func isAllHiragana(_ text: String) -> Bool {

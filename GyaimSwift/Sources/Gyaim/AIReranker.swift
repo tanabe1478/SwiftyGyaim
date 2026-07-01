@@ -88,6 +88,10 @@ enum AIReranker {
         }
         contributions["naturalFunctionWordPhraseBonus"] = naturalFunctionWordPhraseBonus(candidate.text)
         contributions["punctuationSuffixPenalty"] = -punctuationSuffixPenalty(candidate.text)
+        contributions["punctuatedInputMismatchPenalty"] = -punctuatedInputMismatchPenalty(candidate: candidate,
+                                                                                         request: request)
+        contributions["incompleteISuffixStemPenalty"] = -incompleteISuffixStemPenalty(candidate: candidate,
+                                                                                       request: request)
         if candidate.kind == CandidateKind.zenz.rawValue && isAllKanjiWord(candidate.text) {
             contributions["zenzKanjiBonus"] = 0.50
         }
@@ -173,6 +177,41 @@ enum AIReranker {
 
     private static func punctuationSuffixPenalty(_ text: String) -> Double {
         text.hasSuffix("？") || text.hasSuffix("！") ? 0.10 : 0.0
+    }
+
+    private static func punctuatedInputMismatchPenalty(candidate: AIRerankCandidate,
+                                                       request: AIRerankRequest) -> Double {
+        let expectedPunctuation: [Character]
+        if request.inputPat.hasSuffix("?") {
+            expectedPunctuation = ["?", "？"]
+        } else if request.inputPat.hasSuffix("!") {
+            expectedPunctuation = ["!", "！"]
+        } else {
+            return 0
+        }
+        guard !candidate.text.contains(where: { expectedPunctuation.contains($0) }) else { return 0 }
+        return 3.00
+    }
+
+    private static func incompleteISuffixStemPenalty(candidate: AIRerankCandidate,
+                                                     request: AIRerankRequest) -> Double {
+        guard isPotentialIncompleteISuffixStem(candidate.text) else { return 0 }
+        let longerCompletedCandidateExists = request.candidates.contains { other in
+            other.index != candidate.index && isISuffixCompletion(stem: candidate.text, completed: other.text)
+        }
+        return longerCompletedCandidateExists ? 4.00 : 0
+    }
+
+    private static func isPotentialIncompleteISuffixStem(_ text: String) -> Bool {
+        guard !text.isEmpty, !text.allSatisfy(isKanji) else { return false }
+        return text.unicodeScalars.contains { 0x3041...0x3096 ~= $0.value }
+    }
+
+    private static func isISuffixCompletion(stem: String, completed: String) -> Bool {
+        guard completed != stem,
+              completed.hasPrefix(stem),
+              completed.dropFirst(stem.count).count == 1 else { return false }
+        return completed.last == "い"
     }
 
     private static func sourceBias(_ source: String) -> Double {

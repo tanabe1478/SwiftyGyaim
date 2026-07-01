@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-06-23 (exact同音異義語reviewの短縮しすぎ抑制)
+> Last updated: 2026-07-01 (外部候補の句読点入力・コード風文字列抑制)
 
 ## 概要
 
@@ -76,7 +76,7 @@ deactivateServer(_:) → hideWindow, fix(skipStudy: true), 辞書finish
 
 ひらがなフォールバック: 候補数が `CandidateDisplayMode.current.maxVisible` 未満の場合、ひらがなを候補に追加。
 
-Prefix mode の候補順: `buildPrefixCandidates()` は raw `inputPat` を先頭に保ち、その後に外部候補（クリップボード、選択テキスト）、辞書検索結果、ひらがなフォールバックを並べる。raw `inputPat` を先頭にすることで、短い prefix 入力や完全一致前の入力で `gu` → `具体的`、`maeno` → `前のめり` のような長い prefix 候補が Enter / deactivate で誤確定されるのを防ぐ。一方、候補ウィンドウは `nthCand + 1` 以降を表示するため、コピー後5秒以内のクリップボード候補や選択テキスト候補は表示上の先頭に出る。ただし、URLや `chrome-extension://...` のような URL scheme 形式の文字列は外部候補から除外する。
+Prefix mode の候補順: `buildPrefixCandidates()` は raw `inputPat` を先頭に保ち、その後に外部候補（クリップボード、選択テキスト）、辞書検索結果、ひらがなフォールバックを並べる。raw `inputPat` を先頭にすることで、短い prefix 入力や完全一致前の入力で `gu` → `具体的`、`maeno` → `前のめり` のような長い prefix 候補が Enter / deactivate で誤確定されるのを防ぐ。一方、候補ウィンドウは `nthCand + 1` 以降を表示するため、コピー後5秒以内のクリップボード候補や選択テキスト候補は表示上の先頭に出る。ただし、URLや `chrome-extension://...` のような URL scheme 形式の文字列、`sns_origination_identity_arn` のような snake_case 風ASCII識別子は外部候補から除外する。また `inputPat` に `?` / `!` / `？` / `！` が含まれる場合は、句読点付き文としての確定を優先し、外部候補を挿入・登録しない。`ha?` のように句読点付きで入力した場合は、fast-context heuristic が句読点を含まない長い local/study 候補を抑制し、`は？` のような句読点付き候補を守る。
 
 ## 既知の制約
 
