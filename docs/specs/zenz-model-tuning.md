@@ -1,7 +1,7 @@
 # Spec: Zenz / Zenzai model tuning for SwiftyGyaim
 
 > Status: Draft
-> Last updated: 2026-06-18
+> Last updated: 2026-06-22
 > Trigger: Zenzai / zenz model investigation, GGUF model replacement, AIReranker / ZenzRuntime training workflow, pi-tinker suitability review
 
 ## 目的
@@ -99,9 +99,10 @@ Tab 時は候補集合を作り、Swift heuristic と Zenz scoring / generation 
 
 - 4文字未満は model backend を呼ばない。
 - raw input / clipboard / selected-text は順序固定。
-- 読み完全一致の `.exact` / `.compound` 最上位候補は Zenz で沈めない。
+- 読み完全一致の `.exact` / `.compound` 最上位候補は Zenz で prefix 予測候補へ沈めない。
+- ただし左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合は、exact 同音異義語レビューとして候補間の入れ替えを許す。
 - model backend が有効な場合でも、候補全件 scoring ではなく review path を使う。
-- review path は Swift heuristic 最上位候補を1回だけ Zenz で検査し、既存候補内に prefix 一致候補がある場合だけ先頭へ移動する。
+- review path は Swift heuristic 最上位候補を1回だけ Zenz で検査し、既存候補内に prefix 一致候補がある場合だけ先頭へ移動する。通常のprefix予測では1文字prefixを採用しない。exact 同音異義語レビューでは移動先を同じ読みの `.exact` / `.compound` 候補に限定するため、1文字prefixも採用できる。
 - dogfood log は以下の outcome を出す。
   - `heuristic`
   - `protected-exact-skip`

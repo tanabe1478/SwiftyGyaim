@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-06-20 (rerank-only shortcut廃止)
+> Last updated: 2026-07-01 (未完成い語尾語幹の抑制)
 
 ## 概要
 
@@ -106,9 +106,9 @@ External command は stdout に JSON を返す。
 
 ## In-process local rerank scoring
 
-Swift heuristic rerank は source bias / kind bias / reading一致 / 漢字含有 / script transition penalty を足し合わせる。raw input は候補0に保持するが、ランキング上は強い負スコアを与える。完全一致読み (`kind=exact` かつ `reading == inputPat`) は、prefix / lattice のノイズより優先されるよう追加 bonus を与える。ただし `決して` / `絶対に` / `してはいけ` / `してはなら` / `禁止` / `だめ` / `ダメ` / `ないで` のような強い禁止・否定命令 cue が左文脈にあり、prefix 候補が `な` で終わる場合は contextPredictionBonus で prefix 候補を上げる。一方で、`masen` を明示的に入力しておらず、左文脈にも否定 cue がない段階では、`お願いします` / `思います` への途中入力で `お願いしません` / `思いません` が先頭化しないよう polite negative prediction penalty を与える。さらに `漢字 + の + 漢字` や文末 `では` / `には` / `とは` のような機能語を含む自然なphraseに bonus を与え、ログ由来の `imanodankaideha -> 今の段階では` のような長文候補を、固定phrase辞書なしでも `今野...` 系のprefix複合より上げる。同じ読み・同種候補で句読点付きが元順だけで勝つのを避けるため、文末 `？` / `！` には小さな penalty を与える。Zenz generation / review 由来の全漢字語には小さな追加 bonus を与え、`kyoukaisen -> 境界線` のようにモデルが示した全漢字候補が `教会せん` などの混在script lattice候補に埋もれないようにする。
+Swift heuristic rerank は source bias / kind bias / reading一致 / 漢字含有 / script transition penalty を足し合わせる。raw input は候補0に保持するが、ランキング上は強い負スコアを与える。完全一致読み (`kind=exact` かつ `reading == inputPat`) は、prefix / lattice のノイズより優先されるよう追加 bonus を与える。ただし `決して` / `絶対に` / `してはいけ` / `してはなら` / `禁止` / `だめ` / `ダメ` / `ないで` のような強い禁止・否定命令 cue が左文脈にあり、prefix 候補が `な` で終わる場合は contextPredictionBonus で prefix 候補を上げる。一方で、`masen` を明示的に入力しておらず、左文脈にも否定 cue がない段階では、`お願いします` / `思います` への途中入力で `お願いしません` / `思いません` が先頭化しないよう polite negative prediction penalty を与える。さらに `漢字 + の + 漢字` や文末 `では` / `には` / `とは` のような機能語を含む自然なphraseに bonus を与え、ログ由来の `imanodankaideha -> 今の段階では` のような長文候補を、固定phrase辞書なしでも `今野...` 系のprefix複合より上げる。同じ読み・同種候補で句読点付きが元順だけで勝つのを避けるため、文末 `？` / `！` には小さな penalty を与える。一方、`ha?` のように inputPat が `?` / `!` で終わる場合は、対応する句読点を含まない候補に `punctuatedInputMismatchPenalty` を与え、`投機的デコーディング` のような長い local/study 候補が `は？` より上がらないようにする。さらに、同じ候補集合に `少ない` / `ください` のような末尾 `い` 付き完成形がある場合、`少な` / `くださ` のように末尾 `い` だけを欠いた未完成語幹へ `incompleteISuffixStemPenalty` を与える。Zenz generation / review 由来の全漢字語には小さな追加 bonus を与え、`kyoukaisen -> 境界線` のようにモデルが示した全漢字候補が `教会せん` などの混在script lattice候補に埋もれないようにする。
 
-Swift runtime 側でも `AIReranker.localScoreBreakdown(candidate:request:)` が feature contribution と total score を返す。これにより、offline evaluator の `--show-features` と同じ観点で source bias / kind bias / exact reading bonus / prefix penalty / context bonus / kanji bonus / natural phrase bonus / punctuation penalty / script transition penalty / zenz kanji bonus / raw ASCII penalty をテスト・debug できる。
+Swift runtime 側でも `AIReranker.localScoreBreakdown(candidate:request:)` が feature contribution と total score を返す。これにより、offline evaluator の `--show-features` と同じ観点で source bias / kind bias / exact reading bonus / prefix penalty / context bonus / kanji bonus / natural phrase bonus / punctuation penalty / punctuated input mismatch penalty / incomplete i-suffix stem penalty / script transition penalty / zenz kanji bonus / raw ASCII penalty をテスト・debug できる。
 
 ## CandidateGenerator lattice scoring
 
@@ -134,7 +134,9 @@ Tab 候補集合を作った後、同梱Zenzで候補を評価する。azooKey/Z
 
 SwiftyGyaim ではまず Swift local rerank の順で上位候補を評価し、fixRequired prefix が出たらその prefix で `CandidateGenerator` の lattice を再探索する。pass 時の alternative constraint は確率比 `> 0.25` のものだけを補助候補として使う。追加候補が得られた場合は、更新された候補集合でもう一度 candidate evaluation を行う。現時点の review loop は既定2 round、設定キー `aiRerankZenzReviewRounds` で最大3 roundまで調整可能とし、azooKey のような `fixRequired -> prefix constraint付きlattice再探索 -> 再評価` の形へ寄せる。これは自由生成で候補を広げるのではなく、Zenz の評価結果で lattice 再探索を誘導するための経路である。
 
-fast-context rerank の model opt-in 経路では latency と安全性を優先し、Swift heuristic の最上位候補だけを1回 review する。`fixRequiredPrefix` は既存候補に prefix 一致する場合だけ先頭移動に使うが、1文字 prefix は `こうほ -> 高品質` や `つか... -> つかっちゃ` のような広すぎる置換を誘発しやすいため採用しない。また現在の最上位候補自身に一致する prefix は順位変更として扱わず、local order を維持する。
+fast-context rerank の model opt-in 経路では latency と安全性を優先し、Swift heuristic の最上位候補だけを1回 review する。`fixRequiredPrefix` は既存候補に prefix 一致する場合だけ先頭移動に使うが、通常のprefix予測では1文字 prefix を採用しない（`こうほ -> 高品質` や `つか... -> つかっちゃ` のような広すぎる置換を誘発しやすいため）。また現在の最上位候補自身に一致する prefix は順位変更として扱わず、local order を維持する。
+
+読み完全一致の `.exact` / `.compound` 最上位候補は、原則として model review で prefix 予測候補へ沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`、`kinou` の `機能` / `昨日`）は exact 同音異義語レビューとして扱う。この場合は Zenz の `fixRequiredPrefix` による置換先を同じ読みの `.exact` / `.compound` 候補に限定し、prefix 予測候補へは移動しない。この制限下では `向` のような1文字prefixも安全に採用できる。ただし、`ください -> くださ` のように、ひらがな候補を末尾 `い` 1文字だけ削った未完成候補へ短縮する置換は拒否する。現在のbestが `下さ` のような漢字語幹であっても、候補集合内に `ください` がある場合は `くださ` への置換を拒否し、同じprefixで安全な `ください` があればそちらへ移動する。ログ outcome は `exact-homophone-fixed` / `exact-homophone-kept-local` / `exact-homophone-passed` / `exact-homophone-unavailable` を使う。
 
 ## Zenz candidate generation
 

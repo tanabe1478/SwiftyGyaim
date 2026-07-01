@@ -445,6 +445,15 @@ class WordSearch {
         return false
     }
 
+    /// Delete a word from both user-managed dictionaries.
+    /// Returns true if at least one entry was found and removed.
+    @discardableResult
+    func deleteFromUserDictionaries(word: String, reading: String) -> Bool {
+        let deletedFromStudy = deleteFromStudy(word: word, reading: reading)
+        let deletedFromLocal = deleteFromLocal(word: word, reading: reading)
+        return deletedFromStudy || deletedFromLocal
+    }
+
     func start() {
         // Intentionally empty — reloading study dict caused input lag in original
     }

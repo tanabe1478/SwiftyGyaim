@@ -176,6 +176,110 @@ final class AIRerankerTests: XCTestCase {
     }
 
 
+    func testLocalRerankKeepsQuestionPunctuationCandidateForPunctuatedInput() {
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "ha?",
+            hiragana: "は？",
+            context: "問題",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "は？",
+                                  reading: "ha?",
+                                  source: "connection",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 1,
+                                  text: "投機的デコーディング",
+                                  reading: "ha?",
+                                  source: "local",
+                                  kind: "exact")
+            ]
+        )
+
+        let response = AIReranker.localRerank(request)
+
+        XCTAssertEqual(response.order.first, 0)
+        XCTAssertGreaterThan(response.scores?["0"] ?? -.infinity, response.scores?["1"] ?? .infinity)
+    }
+
+    func testLocalScoreBreakdownExposesPunctuatedInputMismatchPenalty() {
+        let candidate = AIRerankCandidate(index: 1,
+                                          text: "投機的デコーディング",
+                                          reading: "ha?",
+                                          source: "local",
+                                          kind: "exact")
+        let request = AIRerankRequest(version: 1,
+                                      mode: "fast-context-rerank",
+                                      inputPat: "ha?",
+                                      hiragana: "は？",
+                                      context: nil,
+                                      candidates: [candidate])
+
+        let breakdown = AIReranker.localScoreBreakdown(candidate: candidate, request: request)
+
+        XCTAssertEqual(breakdown.contributions["punctuatedInputMismatchPenalty"], -3.00)
+    }
+
+    func testLocalRerankPenalizesIncompleteISuffixStemWhenCompletedCandidateExists() {
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "sukuna",
+            hiragana: "すくな",
+            context: "できるだけ",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "少なくとも",
+                                  reading: "sukunakutomo",
+                                  source: "connection",
+                                  kind: "prefix"),
+                AIRerankCandidate(index: 1,
+                                  text: "少ない",
+                                  reading: "sukunai",
+                                  source: "connection",
+                                  kind: "prefix"),
+                AIRerankCandidate(index: 2,
+                                  text: "少な",
+                                  reading: "sukuna",
+                                  source: "connection",
+                                  kind: "exact")
+            ]
+        )
+
+        let response = AIReranker.localRerank(request)
+
+        XCTAssertNotEqual(response.order.first, 2)
+        let stemBreakdown = AIReranker.localScoreBreakdown(candidate: request.candidates[2], request: request)
+        XCTAssertEqual(stemBreakdown.contributions["incompleteISuffixStemPenalty"], -4.00)
+    }
+
+    func testLocalRerankDoesNotPenalizeOtherShortening() {
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "tameni",
+            hiragana: "ために",
+            context: "その",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "ために",
+                                  reading: "tameni",
+                                  source: "connection",
+                                  kind: "compound"),
+                AIRerankCandidate(index: 1,
+                                  text: "ため",
+                                  reading: "tameni",
+                                  source: "connection",
+                                  kind: "exact")
+            ]
+        )
+
+        let breakdown = AIReranker.localScoreBreakdown(candidate: request.candidates[1], request: request)
+
+        XCTAssertNil(breakdown.contributions["incompleteISuffixStemPenalty"])
+    }
+
     func testLocalRerankPrefersQuestionPhraseWithoutPunctuationWhenReadingTies() {
         let request = AIRerankRequest(
             version: 1,

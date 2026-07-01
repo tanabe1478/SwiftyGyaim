@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-06-19 (BUG-019追加)
+> Last updated: 2026-07-01 (BUG-022/023追加)
 
 ## 概要
 
@@ -260,6 +260,47 @@
 - **修正**: `PreferencesWindow.performKeyEquivalent(with:)` で `Cmd+W` を直接処理し、`Cmd+X/C/V/A/Z` と `Shift+Cmd+Z` は `NSApp.sendAction` で first responder へ標準 text / undo action として送る。
 - **検証**: `PreferencesWindowTests` に `Cmd+W` が window を閉じること、`Cmd+V` が first responder の `paste(_:)` に dispatch されることを確認するテストを追加。
 - **教訓**: `LSBackgroundOnly` なIMEが一時的に設定画面を出す場合、通常アプリのメニュー由来ショートカットを前提にしない。`keyDown` ではなく `performKeyEquivalent` または明示的なメニュー構築で標準Command操作を補う。
+
+### BUG-020: fast-context model reviewがexact同音異義語を比較できない
+
+- **発見日**: 2026-06-22
+- **症状**: `どちらの` の後に `muki` を入力した場合、文脈上は `向き` が自然でも `無機` が上位に出ることがある。
+- **影響**: `向き` / `無機`、`機能` / `昨日` のような同じ読みの候補が、左文脈を使わず学習・元順・heuristicだけで選ばれる。
+- **原因**: fast-context の model opt-in 経路は `.exact` / `.compound` の最上位候補を `protected-exact-skip` として常にZenz reviewから除外していた。これはprefix予測候補へ沈めない安全策として有効だが、同じ読みのexact候補同士の比較まで禁止していた。
+- **修正**: 左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合だけ exact 同音異義語 review を許可する。Zenz の `fixRequiredPrefix` による置換先は同じ読みの `.exact` / `.compound` 候補に限定し、prefix予測候補への移動は引き続き禁止する。
+- **検証**: `ZenzRuntimeTests` に、exact同音異義語レビューの発火条件と、置換先制限がprefix候補を拒否することを確認するテストを追加。
+- **dogfood追記**: `exact-homophone-fixed` 30件を一次レビューしたところ、`ください -> くださ` の未完成候補昇格が1件見つかった。ひらがな候補を末尾 `い` 1文字だけ削った未完成候補へ短縮する置換を拒否し、regression test を追加。
+- **教訓**: 「exact保護」は prefix 予測への誤沈降を防ぐための制約であり、同じ読みの候補間比較まで一律に止めると文脈rerankの価値が出ない。安全境界は候補kindだけでなく、同一reading内/外で分ける。また、同一reading内でも未完成なひらがな短縮候補を上げると入力途中感が強くなるため、表記の完成度も安全条件に含める。
+
+### BUG-021: `ha?` で長いlocal候補が `は？` より上位化する
+
+- **発見日**: 2026-06-23
+- **症状**: `ha?` 入力で `投機的デコーディング` が `は？` より上位になり、確定後に `ha?` の study/local 候補として残った。さらに `h` / `ha` の prefix 候補にも混入した。
+- **影響**: 句読点つき短入力で、直前に誤登録された長いユーザー辞書候補が自然な句読点候補を押しのける。削除操作で study だけ消しても local に残ると復活する。
+- **原因**: `kind=exact` かつ `reading == inputPat` の長い local 候補に exact reading bonus / source bias が強くかかり、句読点を含む自然候補 `は？` の小さな punctuation penalty を上回った。また候補削除は候補sourceに応じて study または local の片方だけを削除していた。
+- **修正**: `inputPat` が `?` / `!` で終わる場合、対応する句読点を含まない候補に `punctuatedInputMismatchPenalty` を与える。候補削除UIでは `.study` / `.local` のどちらから見えた場合でも、同じ word/reading を study/local 両方から削除する。
+- **検証**: `AIRerankerTests` に `ha?` で `は？` が `投機的デコーディング` より上位になる regression test を追加。`WordSearchTests` に `deleteFromUserDictionaries` が study/local 両方を削除するテストを追加。fast-context eval fixture に `ha?` ケースを追加。
+- **教訓**: ユーザー辞書由来の exact 候補でも、句読点つき短入力では「句読点を含むか」を安全条件に含める。削除UIは表示sourceだけを信用せず、同一word/readingのユーザー管理辞書をまとめて掃除する。
+
+### BUG-022: exact-homophone review が `ください` を `くださ` へ再短縮する
+
+- **発見日**: 2026-07-01
+- **症状**: guard導入後のdogfoodでも `kudasa` で `ください -> くださ` が再発した。ログ上は current best が `下さ`、Zenz prefix が `く`、replacement が `くださ` になっていた。
+- **影響**: ユーザーが `kudasai` へ入力継続する途中で、未完成なひらがな語幹 `くださ` が先頭に出る。
+- **原因**: 既存guardは current best と replacement の直接比較だけを見ていたため、`下さ -> くださ` は不完全短縮として検出できなかった。候補集合内に `ください` が存在することを見ていなかった。
+- **修正**: exact-homophone replacement では、replacement だけでなく候補集合全体を見て、`replacement + い` に相当する完成候補がある場合は未完成語幹への置換を拒否する。同じ prefix で安全な `ください` が後続候補にあればそちらへ移動できる。Swift heuristic / offline evaluator でも `少な` / `くださ` のような末尾 `い` 欠落語幹へ `incompleteISuffixStemPenalty` を与える。
+- **検証**: `ZenzRuntimeTests` に current best が `下さ` でも `くださ` を飛ばし `ください` へ到達する regression test を追加。`AIRerankerTests` と fast-context eval fixture に `sukuna -> 少な` / `kudasa -> くださ` 抑制を追加。
+- **教訓**: safety guard は current best との2者比較だけでは足りない。候補集合内のより完成した候補を見て、未完成語幹への降格を拒否する。
+
+### BUG-023: 句読点付き読みでコード風clipboardが外部候補登録される
+
+- **発見日**: 2026-07-01
+- **症状**: `sns_origination_identity_arn` をコピーした状態で `korejjanaino?` を入力すると、clipboard候補として表示・確定され `localdict` に登録された。
+- **影響**: snake_case 風の識別子やARN断片が日本語IME候補・ユーザー辞書に混入する。句読点付きの自然文入力では外部候補登録の意図が薄いのに、候補ウィンドウ先頭付近に出る。
+- **原因**: 外部候補検証が URL / Gyazo hash には対応していたが、ASCII snake_case 風識別子を許可していた。また `inputPat` に `?` が含まれていても外部候補を挿入・登録していた。
+- **修正**: 外部候補検証で snake_case 風ASCII識別子を除外する。`inputPat` に `?` / `!` / `？` / `！` が含まれる場合は外部候補の挿入・登録をしない。確定時にも同じ条件で登録を再検証する。
+- **検証**: `ExternalCandidateTests` に snake_case 風識別子の除外、句読点付き入力でのclipboard候補非挿入を追加。
+- **教訓**: clipboard/選択テキストはコード・設定値・secret断片を含みうる。外部候補はURL以外のコード風文字列も疑い、句読点付き自然文入力では登録UXより誤登録防止を優先する。
 
 ## パターン集
 

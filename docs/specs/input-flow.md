@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-06-20 (Google Transliterate復活とrerank-only廃止)
+> Last updated: 2026-07-01 (外部候補の句読点入力・コード風文字列抑制)
 
 ## 概要
 
@@ -51,7 +51,7 @@ handle(_:client:) → routeEvent() → HandleResult
 
 AIによる候補生成は通常入力・候補生成時には自動実行しない。変換中に Tab を押した時だけ `requestAIRerankIfAvailable()` を呼び、ローカル lattice 候補・補完候補を追加する。候補追加後は Swift in-process heuristic / 同梱 Zenz で即 rerank し、server 未起動でも候補順を補正する。Google Input Tools は Tab pipeline では `aiRerankUseGoogle=true` の明示 opt-in 時だけ後追い候補追加に使う（2回目の候補更新が発生するため既定OFF）。GPT-2 server / external command は legacy 比較用で、`aiRerankUseLegacyExternalReranker=true` の明示 opt-in 時だけ後追い rerank する。Shift+Tab による rerank-only は廃止し、変換中は副作用なしで消費する。`` ` `` は既定の Google Transliterate suffix として扱う。
 
-通常入力では、`aiRerankFastContextEnabled=true`（デフォルトON）のとき、生成を伴わない軽量な `fast-context-rerank` だけを同期実行する。対象は prefix mode の辞書候補上位24件（`aiRerankFastContextCandidateLimit` で 2〜48 に調整可能）で、raw input と外部候補（クリップボード/選択テキスト）は順序固定。既定では `AIReranker.localRerank` の Swift heuristic のみを使い、読み完全一致候補を長い予測候補より優先しつつ、直前文脈に強い否定命令 cue（例: `決して`, `禁止`, `してはいけ`）がある場合だけ `従うな` のような予測候補を上げられる。`aiRerankUseModelForFastContext=true` の場合だけ in-process model backend を使うが、短い入力では走らせない（`aiRerankFastContextModelMinInputLength`、デフォルト4）。モデル経路では候補ごとの全件scoringではなく、Swift heuristic の最上位候補をZenzで1回だけreviewし、必要な場合だけ既存候補内のprefix一致候補を先頭へ移動する。読み完全一致の `.exact` / `.compound` 最上位候補はモデルで沈めない。文脈は末尾だけに制限する（`aiRerankFastContextMaxContextLength`、デフォルト20）。入力ごとの latency・before/after ログは `aiRerankFastContextLoggingEnabled=true` のときだけ出す。ログには `outcome=heuristic|protected-exact-skip|review-fixed|review-passed|review-kept-local|review-unavailable` と `topChanged` を含め、dogfood時にmodel reviewの効果と無駄撃ちを集計できるようにする。
+通常入力では、`aiRerankFastContextEnabled=true`（デフォルトON）のとき、生成を伴わない軽量な `fast-context-rerank` だけを同期実行する。対象は prefix mode の辞書候補上位24件（`aiRerankFastContextCandidateLimit` で 2〜48 に調整可能）で、raw input と外部候補（クリップボード/選択テキスト）は順序固定。既定では `AIReranker.localRerank` の Swift heuristic のみを使い、読み完全一致候補を長い予測候補より優先しつつ、直前文脈に強い否定命令 cue（例: `決して`, `禁止`, `してはいけ`）がある場合だけ `従うな` のような予測候補を上げられる。`aiRerankUseModelForFastContext=true` の場合だけ in-process model backend を使うが、短い入力では走らせない（`aiRerankFastContextModelMinInputLength`、デフォルト4）。モデル経路では候補ごとの全件scoringではなく、Swift heuristic の最上位候補をZenzで1回だけreviewし、必要な場合だけ既存候補内のprefix一致候補を先頭へ移動する。読み完全一致の `.exact` / `.compound` 最上位候補はモデルで沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`）は、prefix予測へ沈めない制約を維持したまま、同じ読みの候補間だけZenz reviewで先頭入れ替えを許す。この exact 同音異義語レビューに限り、置換先が同じ読みのexact候補へ限定されるため1文字prefixも採用できる。ただし、`ください -> くださ` のように、ひらがな候補を末尾 `い` 1文字だけ削った未完成候補へ短縮する置換は拒否する。文脈は末尾だけに制限する（`aiRerankFastContextMaxContextLength`、デフォルト20）。入力ごとの latency・before/after ログは `aiRerankFastContextLoggingEnabled=true` のときだけ出す。ログには `outcome=heuristic|protected-exact-skip|review-fixed|review-passed|review-kept-local|review-unavailable|exact-homophone-fixed|exact-homophone-passed|exact-homophone-kept-local|exact-homophone-unavailable` と `topChanged` を含め、dogfood時にmodel reviewの効果と無駄撃ちを集計できるようにする。
 
 ## Google Transliterate
 
@@ -76,7 +76,7 @@ deactivateServer(_:) → hideWindow, fix(skipStudy: true), 辞書finish
 
 ひらがなフォールバック: 候補数が `CandidateDisplayMode.current.maxVisible` 未満の場合、ひらがなを候補に追加。
 
-Prefix mode の候補順: `buildPrefixCandidates()` は raw `inputPat` を先頭に保ち、その後に外部候補（クリップボード、選択テキスト）、辞書検索結果、ひらがなフォールバックを並べる。raw `inputPat` を先頭にすることで、短い prefix 入力や完全一致前の入力で `gu` → `具体的`、`maeno` → `前のめり` のような長い prefix 候補が Enter / deactivate で誤確定されるのを防ぐ。一方、候補ウィンドウは `nthCand + 1` 以降を表示するため、コピー後5秒以内のクリップボード候補や選択テキスト候補は表示上の先頭に出る。ただし、URLや `chrome-extension://...` のような URL scheme 形式の文字列は外部候補から除外する。
+Prefix mode の候補順: `buildPrefixCandidates()` は raw `inputPat` を先頭に保ち、その後に外部候補（クリップボード、選択テキスト）、辞書検索結果、ひらがなフォールバックを並べる。raw `inputPat` を先頭にすることで、短い prefix 入力や完全一致前の入力で `gu` → `具体的`、`maeno` → `前のめり` のような長い prefix 候補が Enter / deactivate で誤確定されるのを防ぐ。一方、候補ウィンドウは `nthCand + 1` 以降を表示するため、コピー後5秒以内のクリップボード候補や選択テキスト候補は表示上の先頭に出る。ただし、URLや `chrome-extension://...` のような URL scheme 形式の文字列、`sns_origination_identity_arn` のような snake_case 風ASCII識別子は外部候補から除外する。また `inputPat` に `?` / `!` / `？` / `！` が含まれる場合は、句読点付き文としての確定を優先し、外部候補を挿入・登録しない。`ha?` のように句読点付きで入力した場合は、fast-context heuristic が句読点を含まない長い local/study 候補を抑制し、`は？` のような句読点付き候補を守る。
 
 ## 既知の制約
 
