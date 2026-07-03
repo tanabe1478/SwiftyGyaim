@@ -213,7 +213,16 @@ final class LlamaZenzContext {
             let top = topTokens(from: logits.advanced(by: startIndex), limit: max(1, alternativeLimit + 1))
             guard let best = top.first else { return fail("empty-top-token-list") }
             if best.token != tokenID {
-                guard best.token != llama_vocab_eos(vocab) else { return fail("best-token-is-eos") }
+                // The model prefers to end the output here: the candidate is an
+                // extension of a form the model already considers complete. This
+                // is a judgment, not a failure — treating it as "unavailable"
+                // wasted ~25ms per review and hid real failures (dogfood
+                // 2026-07: 437/437 review-unavailable were best-token-is-eos).
+                // Never promote a truncation from this signal; just pass.
+                if best.token == llama_vocab_eos(vocab) {
+                    return CandidateEvaluation(fixRequiredPrefix: nil,
+                                               alternatives: alternatives.sorted { $0.probabilityRatio > $1.probabilityRatio })
+                }
                 guard let prefix = decodedCandidatePrefix(tokens: Array(tokens[..<tokenIndex]) + [best.token],
                                                           promptText: promptText) else {
                     return fail("decoded-prefix-mismatch")

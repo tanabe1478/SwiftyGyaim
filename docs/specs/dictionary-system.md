@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-06-23 (候補削除はstudy/local両方から削除)
+> Last updated: 2026-07-04 (ContextDict追加・studyFrequencyをSearchCandidateへ)
 
 ## 概要
 
@@ -163,7 +163,22 @@ score = lastAccessTime + log2(max(frequency, 1)) * 3600 - word.count * 600
 - ファイルに即座に書き出し
 
 ### deactivation時はstudy()をスキップ
-IME切替による自動確定ではユーザーが意図的に候補を選んでいないため、`fix(skipStudy: true)` で学習を抑制する。
+IME切替による自動確定ではユーザーが意図的に候補を選んでいないため、`fix(skipStudy: true)` で学習を抑制する。ContextDict への記録も同様にスキップされる。
+
+## 文脈条件付き学習（ContextDict — ADR-020）
+
+`ContextDict`（`~/.gyaim/contextdict.txt`）は、確定時の `(左文脈末尾8文字, reading, word)` を記録する第4のユーザー管理ストア。fast-context rerank 時に同じ (reading, word) の文脈suffix一致度を `contextAffinity`（0.0〜1.0）として返し、`向き` / `無機` のような同音異義語をユーザー履歴で選べるようにする。
+
+- ファイル形式: TSV `contextKey\treading\tword\ttimestamp\tcount`
+- 文脈キー: タブ・改行を除去した確定前文脈の末尾8文字。空なら記録しない
+- 一致判定: suffix共通長。2文字未満はノイズとして0、4文字で1.0に飽和
+- 上限5,000エントリのMRU淘汰、記録ごとに原子的保存
+- studydict と同じ理由（BUG-005）で `ContextDict.shared` をプロセス内共有し、lookup は (reading, word) index で O(1)
+- 候補削除UI（`deleteCurrentCandidate`）は `deleteEntries(word:reading:)` で同じ word/reading の context エントリも削除し、削除済み候補が文脈記憶から復活しないようにする
+
+### SearchCandidate.studyFrequency
+
+study 由来の `SearchCandidate` は検索時点の `StudyEntry.frequency` を保持する。fast-context rerank はこれを `AIRerankCandidate.studyFrequency` として渡し、`AIReranker` がフラットな sourceBias に加えて頻度連続ボーナス（`min(0.30, log2(frequency) * 0.10)`）を与える。
 
 ## ホットリロード
 

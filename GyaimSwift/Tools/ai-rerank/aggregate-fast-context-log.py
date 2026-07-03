@@ -42,6 +42,13 @@ REVIEW_RE = re.compile(
     r'Zenz fast-context review (?P<event>\w+): input="(?P<input>[^"]*)"(?P<rest>.*)$'
 )
 
+ACCEPTED_RE = re.compile(
+    r'^\[(?P<timestamp>[^\]]+)\] \[input\] \[(?P<level>[^\]]+)\] '
+    r'Fast context accepted: input="(?P<input>[^"]*)" word="(?P<word>[^"]*)" '
+    r'rank=(?P<rank>\d+) candidates=(?P<candidates>\d+) '
+    r'source=(?P<source>\S+) kind=(?P<kind>\S+)$'
+)
+
 TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -217,6 +224,44 @@ def collect_review_events(lines: Iterable[str], cutoff: datetime | None) -> dict
     return dict(sorted(counts.items()))
 
 
+def collect_accepted_events(lines: Iterable[str], cutoff: datetime | None) -> dict:
+    """Summarize `Fast context accepted` commit logs.
+
+    rank=0 is the raw input committed as-is; rank=1 is the first displayed
+    candidate. acceptedTop1Rate / acceptedTop3Rate measure how often the user
+    committed a top-ranked dictionary candidate — the closest dogfood proxy to
+    top1/top3 accuracy on real input.
+    """
+    ranks: list[int] = []
+    by_source: dict[str, int] = defaultdict(int)
+    for line in lines:
+        match = ACCEPTED_RE.match(line.rstrip("\n"))
+        if not match:
+            continue
+        if cutoff is not None:
+            timestamp = parse_timestamp(match.group("timestamp"))
+            if timestamp is not None and timestamp < cutoff:
+                continue
+        ranks.append(int(match.group("rank")))
+        by_source[match.group("source")] += 1
+    if not ranks:
+        return {"count": 0}
+    histogram: dict[str, int] = defaultdict(int)
+    for rank in ranks:
+        key = str(rank) if rank <= 3 else "4+"
+        histogram[key] += 1
+    non_raw = [rank for rank in ranks if rank >= 1]
+    return {
+        "count": len(ranks),
+        "rawCommitCount": sum(1 for rank in ranks if rank == 0),
+        "meanRank": round(mean(ranks), 3),
+        "rankHistogram": dict(sorted(histogram.items())),
+        "acceptedTop1Rate": round(sum(1 for rank in non_raw if rank == 1) / len(non_raw), 3) if non_raw else None,
+        "acceptedTop3Rate": round(sum(1 for rank in non_raw if rank <= 3) / len(non_raw), 3) if non_raw else None,
+        "bySource": dict(sorted(by_source.items())),
+    }
+
+
 def print_table(title: str, rows: dict[str, dict]) -> None:
     print(f"\n## {title}")
     print("key\tcount\tavgMs\tp50Ms\tp95Ms\tmaxMs\ttopChanged\ttopChangedRate")
@@ -249,6 +294,7 @@ def main() -> int:
         "byInputLength": group_by(events, lambda e: e.input_length),
         "byCandidateBucket": group_by(events, lambda e: e.candidate_bucket),
         "reviewEvents": collect_review_events(lines, cutoff),
+        "acceptedRanks": collect_accepted_events(lines, cutoff),
         "slowest": [asdict(e) for e in sorted(events, key=lambda e: e.latency_ms, reverse=True)[: args.slow]],
         "examplesByOutcome": {
             outcome: [asdict(e) for e in grouped[: args.examples]]
@@ -266,6 +312,8 @@ def main() -> int:
     print_table("by candidate bucket", result["byCandidateBucket"])
     print("\n## review events")
     print(json.dumps(result["reviewEvents"], ensure_ascii=False, indent=2))
+    print("\n## accepted ranks")
+    print(json.dumps(result["acceptedRanks"], ensure_ascii=False, indent=2))
     print("\n## slowest")
     for event in result["slowest"]:
         print(

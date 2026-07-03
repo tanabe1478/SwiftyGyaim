@@ -61,59 +61,73 @@ final class ZenzRuntimeTests: XCTestCase {
         XCTAssertNil(replacement)
     }
 
-    func testFastContextReplacementCanBeRestrictedToExactReadingHomophones() {
+    func testExactHomophoneCandidateIndicesSelectsProtectedExactCandidatesOnly() {
         let request = makeExactHomophoneRequest(context: "どちらの")
 
-        let replacement = BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "向",
-                                                                         localOrder: [0, 1, 2],
-                                                                         request: request,
-                                                                         restrictToExactReading: true)
+        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
+                                                                        localOrder: [0, 1, 2])
 
-        XCTAssertEqual(replacement, 1)
+        // 向こう (prefix prediction) must never enter the comparison set.
+        XCTAssertEqual(indices, [0, 1])
     }
 
-    func testFastContextReplacementRestrictionRejectsPrefixPrediction() {
+    func testExactHomophoneCandidateIndicesRespectsLocalOrderAndLimit() {
         let request = makeExactHomophoneRequest(context: "どちらの")
 
-        let replacement = BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "向こ",
-                                                                         localOrder: [0, 1, 2],
-                                                                         request: request,
-                                                                         restrictToExactReading: true)
+        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
+                                                                        localOrder: [1, 0, 2],
+                                                                        limit: 1)
 
-        XCTAssertNil(replacement)
+        XCTAssertEqual(indices, [1])
     }
 
-    func testExactHomophoneReplacementRejectsIncompleteHiraganaISuffixRegression() {
+    func testExactHomophoneCandidateIndicesExcludesIncompleteHiraganaISuffixRegression() {
         let request = makeKudasaRegressionRequest()
 
-        let replacement = BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "くださ",
-                                                                         localOrder: [0, 1, 2],
-                                                                         request: request,
-                                                                         restrictToExactReading: true)
+        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
+                                                                        localOrder: [2, 1, 0])
 
-        XCTAssertNil(replacement)
+        // くださ (index 1) is a truncation of ください (index 0) and must be
+        // excluded, while ください and 下さ can still be compared.
+        XCTAssertFalse(indices.contains(1))
+        XCTAssertTrue(indices.contains(0))
+        XCTAssertTrue(indices.contains(2))
     }
 
-    func testExactHomophoneReplacementSkipsIncompleteHiraganaISuffixWhenCurrentBestIsKanjiStem() {
-        let request = makeKudasaRegressionRequest()
-
-        let replacement = BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "く",
-                                                                         localOrder: [2, 1, 0],
-                                                                         request: request,
-                                                                         restrictToExactReading: true)
-
-        XCTAssertEqual(replacement, 0)
-    }
-
-    func testExactHomophoneReplacementAllowsOtherHiraganaShortening() {
+    func testExactHomophoneCandidateIndicesAllowsOtherHiraganaShortening() {
         let request = makeTameniRequest()
 
-        let replacement = BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "ため",
-                                                                         localOrder: [0, 1, 2],
-                                                                         request: request,
-                                                                         restrictToExactReading: true)
+        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
+                                                                        localOrder: [0, 1, 2])
 
-        XCTAssertEqual(replacement, 1)
+        // ため / ために is a legitimate shortening, not a broken stem.
+        XCTAssertEqual(indices, [0, 1, 2])
+    }
+
+    func testSelectExactHomophoneWinnerRequiresMargin() {
+        // Winner must beat the current best by at least the margin.
+        XCTAssertEqual(BundledZenzRuntime.selectExactHomophoneWinner(scores: [0: -2.0, 1: -1.0],
+                                                                     currentBest: 0,
+                                                                     margin: 0.10), 1)
+        XCTAssertNil(BundledZenzRuntime.selectExactHomophoneWinner(scores: [0: -1.05, 1: -1.0],
+                                                                   currentBest: 0,
+                                                                   margin: 0.10))
+        // Current best already winning → no change.
+        XCTAssertNil(BundledZenzRuntime.selectExactHomophoneWinner(scores: [0: -1.0, 1: -2.0],
+                                                                   currentBest: 0,
+                                                                   margin: 0.10))
+        // Missing score for the current best → cannot compare safely.
+        XCTAssertNil(BundledZenzRuntime.selectExactHomophoneWinner(scores: [1: -1.0],
+                                                                   currentBest: 0,
+                                                                   margin: 0.10))
+    }
+
+    func testSelectExactHomophoneWinnerPicksHighestScoreAmongMany() {
+        let scores: [Int: Double] = [0: -3.0, 1: -1.5, 2: -0.5]
+
+        XCTAssertEqual(BundledZenzRuntime.selectExactHomophoneWinner(scores: scores,
+                                                                     currentBest: 0,
+                                                                     margin: 0.10), 2)
     }
 
     func testShouldReviewExactHomophonesRequiresContextAndAlternative() {

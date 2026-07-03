@@ -764,7 +764,11 @@ class GyaimController: IMKInputController {
                                   text: candidate.word,
                                   reading: candidate.reading,
                                   source: String(describing: candidate.source),
-                                  kind: candidate.kind.rawValue)
+                                  kind: candidate.kind.rawValue,
+                                  contextAffinity: ContextDict.shared.affinity(context: trimmedContext,
+                                                                               reading: candidate.reading,
+                                                                               word: candidate.word),
+                                  studyFrequency: candidate.studyFrequency)
             }
         )
         let response = fastContextRerankResponse(for: request)
@@ -1158,7 +1162,11 @@ class GyaimController: IMKInputController {
                                   text: candidate.word,
                                   reading: candidate.reading,
                                   source: String(describing: candidate.source),
-                                  kind: candidate.kind.rawValue)
+                                  kind: candidate.kind.rawValue,
+                                  contextAffinity: ContextDict.shared.affinity(context: context,
+                                                                               reading: candidate.reading,
+                                                                               word: candidate.word),
+                                  studyFrequency: candidate.studyFrequency)
             }
         )
 
@@ -1283,6 +1291,15 @@ class GyaimController: IMKInputController {
         let candidateWords = candidates.map(\.word)
         Log.input.info("Fixed: \"\(word)\" (reading: \"\(reading)\", index: \(nthCand)/\(candidates.count), candidates: \(candidateWords))")
 
+        // Accepted-rank metric for dogfood evaluation: which rank the user
+        // actually committed. rank=0 is the raw input; rank=1 is the first
+        // displayed candidate. Aggregated by aggregate-fast-context-log.py.
+        if Self.isFastContextRerankLoggingEnabled, !skipStudy, searchMode == 0 {
+            Log.input.info("Fast context accepted: input=\"\(self.inputPat)\" word=\"\(word)\" "
+                + "rank=\(self.nthCand) candidates=\(self.candidates.count) "
+                + "source=\(String(describing: candidate.source)) kind=\(candidate.kind.rawValue)")
+        }
+
         let resolvedClient = (sender as? IMKTextInput) ?? (self.client() as? IMKTextInput)
         guard let client = resolvedClient else {
             resetState()
@@ -1314,11 +1331,13 @@ class GyaimController: IMKInputController {
             } else if let reading = candidate.reading {
                 if reading != "ds" {
                     ws?.study(word: word, reading: reading)
+                    ContextDict.shared.record(context: recentCommittedText, reading: reading, word: word)
                     Log.input.info("Studied: \"\(word)\" (reading: \"\(reading)\")")
                 }
             } else {
                 if inputPat != "ds" {
                     ws?.study(word: word, reading: inputPat)
+                    ContextDict.shared.record(context: recentCommittedText, reading: inputPat, word: word)
                     Log.input.info("Studied: \"\(word)\" (reading: \"\(inputPat)\")")
                 }
             }
@@ -1341,6 +1360,8 @@ class GyaimController: IMKInputController {
         switch candidate.source {
         case .study, .local:
             ws?.deleteFromUserDictionaries(word: candidate.word, reading: reading)
+            // Context memory must not resurrect a deleted candidate.
+            ContextDict.shared.deleteEntries(word: candidate.word, reading: reading)
         case .connection, .google, .external, .synthetic:
             Log.dict.info("Cannot delete candidate: \"\(candidate.word)\" (source: \(candidate.source))")
             return

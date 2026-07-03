@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-07-01 (BUG-022/023追加)
+> Last updated: 2026-07-04 (BUG-020/022にADR-020/021追記)
 
 ## 概要
 
@@ -271,6 +271,7 @@
 - **検証**: `ZenzRuntimeTests` に、exact同音異義語レビューの発火条件と、置換先制限がprefix候補を拒否することを確認するテストを追加。
 - **dogfood追記**: `exact-homophone-fixed` 30件を一次レビューしたところ、`ください -> くださ` の未完成候補昇格が1件見つかった。ひらがな候補を末尾 `い` 1文字だけ削った未完成候補へ短縮する置換を拒否し、regression test を追加。
 - **教訓**: 「exact保護」は prefix 予測への誤沈降を防ぐための制約であり、同じ読みの候補間比較まで一律に止めると文脈rerankの価値が出ない。安全境界は候補kindだけでなく、同一reading内/外で分ける。また、同一reading内でも未完成なひらがな短縮候補を上げると入力途中感が強くなるため、表記の完成度も安全条件に含める。
+- **2026-07-04追記**: fixRequiredPrefix 経由の置換は ADR-021 で protected exact 候補同士の直接logprob比較に置き換えた。またユーザー履歴による文脈条件付き学習（ContextDict、ADR-020）でモデルを呼ばずに同音異義語を解決する経路を追加した。
 
 ### BUG-021: `ha?` で長いlocal候補が `は？` より上位化する
 
@@ -291,6 +292,7 @@
 - **修正**: exact-homophone replacement では、replacement だけでなく候補集合全体を見て、`replacement + い` に相当する完成候補がある場合は未完成語幹への置換を拒否する。同じ prefix で安全な `ください` が後続候補にあればそちらへ移動できる。Swift heuristic / offline evaluator でも `少な` / `くださ` のような末尾 `い` 欠落語幹へ `incompleteISuffixStemPenalty` を与える。
 - **検証**: `ZenzRuntimeTests` に current best が `下さ` でも `くださ` を飛ばし `ください` へ到達する regression test を追加。`AIRerankerTests` と fast-context eval fixture に `sukuna -> 少な` / `kudasa -> くださ` 抑制を追加。
 - **教訓**: safety guard は current best との2者比較だけでは足りない。候補集合内のより完成した候補を見て、未完成語幹への降格を拒否する。
+- **2026-07-04追記**: ADR-021 で置換機構を直接logprob比較に変更し、未完成語幹は比較対象から除外（`exactHomophoneCandidateIndices`）する構造にしたため、この置換ガードのクラスは経路ごと解消。heuristic 側は `incompleteStemPenalty` に改名し、`っ` 終わり語幹（`使っ` vs `使った`）にも汎化した。
 
 ### BUG-023: 句読点付き読みでコード風clipboardが外部候補登録される
 

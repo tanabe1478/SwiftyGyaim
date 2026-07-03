@@ -251,7 +251,46 @@ final class AIRerankerTests: XCTestCase {
 
         XCTAssertNotEqual(response.order.first, 2)
         let stemBreakdown = AIReranker.localScoreBreakdown(candidate: request.candidates[2], request: request)
-        XCTAssertEqual(stemBreakdown.contributions["incompleteISuffixStemPenalty"], -4.00)
+        XCTAssertEqual(stemBreakdown.contributions["incompleteStemPenalty"], -4.00)
+    }
+
+    func testLocalRerankPenalizesSmallTsuStemWhenCompletedCandidateExists() {
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "tukat",
+            hiragana: "つかっ",
+            context: "それを",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "使った",
+                                  reading: "tukatta",
+                                  source: "connection",
+                                  kind: "prefix"),
+                AIRerankCandidate(index: 1,
+                                  text: "使っ",
+                                  reading: "tukat",
+                                  source: "connection",
+                                  kind: "exact")
+            ]
+        )
+
+        let breakdown = AIReranker.localScoreBreakdown(candidate: request.candidates[1], request: request)
+
+        XCTAssertEqual(breakdown.contributions["incompleteStemPenalty"], -4.00)
+        XCTAssertEqual(AIReranker.localRerank(request).order.first, 0)
+    }
+
+    func testIsIncompleteStemCompletionCoversISuffixAndSmallTsu() {
+        XCTAssertTrue(AIReranker.isIncompleteStemCompletion(stem: "くださ", completed: "ください"))
+        XCTAssertTrue(AIReranker.isIncompleteStemCompletion(stem: "使っ", completed: "使った"))
+        XCTAssertTrue(AIReranker.isIncompleteStemCompletion(stem: "言っ", completed: "言って"))
+        // Completion must be exactly one character longer.
+        XCTAssertFalse(AIReranker.isIncompleteStemCompletion(stem: "くださ", completed: "くださいませ"))
+        // "ため" → "ために" is a legitimate shortening, not a broken stem.
+        XCTAssertFalse(AIReranker.isIncompleteStemCompletion(stem: "ため", completed: "ために"))
+        // "する" → "するな" must not be penalized.
+        XCTAssertFalse(AIReranker.isIncompleteStemCompletion(stem: "する", completed: "するな"))
     }
 
     func testLocalRerankDoesNotPenalizeOtherShortening() {
@@ -277,7 +316,82 @@ final class AIRerankerTests: XCTestCase {
 
         let breakdown = AIReranker.localScoreBreakdown(candidate: request.candidates[1], request: request)
 
-        XCTAssertNil(breakdown.contributions["incompleteISuffixStemPenalty"])
+        XCTAssertNil(breakdown.contributions["incompleteStemPenalty"])
+    }
+
+    func testLocalRerankUsesContextAffinityForExactHomophones() {
+        // "どちらの" 文脈で過去に「向き」を選んだ履歴 (contextAffinity=1.0) がある場合、
+        // study順で先行する「無機」より「向き」を上げる。
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "muki",
+            hiragana: "むき",
+            context: "どちらの",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "無機",
+                                  reading: "muki",
+                                  source: "study",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 1,
+                                  text: "向き",
+                                  reading: "muki",
+                                  source: "study",
+                                  kind: "exact",
+                                  contextAffinity: 1.0)
+            ]
+        )
+
+        let response = AIReranker.localRerank(request)
+
+        XCTAssertEqual(response.order.first, 1)
+        let breakdown = AIReranker.localScoreBreakdown(candidate: request.candidates[1], request: request)
+        XCTAssertEqual(breakdown.contributions["contextAffinityBonus"], 1.50)
+    }
+
+    func testLocalScoreBreakdownExposesStudyFrequencyBonus() {
+        let frequent = AIRerankCandidate(index: 0,
+                                         text: "機能",
+                                         reading: "kinou",
+                                         source: "study",
+                                         kind: "exact",
+                                         studyFrequency: 8)
+        let request = AIRerankRequest(version: 1,
+                                      mode: "fast-context-rerank",
+                                      inputPat: "kinou",
+                                      hiragana: "きのう",
+                                      context: nil,
+                                      candidates: [frequent])
+
+        let breakdown = AIReranker.localScoreBreakdown(candidate: frequent, request: request)
+        XCTAssertEqual(breakdown.contributions["studyFrequencyBonus"], 0.30)
+
+        let once = AIRerankCandidate(index: 0,
+                                     text: "機能",
+                                     reading: "kinou",
+                                     source: "study",
+                                     kind: "exact",
+                                     studyFrequency: 1)
+        let onceBreakdown = AIReranker.localScoreBreakdown(candidate: once, request: request)
+        XCTAssertNil(onceBreakdown.contributions["studyFrequencyBonus"])
+
+        // Frequency bonus only applies to study-sourced candidates.
+        let nonStudy = AIRerankCandidate(index: 0,
+                                         text: "機能",
+                                         reading: "kinou",
+                                         source: "connection",
+                                         kind: "exact",
+                                         studyFrequency: 8)
+        let nonStudyBreakdown = AIReranker.localScoreBreakdown(candidate: nonStudy, request: request)
+        XCTAssertNil(nonStudyBreakdown.contributions["studyFrequencyBonus"])
+    }
+
+    func testCandidateDecodingDefaultsOptionalFeaturesToNil() throws {
+        let json = #"{"index":0,"text":"向き","reading":"muki","source":"study","kind":"exact"}"#
+        let candidate = try JSONDecoder().decode(AIRerankCandidate.self, from: Data(json.utf8))
+        XCTAssertNil(candidate.contextAffinity)
+        XCTAssertNil(candidate.studyFrequency)
     }
 
     func testLocalRerankPrefersQuestionPhraseWithoutPunctuationWhenReadingTies() {

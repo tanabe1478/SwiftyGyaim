@@ -28,6 +28,10 @@ OPTIONAL_FIELDS = {"expectedTopWithoutContext"}
 
 CANDIDATE_REQUIRED_FIELDS = {"text", "reading", "source", "kind"}
 
+# Optional simulated runtime metadata. contextAffinity mirrors ContextDict
+# lookups (0.0...1.0), studyFrequency mirrors study-dict frequency.
+CANDIDATE_OPTIONAL_FIELDS = {"contextAffinity", "studyFrequency"}
+
 KNOWN_KINDS = {
     "raw",
     "exact",
@@ -55,6 +59,9 @@ KNOWN_TAGS = {
     "latency-sensitive",
     "polite-negative",
     "dogfood-regression",
+    "homophone",
+    "context-affinity",
+    "model-required",
 }
 
 
@@ -105,6 +112,17 @@ def validate_candidate(record: dict[str, Any], candidate: Any, index: int) -> No
             raise ValidationError(f"line {line}: candidates[{index}].{field} must be a non-empty string")
     if candidate["kind"] not in KNOWN_KINDS:
         raise ValidationError(f"line {line}: candidates[{index}].kind is unknown: {candidate['kind']}")
+    unknown = set(candidate) - CANDIDATE_REQUIRED_FIELDS - CANDIDATE_OPTIONAL_FIELDS
+    if unknown:
+        raise ValidationError(f"line {line}: candidates[{index}] unknown fields: {sorted(unknown)}")
+    if "contextAffinity" in candidate:
+        affinity = candidate["contextAffinity"]
+        if not isinstance(affinity, (int, float)) or isinstance(affinity, bool) or not 0.0 <= float(affinity) <= 1.0:
+            raise ValidationError(f"line {line}: candidates[{index}].contextAffinity must be a number in [0, 1]")
+    if "studyFrequency" in candidate:
+        frequency = candidate["studyFrequency"]
+        if not isinstance(frequency, int) or isinstance(frequency, bool) or frequency < 1:
+            raise ValidationError(f"line {line}: candidates[{index}].studyFrequency must be a positive integer")
 
 
 def validate_record(record: dict[str, Any], seen_ids: set[str]) -> None:
