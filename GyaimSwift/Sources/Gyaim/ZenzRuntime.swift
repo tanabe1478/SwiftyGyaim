@@ -306,6 +306,19 @@ final class BundledZenzRuntime: ZenzRuntime {
                                             localOrder: [Int],
                                             best: AIRerankCandidate,
                                             runtimeStart: CFAbsoluteTime) -> AIRerankResponse {
+        // Strong ContextDict evidence means the user already chose this
+        // homophone in this context — the model must not override a personal
+        // choice, and skipping saves the review latency entirely.
+        if Self.shouldSkipHomophoneReviewForAffinity(best: best,
+                                                     threshold: Self.exactHomophoneAffinityThreshold()) {
+            Log.input.info("Zenz exact-homophone review skipped: input=\"\(request.inputPat)\" "
+                + "reason=context-affinity best=\"\(best.text)\" "
+                + "affinity=\(String(format: "%.2f", best.contextAffinity ?? 0))")
+            return AIRerankResponse(order: localOrder,
+                                    scores: heuristic.scores,
+                                    model: "swift-local-heuristic+zenz-review-affinity-skipped")
+        }
+
         let indices = Self.exactHomophoneCandidateIndices(request: request,
                                                           localOrder: localOrder,
                                                           limit: Self.exactHomophoneMaxCandidates())
@@ -466,8 +479,20 @@ final class BundledZenzRuntime: ZenzRuntime {
                                             localOrder: [Int],
                                             request: AIRerankRequest) -> Int? {
         let normalizedPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard normalizedPrefix.count >= 2,
-              let currentBest = localOrder.first else { return nil }
+        guard !normalizedPrefix.isEmpty, let currentBest = localOrder.first else { return nil }
+        // A 1-char prefix is too broad for hasPrefix matching ("こ" would match
+        // half the candidate list), but dogfood showed ~48% of reviews end as
+        // kept-local no-ops on single-kanji prefixes like "書" / "十". Allow the
+        // narrow safe subset: a candidate whose text IS the prefix and whose
+        // reading exactly matches the input.
+        if normalizedPrefix.count == 1 {
+            return localOrder.first { index in
+                guard index != currentBest,
+                      let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
+                return candidate.text == normalizedPrefix
+                    && isProtectedExactReadingCandidate(candidate, request: request)
+            }
+        }
         return localOrder.first { index in
             guard index != currentBest,
                   let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
@@ -480,6 +505,15 @@ final class BundledZenzRuntime: ZenzRuntime {
     /// whose completion exists in the candidate set (e.g. "くださ" while
     /// "ください" is present, "使っ" while "使った" is present) are excluded so
     /// the model can never promote a mid-conjugation truncation.
+    ///
+    /// The raw kana spelling of the input (candidate text == request.hiragana)
+    /// is also excluded unless it is the current best: the char-level LM
+    /// systematically assigns higher probability to kana sequences, so "こみ"
+    /// would beat "込み" and "いっか" would beat "一家" regardless of context
+    /// (BUG-024, dogfood 2026-07-05). The kana spelling stays reachable through
+    /// the heuristic order and the kana-confirm keys. Hiragana words that are
+    /// not the raw spelling (e.g. "ください" for input "kudasa") remain
+    /// comparable.
     static func exactHomophoneCandidateIndices(request: AIRerankRequest,
                                                localOrder: [Int],
                                                limit: Int = 3) -> [Int] {
@@ -489,9 +523,18 @@ final class BundledZenzRuntime: ZenzRuntime {
             guard let candidate = request.candidates.first(where: { $0.index == index }),
                   isProtectedExactReadingCandidate(candidate, request: request),
                   !isIncompleteStemCandidate(candidate, in: request) else { continue }
+            if index != localOrder.first,
+               isHiraganaOnlyText(candidate.text),
+               candidate.text == request.hiragana { continue }
             result.append(index)
         }
         return result
+    }
+
+    private static func isHiraganaOnlyText(_ text: String) -> Bool {
+        !text.isEmpty && text.unicodeScalars.allSatisfy { scalar in
+            0x3041...0x3096 ~= scalar.value || scalar.value == 0x30FC
+        }
     }
 
     private static func isIncompleteStemCandidate(_ candidate: AIRerankCandidate,
@@ -522,6 +565,20 @@ final class BundledZenzRuntime: ZenzRuntime {
 
     private static func maxScoreIndex(_ scores: [Int: Double]) -> Int? {
         scores.sorted { $0.key < $1.key }.max { $0.value < $1.value }?.key
+    }
+
+    /// True when ContextDict evidence for the current best is strong enough
+    /// (suffix overlap >= 3 chars at the default threshold) to settle the
+    /// homophone choice without consulting the model.
+    static func shouldSkipHomophoneReviewForAffinity(best: AIRerankCandidate,
+                                                     threshold: Double) -> Bool {
+        guard threshold > 0, let affinity = best.contextAffinity else { return false }
+        return affinity >= threshold
+    }
+
+    private static func exactHomophoneAffinityThreshold() -> Double {
+        let configured = GyaimSettings.double(forKey: "aiRerankExactHomophoneAffinityThreshold")
+        return configured > 0 ? min(configured, 1.0) : 0.75
     }
 
     private static func exactHomophoneScoreMargin() -> Double {

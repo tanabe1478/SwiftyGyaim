@@ -107,6 +107,8 @@ def parse_list_head(value: str) -> str | None:
 
 
 def infer_outcome(model: str) -> str:
+    if "review-affinity-skipped" in model:
+        return "affinity-skip"
     if "review-skipped" in model:
         return "protected-exact-skip"
     if "review-exact-homophone-unavailable" in model:

@@ -291,6 +291,46 @@ final class AIRerankerTests: XCTestCase {
         XCTAssertFalse(AIReranker.isIncompleteStemCompletion(stem: "ため", completed: "ために"))
         // "する" → "するな" must not be penalized.
         XCTAssertFalse(AIReranker.isIncompleteStemCompletion(stem: "する", completed: "するな"))
+        // BUG-025: a stem already ending in い is not missing its い. A garbage
+        // study entry "してほしいい" must not make "してほしい" incomplete.
+        XCTAssertFalse(AIReranker.isIncompleteStemCompletion(stem: "してほしい", completed: "してほしいい"))
+    }
+
+    func testLocalRerankDoesNotDemoteCompleteWordForGarbageISuffixEntry() {
+        // BUG-025 regression: studydict typo "してほしいい" (freq 1) demoted
+        // the user's most frequent phrase "してほしい" (freq 22) to 3rd.
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "sitehosii",
+            hiragana: "してほしい",
+            context: "レビュー",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "してほしい",
+                                  reading: "sitehosii",
+                                  source: "study",
+                                  kind: "exact",
+                                  studyFrequency: 22),
+                AIRerankCandidate(index: 1,
+                                  text: "してほしいい",
+                                  reading: "sitehosiii",
+                                  source: "study",
+                                  kind: "prefix",
+                                  studyFrequency: 1),
+                AIRerankCandidate(index: 2,
+                                  text: "してほしいな",
+                                  reading: "sitehosiina",
+                                  source: "connection",
+                                  kind: "prefix")
+            ]
+        )
+
+        let response = AIReranker.localRerank(request)
+
+        XCTAssertEqual(response.order.first, 0)
+        let breakdown = AIReranker.localScoreBreakdown(candidate: request.candidates[0], request: request)
+        XCTAssertNil(breakdown.contributions["incompleteStemPenalty"])
     }
 
     func testLocalRerankDoesNotPenalizeOtherShortening() {

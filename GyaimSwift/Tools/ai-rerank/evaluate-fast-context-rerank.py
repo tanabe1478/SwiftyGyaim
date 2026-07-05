@@ -225,6 +225,8 @@ def is_expected_protected_exact(record: dict[str, Any], expected: str) -> bool:
 
 def infer_outcome(model: Any) -> str:
     value = str(model or "unknown")
+    if "review-affinity-skipped" in value:
+        return "affinity-skip"
     if "review-skipped" in value:
         return "protected-exact-skip"
     if "review-exact-homophone-unavailable" in value:
@@ -399,7 +401,9 @@ def is_potential_incomplete_stem(text: str) -> bool:
 def is_incomplete_stem_completion(stem: str, completed: str) -> bool:
     if completed == stem or not completed.startswith(stem) or len(completed) != len(stem) + 1:
         return False
-    if completed[-1] == "い":
+    # A stem already ending in い is not "missing" its い (BUG-025:
+    # garbage "してほしいい" must not demote "してほしい").
+    if completed[-1] == "い" and not stem.endswith("い"):
         return True
     return stem.endswith("っ")
 

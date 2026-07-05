@@ -130,6 +130,165 @@ final class ZenzRuntimeTests: XCTestCase {
                                                                      margin: 0.10), 2)
     }
 
+    func testExactHomophoneCandidateIndicesExcludesRawKanaSpelling() {
+        // BUG-024: the char-level LM promoted "こみ" over "込み" and "いっか"
+        // over "一家". The raw kana spelling of the input must not enter the
+        // comparison unless it is already the best.
+        let request = makeKanaBiasRequest()
+
+        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
+                                                                        localOrder: [0, 1, 2])
+
+        XCTAssertEqual(indices, [0, 2])
+    }
+
+    func testExactHomophoneCandidateIndicesKeepsRawKanaSpellingWhenItIsBest() {
+        // When the user's own history made the kana spelling the best, kanji
+        // homophones can still be compared against (and promoted over) it.
+        let request = makeKanaBiasRequest()
+
+        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
+                                                                        localOrder: [1, 0, 2])
+
+        XCTAssertEqual(indices, [1, 0, 2])
+    }
+
+    func testExactHomophoneCandidateIndicesKeepsHiraganaWordThatIsNotRawSpelling() {
+        // "ください" (input kudasa → raw spelling くださ) is a legitimate
+        // hiragana word and must stay comparable (BUG-022 regression intent).
+        let request = makeKudasaRegressionRequest()
+
+        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
+                                                                        localOrder: [2, 1, 0])
+
+        XCTAssertTrue(indices.contains(0))
+    }
+
+    func testSingleCharacterPrefixPromotesExactTextMatchOnly() {
+        // Dogfood 2026-07-05: ~48% of normal reviews ended kept-local on
+        // single-kanji prefixes like "書". Allow only the exact-text,
+        // exact-reading candidate for a 1-char prefix.
+        let request = makeSingleKanjiRequest()
+
+        XCTAssertEqual(BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "書",
+                                                                      localOrder: [0, 1, 2],
+                                                                      request: request), 1)
+        // hasPrefix-style matches (書き) must not be promoted from a 1-char prefix.
+        XCTAssertNil(BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "描",
+                                                                    localOrder: [0, 1, 2],
+                                                                    request: request))
+    }
+
+    func testSingleCharacterPrefixRejectsNonProtectedExactTextMatch() {
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "kak",
+            hiragana: "かk",
+            context: "文脈あり",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "書く",
+                                  reading: "kaku",
+                                  source: "connection",
+                                  kind: "prefix"),
+                AIRerankCandidate(index: 1,
+                                  text: "書",
+                                  reading: "kaku",
+                                  source: "connection",
+                                  kind: "prefix")
+            ]
+        )
+
+        // "書" has reading "kaku" != inputPat "kak" → not protected exact → nil.
+        XCTAssertNil(BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "書",
+                                                                    localOrder: [0, 1],
+                                                                    request: request))
+    }
+
+    func testShouldSkipHomophoneReviewForAffinity() {
+        let strongAffinity = AIRerankCandidate(index: 0,
+                                               text: "向き",
+                                               reading: "muki",
+                                               source: "study",
+                                               kind: "exact",
+                                               contextAffinity: 0.75)
+        let weakAffinity = AIRerankCandidate(index: 0,
+                                             text: "向き",
+                                             reading: "muki",
+                                             source: "study",
+                                             kind: "exact",
+                                             contextAffinity: 0.5)
+        let noAffinity = AIRerankCandidate(index: 0,
+                                           text: "向き",
+                                           reading: "muki",
+                                           source: "study",
+                                           kind: "exact")
+
+        XCTAssertTrue(BundledZenzRuntime.shouldSkipHomophoneReviewForAffinity(best: strongAffinity,
+                                                                              threshold: 0.75))
+        XCTAssertFalse(BundledZenzRuntime.shouldSkipHomophoneReviewForAffinity(best: weakAffinity,
+                                                                               threshold: 0.75))
+        XCTAssertFalse(BundledZenzRuntime.shouldSkipHomophoneReviewForAffinity(best: noAffinity,
+                                                                               threshold: 0.75))
+        XCTAssertFalse(BundledZenzRuntime.shouldSkipHomophoneReviewForAffinity(best: strongAffinity,
+                                                                               threshold: 0))
+    }
+
+    private func makeKanaBiasRequest() -> AIRerankRequest {
+        AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "komi",
+            hiragana: "こみ",
+            context: "レビューして",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "込み",
+                                  reading: "komi",
+                                  source: "study",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 1,
+                                  text: "こみ",
+                                  reading: "komi",
+                                  source: "connection",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 2,
+                                  text: "混み",
+                                  reading: "komi",
+                                  source: "connection",
+                                  kind: "exact")
+            ]
+        )
+    }
+
+    private func makeSingleKanjiRequest() -> AIRerankRequest {
+        AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "kaku",
+            hiragana: "かく",
+            context: "文脈あり",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "書く",
+                                  reading: "kakutei",
+                                  source: "connection",
+                                  kind: "prefix"),
+                AIRerankCandidate(index: 1,
+                                  text: "書",
+                                  reading: "kaku",
+                                  source: "connection",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 2,
+                                  text: "書き",
+                                  reading: "kaki",
+                                  source: "connection",
+                                  kind: "prefix")
+            ]
+        )
+    }
+
     func testShouldReviewExactHomophonesRequiresContextAndAlternative() {
         let request = makeExactHomophoneRequest(context: "どちらの")
         let best = request.candidates[0]

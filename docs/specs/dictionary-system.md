@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-07-04 (ContextDict追加・studyFrequencyをSearchCandidateへ)
+> Last updated: 2026-07-06 (ContextDict追加・studyFrequencyをSearchCandidateへ)
 
 ## 概要
 

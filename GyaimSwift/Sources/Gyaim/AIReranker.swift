@@ -238,11 +238,16 @@ enum AIReranker {
     /// looks like a mid-conjugation truncation:
     /// - "少な" → "少ない" (i-adjective missing the final い)
     /// - "使っ" → "使った" / "言っ" → "言って" (no Japanese word ends with っ)
+    ///
+    /// A stem that already ends with い is NOT missing its い — the premise of
+    /// the い rule doesn't apply. Without this guard, a garbage study entry
+    /// like "してほしいい" made the legitimate "してほしい" look like an
+    /// incomplete stem and demoted it (BUG-025).
     static func isIncompleteStemCompletion(stem: String, completed: String) -> Bool {
         guard completed != stem,
               completed.hasPrefix(stem),
               completed.dropFirst(stem.count).count == 1 else { return false }
-        if completed.last == "い" { return true }
+        if completed.last == "い", stem.last != "い" { return true }
         if stem.last == "っ" { return true }
         return false
     }
