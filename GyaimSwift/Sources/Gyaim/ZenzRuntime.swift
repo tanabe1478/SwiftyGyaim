@@ -611,10 +611,15 @@ final class BundledZenzRuntime: ZenzRuntime {
 
     private static func isProtectedExactReadingCandidate(_ candidate: AIRerankCandidate,
                                                          request: AIRerankRequest) -> Bool {
-        guard candidate.reading == request.inputPat else { return false }
         switch candidate.kind {
-        case CandidateKind.exact.rawValue, CandidateKind.compound.rawValue:
-            return true
+        case CandidateKind.exact.rawValue:
+            // WordSearch assigns .exact only for exact or kana-equivalent
+            // readings (BUG-026: study "kousinn" vs typed "kousin"), so an
+            // exact kind with a reading is protected. External candidates also
+            // use .exact but carry no reading.
+            return candidate.reading != nil
+        case CandidateKind.compound.rawValue:
+            return candidate.reading == request.inputPat
         default:
             return false
         }

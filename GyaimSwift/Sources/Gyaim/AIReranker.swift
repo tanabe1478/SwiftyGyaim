@@ -92,7 +92,7 @@ enum AIReranker {
             "sourceBias": sourceBias(candidate.source),
             "kindBias": kindBias(candidate.kind)
         ]
-        if candidate.reading == request.inputPat {
+        if isExactReadingMatch(candidate: candidate, request: request) {
             contributions["exactReadingMatchBonus"] = 0.20
             if candidate.kind == CandidateKind.exact.rawValue {
                 contributions["exactReadingKindBonus"] = exactReadingBonus(candidate.text)
@@ -106,7 +106,10 @@ enum AIReranker {
             contributions["contextAffinityBonus"] = min(affinity, 1.0) * 1.50
         }
         if candidate.source == "study", let frequency = candidate.studyFrequency, frequency > 1 {
-            contributions["studyFrequencyBonus"] = min(0.30, log2(Double(frequency)) * 0.10)
+            // Cap at 0.60 so a heavily used homophone (更新 freq 101) can beat a
+            // rarely used one (行進 freq 11) even when both are exact-reading
+            // study entries — 0.30 saturated at freq 8 and made them tie (BUG-026).
+            contributions["studyFrequencyBonus"] = min(0.60, log2(Double(frequency)) * 0.10)
         }
         contributions["politeNegativePredictionPenalty"] = -politeNegativePredictionPenalty(candidate: candidate,
                                                                                              request: request)
@@ -132,6 +135,16 @@ enum AIReranker {
 
     private static func localScore(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
         localScoreBreakdown(candidate: candidate, request: request).total
+    }
+
+    /// Exact reading match includes romaji spelling variants of the same kana:
+    /// WordSearch assigns `kind=exact` when the candidate reading is
+    /// kana-equivalent to the query (e.g. study "kousinn" for typed "kousin",
+    /// BUG-026), so a dictionary-derived exact kind with a reading is trusted
+    /// here. External candidates also carry `kind=exact` but have no reading.
+    static func isExactReadingMatch(candidate: AIRerankCandidate, request: AIRerankRequest) -> Bool {
+        if candidate.reading == request.inputPat { return true }
+        return candidate.kind == CandidateKind.exact.rawValue && candidate.reading != nil
     }
 
     private static func exactReadingBonus(_ text: String) -> Double {
