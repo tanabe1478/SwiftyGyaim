@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-07-06 (い終わり語幹はincompleteStem対象外に)
+> Last updated: 2026-07-07 (ローマ字揺れのかな等価exact判定・頻度ボーナスcap引き上げ)
 
 ## 概要
 
@@ -113,7 +113,9 @@ External command は stdout に JSON を返す。
 
 Swift heuristic rerank は source bias / kind bias / reading一致 / 漢字含有 / script transition penalty を足し合わせる。raw input は候補0に保持するが、ランキング上は強い負スコアを与える。完全一致読み (`kind=exact` かつ `reading == inputPat`) は、prefix / lattice のノイズより優先されるよう追加 bonus を与える。ただし `決して` / `絶対に` / `してはいけ` / `してはなら` / `禁止` / `だめ` / `ダメ` / `ないで` のような強い禁止・否定命令 cue が左文脈にあり、prefix 候補が `な` で終わる場合は contextPredictionBonus で prefix 候補を上げる。一方で、`masen` を明示的に入力しておらず、左文脈にも否定 cue がない段階では、`お願いします` / `思います` への途中入力で `お願いしません` / `思いません` が先頭化しないよう polite negative prediction penalty を与える。さらに `漢字 + の + 漢字` や文末 `では` / `には` / `とは` のような機能語を含む自然なphraseに bonus を与え、ログ由来の `imanodankaideha -> 今の段階では` のような長文候補を、固定phrase辞書なしでも `今野...` 系のprefix複合より上げる。同じ読み・同種候補で句読点付きが元順だけで勝つのを避けるため、文末 `？` / `！` には小さな penalty を与える。一方、`ha?` のように inputPat が `?` / `!` で終わる場合は、対応する句読点を含まない候補に `punctuatedInputMismatchPenalty` を与え、`投機的デコーディング` のような長い local/study 候補が `は？` より上がらないようにする。さらに、同じ候補集合に完成形がある未完成語幹へ `incompleteStemPenalty` を与える。対象は `少な -> 少ない` / `くださ -> ください` のような末尾 `い` 欠落と、`使っ -> 使った` / `言っ -> 言って` のような促音 `っ` 終わり語幹（日本語の語は `っ` で終わらないため誤爆しない）の2クラス。`ため -> ために` や `する -> するな` のような正当な短縮形は penalize しない。また、stemが既に `い` で終わる場合は「いの欠落」という前提が成り立たないため対象外とする（BUG-025: typo由来の `してほしいい` が `してほしい` を沈めた）。Zenz generation / review 由来の全漢字語には小さな追加 bonus を与え、`kyoukaisen -> 境界線` のようにモデルが示した全漢字候補が `教会せん` などの混在script lattice候補に埋もれないようにする。
 
-文脈条件付き学習（ADR-020）として、確定時に `(左文脈末尾8文字, reading, word)` を `~/.gyaim/contextdict.txt` に記録し、rerank時に同じ (reading, word) の文脈suffix一致度を `contextAffinity`（suffix共通長2文字以上で発火、4文字で1.0に飽和）として候補に付与する。`AIReranker` は `contextAffinityBonus = min(affinity, 1.0) * 1.50` を加点し、`向き` / `無機` のような同音異義語をユーザー履歴からモデルなしで選べるようにする。また study 候補には `studyFrequency` を渡し、`studyFrequencyBonus = min(0.30, log2(frequency) * 0.10)`（frequency 2以上で発火）でフラットな sourceBias を頻度で補正する。
+文脈条件付き学習（ADR-020）として、確定時に `(左文脈末尾8文字, reading, word)` を `~/.gyaim/contextdict.txt` に記録し、rerank時に同じ (reading, word) の文脈suffix一致度を `contextAffinity`（suffix共通長2文字以上で発火、4文字で1.0に飽和）として候補に付与する。`AIReranker` は `contextAffinityBonus = min(affinity, 1.0) * 1.50` を加点し、`向き` / `無機` のような同音異義語をユーザー履歴からモデルなしで選べるようにする。また study 候補には `studyFrequency` を渡し、`studyFrequencyBonus = min(0.60, log2(frequency) * 0.10)`（frequency 2以上で発火）でフラットな sourceBias を頻度で補正する。capを0.60とするのは、`更新`（頻度101）と `行進`（頻度11）のような同読みstudy候補ペアで頻度差がMRU順を上書きできるようにするため（0.30では頻度8で飽和し区別できない、BUG-026）。
+
+読み完全一致の判定（`AIReranker.isExactReadingMatch`）はローマ字表記の揺れを含む: `reading == inputPat` に加え、**辞書由来の `kind=exact` かつ reading 非nil** を exact として信頼する。`kind=exact` の付与元である `WordSearch.matchKind` が、`kousinn`（更新の学習reading）と `kousin`（実入力）のようなかな等価readingを exact と判定するため（BUG-026）。外部候補（クリップボード等）も `kind=exact` を持つが reading が nil のため対象外。同じ理由で fast-context の protected exact 判定・同音異義語レビュー対象も `kind=exact` + reading 非nil を信頼し、`kousin` 入力時に `更新`（kousinn）と `行進`（kousin）が同音異義語として比較される。
 
 Swift runtime 側でも `AIReranker.localScoreBreakdown(candidate:request:)` が feature contribution と total score を返す。これにより、offline evaluator の `--show-features` と同じ観点で source bias / kind bias / exact reading bonus / prefix penalty / context bonus / context affinity bonus / study frequency bonus / kanji bonus / natural phrase bonus / punctuation penalty / punctuated input mismatch penalty / incomplete stem penalty / script transition penalty / zenz kanji bonus / raw ASCII penalty をテスト・debug できる。
 

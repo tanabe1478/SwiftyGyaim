@@ -219,6 +219,8 @@ def evaluate_record(
 def is_expected_protected_exact(record: dict[str, Any], expected: str) -> bool:
     for candidate in record["candidates"]:
         if candidate["text"] == expected:
+            if candidate.get("kind") == "exact":
+                return bool(candidate.get("reading"))
             return candidate.get("reading") == record["inputPat"] and candidate.get("kind") in PROTECTED_EXACT_KINDS
     return False
 
@@ -267,7 +269,7 @@ def local_score_breakdown(
         "sourceBias": source_bias(candidate["source"]),
         "kindBias": kind_bias(candidate["kind"]),
     }
-    if candidate.get("reading") == request["inputPat"]:
+    if is_exact_reading_match(candidate, request):
         contributions["exactReadingMatchBonus"] = 0.20
         if candidate["kind"] == "exact":
             contributions["exactReadingKindBonus"] = exact_reading_bonus(candidate["text"])
@@ -279,7 +281,7 @@ def local_score_breakdown(
         contributions["contextAffinityBonus"] = min(float(affinity), 1.0) * 1.50
     study_frequency = candidate.get("studyFrequency")
     if candidate["source"] == "study" and isinstance(study_frequency, int) and study_frequency > 1:
-        contributions["studyFrequencyBonus"] = min(0.30, math.log2(float(study_frequency)) * 0.10)
+        contributions["studyFrequencyBonus"] = min(0.60, math.log2(float(study_frequency)) * 0.10)
     contributions["politeNegativePredictionPenalty"] = -polite_negative_prediction_penalty(candidate, request)
     if any(is_kanji(ch) for ch in candidate["text"]):
         contributions["kanjiBonus"] = 0.10
@@ -302,6 +304,14 @@ def apply_feature_weights(contributions: dict[str, float], feature_weights: dict
         feature: value * feature_weights.get(feature, 1.0)
         for feature, value in contributions.items()
     }
+
+
+def is_exact_reading_match(candidate: dict[str, Any], request: dict[str, Any]) -> bool:
+    # Mirrors AIReranker.isExactReadingMatch: kind=exact with a reading is a
+    # kana-equivalent exact match assigned by WordSearch (BUG-026).
+    if candidate.get("reading") == request["inputPat"]:
+        return True
+    return candidate["kind"] == "exact" and bool(candidate.get("reading"))
 
 
 def exact_reading_bonus(text: str) -> float:
