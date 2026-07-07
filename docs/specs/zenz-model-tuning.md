@@ -1,7 +1,7 @@
 # Spec: Zenz / Zenzai model tuning for SwiftyGyaim
 
 > Status: Draft
-> Last updated: 2026-07-05
+> Last updated: 2026-07-08
 > Trigger: Zenzai / zenz model investigation, GGUF model replacement, AIReranker / ZenzRuntime training workflow, pi-tinker suitability review
 
 ## 目的
@@ -114,6 +114,7 @@ Tab 時は候補集合を作り、Swift heuristic と Zenz scoring / generation 
   - `heuristic`
   - `protected-exact-skip`
   - `affinity-skip`
+  - `short-input-skip`
   - `review-fixed`
   - `review-passed`
   - `review-kept-local`

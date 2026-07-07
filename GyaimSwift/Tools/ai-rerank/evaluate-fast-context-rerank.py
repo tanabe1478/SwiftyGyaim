@@ -229,6 +229,8 @@ def infer_outcome(model: Any) -> str:
     value = str(model or "unknown")
     if "review-affinity-skipped" in value:
         return "affinity-skip"
+    if "review-length-skipped" in value:
+        return "short-input-skip"
     if "review-skipped" in value:
         return "protected-exact-skip"
     if "review-exact-homophone-unavailable" in value:
