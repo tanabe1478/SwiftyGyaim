@@ -240,6 +240,14 @@ final class ZenzRuntimeTests: XCTestCase {
                                                                     request: request))
     }
 
+    func testShouldRunNormalReviewRequiresMinimumInputLength() {
+        // Dogfood 2026-07-08: normal reviews at input length 4 produced 81
+        // events with 0 fixes. The homophone path keeps its own (shorter) gate.
+        XCTAssertFalse(BundledZenzRuntime.shouldRunNormalReview(inputPat: "sima", minimumLength: 5))
+        XCTAssertTrue(BundledZenzRuntime.shouldRunNormalReview(inputPat: "surun", minimumLength: 5))
+        XCTAssertTrue(BundledZenzRuntime.shouldRunNormalReview(inputPat: "sima", minimumLength: 4))
+    }
+
     func testShouldSkipHomophoneReviewForAffinity() {
         let strongAffinity = AIRerankCandidate(index: 0,
                                                text: "向き",
