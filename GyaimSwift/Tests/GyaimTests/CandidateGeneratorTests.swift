@@ -91,6 +91,46 @@ final class CandidateGeneratorTests: XCTestCase {
         }
     }
 
+    func testLatticeSegmentPrefersContextAffinityHomophone() throws {
+        // Issue #59: the previously unused `context` argument now feeds
+        // ContextDict affinity into lattice segment scoring, so a homophone
+        // segment the user committed in this context wins the composition.
+        let wordSearch = try XCTUnwrap(wordSearch)
+        let tempDir = try XCTUnwrap(tempDir)
+        wordSearch.register(word: "補完", reading: "hokan")
+        wordSearch.register(word: "保管", reading: "hokan")
+        wordSearch.register(word: "後", reading: "go")
+
+        let contextDict = ContextDict()
+        contextDict.configure(file: tempDir.appendingPathComponent("contextdict.txt").path)
+        contextDict.record(context: "テストを", reading: "hokan", word: "補完")
+
+        var generator = CandidateGenerator(compoundLimit: 12, completionLimit: 0)
+        generator.contextDict = contextDict
+
+        let generated = generator.generate(inputPat: "hokango",
+                                           context: "テストを",
+                                           baseCandidates: [],
+                                           wordSearch: wordSearch)
+        let latticeWords = generated.filter { $0.kind == .lattice }.map(\.word)
+        let completionIndex = try XCTUnwrap(latticeWords.firstIndex(of: "補完後"))
+        let storageIndex = try XCTUnwrap(latticeWords.firstIndex(of: "保管後"))
+        XCTAssertLessThan(completionIndex, storageIndex)
+
+        // Control: flipping the recorded homophone flips the order — the
+        // preference comes from the context history, not from tie-break luck.
+        contextDict.deleteEntries(word: "補完", reading: "hokan")
+        contextDict.record(context: "テストを", reading: "hokan", word: "保管")
+        let flipped = generator.generate(inputPat: "hokango",
+                                         context: "テストを",
+                                         baseCandidates: [],
+                                         wordSearch: wordSearch)
+        let flippedWords = flipped.filter { $0.kind == .lattice }.map(\.word)
+        let flippedCompletion = try XCTUnwrap(flippedWords.firstIndex(of: "補完後"))
+        let flippedStorage = try XCTUnwrap(flippedWords.firstIndex(of: "保管後"))
+        XCTAssertLessThan(flippedStorage, flippedCompletion)
+    }
+
     func testLatticeGenerationSkipsVeryShortQueries() throws {
         let wordSearch = try XCTUnwrap(wordSearch)
         wordSearch.register(word: "二", reading: "ni")
