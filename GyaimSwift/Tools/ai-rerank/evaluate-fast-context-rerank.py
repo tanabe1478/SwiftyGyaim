@@ -599,6 +599,13 @@ def main() -> int:
         metavar="FEATURE=MULTIPLIER",
         help="Scale a heuristic feature contribution in lightweight mode. Can be repeated.",
     )
+    parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="Quality gate mode (issue #57): exit non-zero when any case without the "
+             "model-required tag misses top1, when any case has an unsafe top, or when "
+             "a non-model-required protected-exact candidate is demoted.",
+    )
     args = parser.parse_args()
 
     run_zenz = os.environ.get("RUN_ZENZ") == "1"
@@ -631,6 +638,41 @@ def main() -> int:
         print(json.dumps(output, ensure_ascii=False, indent=2))
     else:
         print_text_report(summary, results, show_all=args.show_all, show_features=args.show_features)
+
+    if args.gate:
+        return run_quality_gate(results)
+    return 0
+
+
+def run_quality_gate(results: list[CaseResult]) -> int:
+    """CI quality gate (issue #57).
+
+    model-required cases are known headroom (context-dependent homophones the
+    heuristic cannot solve) and are exempt from the top1/demotion checks, but
+    an unsafe top is never acceptable anywhere.
+    """
+    def is_model_required(result: CaseResult) -> bool:
+        return "model-required" in result.tags
+
+    top1_misses = [r for r in results if not is_model_required(r) and not r.top1]
+    unsafe_tops = [r for r in results if r.unsafeTop]
+    demotions = [r for r in results if not is_model_required(r) and r.exactDemotion]
+
+    problems: list[str] = []
+    for result in top1_misses:
+        problems.append(f"top1 miss: {result.id} expected={result.expectedTop} predicted={result.predictedTop}")
+    for result in unsafe_tops:
+        problems.append(f"unsafe top: {result.id} predicted={result.predictedTop}")
+    for result in demotions:
+        problems.append(f"exact demotion: {result.id} expected={result.expectedTop} predicted={result.predictedTop}")
+
+    exempt = sum(1 for result in results if is_model_required(result))
+    if problems:
+        print(f"\nGATE FAILED ({len(problems)} problems, {exempt} model-required cases exempt):", file=sys.stderr)
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
+        return 2
+    print(f"\nGATE OK: {len(results)} cases ({exempt} model-required exempt from top1/demotion checks)")
     return 0
 
 
