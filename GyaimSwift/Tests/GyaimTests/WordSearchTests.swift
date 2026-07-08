@@ -51,6 +51,19 @@ final class WordSearchTests: XCTestCase {
         XCTAssertTrue(words.contains("万"), "Expected '万' in exact search: \(words)")
     }
 
+    func testKanaEquivalentReadingIsExactKind() throws {
+        // BUG-026: a study entry learned as "kousinn" (nn) must count as an
+        // exact reading match for typed "kousin" (n) — same kana こうしん.
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "更新", reading: "kousinn")
+
+        let results = ws.search(query: "kousin", searchMode: 0)
+        let koushin = results.first { $0.word == "更新" }
+
+        XCTAssertEqual(koushin?.kind, .exact)
+        XCTAssertEqual(koushin?.reading, "kousinn")
+    }
+
     func testSearchProductiveKaSuffixCandidate() throws {
         try XCTSkipIf(ws == nil)
         let results = ws.search(query: "kyokushoka", searchMode: 1)

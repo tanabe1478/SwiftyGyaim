@@ -253,6 +253,20 @@ final class BundledZenzRuntime: ZenzRuntime {
                                     model: "swift-local-heuristic+zenz-review-skipped")
         }
 
+        // Normal (non-homophone) review needs longer input to act: dogfood
+        // 2026-07-08 showed 81 reviews at input length 4 with 0 fixes (57
+        // kept-local / 24 passed), while all observed review-fixed value
+        // started at length 5. Homophone review stays at the global model
+        // gate (length 4) where its fix rate is ~30%.
+        guard Self.shouldRunNormalReview(inputPat: request.inputPat,
+                                         minimumLength: Self.normalReviewMinInputLength()) else {
+            Log.input.info("Zenz fast-context review skipped: input=\"\(request.inputPat)\" "
+                + "reason=short-input best=\"\(best.text)\"")
+            return AIRerankResponse(order: localOrder,
+                                    scores: heuristic.scores,
+                                    model: "swift-local-heuristic+zenz-review-length-skipped")
+        }
+
         let prompt = Self.prompt(for: request)
         Log.input.info("Zenz fast-context review start: input=\"\(request.inputPat)\" "
             + "best=\"\(best.text)\" candidates=\(request.candidates.count)")
@@ -567,6 +581,16 @@ final class BundledZenzRuntime: ZenzRuntime {
         scores.sorted { $0.key < $1.key }.max { $0.value < $1.value }?.key
     }
 
+    static func shouldRunNormalReview(inputPat: String, minimumLength: Int) -> Bool {
+        inputPat.count >= minimumLength
+    }
+
+    private static func normalReviewMinInputLength() -> Int {
+        let configured = GyaimSettings.integer(forKey: "aiRerankFastContextNormalReviewMinInputLength")
+        guard configured > 0 else { return 5 }
+        return min(max(configured, 1), 12)
+    }
+
     /// True when ContextDict evidence for the current best is strong enough
     /// (suffix overlap >= 3 chars at the default threshold) to settle the
     /// homophone choice without consulting the model.
@@ -611,10 +635,15 @@ final class BundledZenzRuntime: ZenzRuntime {
 
     private static func isProtectedExactReadingCandidate(_ candidate: AIRerankCandidate,
                                                          request: AIRerankRequest) -> Bool {
-        guard candidate.reading == request.inputPat else { return false }
         switch candidate.kind {
-        case CandidateKind.exact.rawValue, CandidateKind.compound.rawValue:
-            return true
+        case CandidateKind.exact.rawValue:
+            // WordSearch assigns .exact only for exact or kana-equivalent
+            // readings (BUG-026: study "kousinn" vs typed "kousin"), so an
+            // exact kind with a reading is protected. External candidates also
+            // use .exact but carry no reading.
+            return candidate.reading != nil
+        case CandidateKind.compound.rawValue:
+            return candidate.reading == request.inputPat
         default:
             return false
         }

@@ -153,6 +153,40 @@ final class ZenzRuntimeTests: XCTestCase {
         XCTAssertEqual(indices, [1, 0, 2])
     }
 
+    func testExactHomophoneCandidateIndicesIncludesKanaEquivalentReadingVariant() {
+        // BUG-026: 更新 (study reading "kousinn") is the same kana reading as
+        // typed "kousin" and must join the homophone comparison against 行進.
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "kousin",
+            hiragana: "こうしん",
+            context: "アプリを",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "行進",
+                                  reading: "kousin",
+                                  source: "study",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 1,
+                                  text: "更新",
+                                  reading: "kousinn",
+                                  source: "study",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 2,
+                                  text: "こうしんして",
+                                  reading: "kousinsite",
+                                  source: "connection",
+                                  kind: "prefix")
+            ]
+        )
+
+        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
+                                                                        localOrder: [0, 1, 2])
+
+        XCTAssertEqual(indices, [0, 1])
+    }
+
     func testExactHomophoneCandidateIndicesKeepsHiraganaWordThatIsNotRawSpelling() {
         // "ください" (input kudasa → raw spelling くださ) is a legitimate
         // hiragana word and must stay comparable (BUG-022 regression intent).
@@ -204,6 +238,14 @@ final class ZenzRuntimeTests: XCTestCase {
         XCTAssertNil(BundledZenzRuntime.fastContextReplacementIndex(forFixRequiredPrefix: "書",
                                                                     localOrder: [0, 1],
                                                                     request: request))
+    }
+
+    func testShouldRunNormalReviewRequiresMinimumInputLength() {
+        // Dogfood 2026-07-08: normal reviews at input length 4 produced 81
+        // events with 0 fixes. The homophone path keeps its own (shorter) gate.
+        XCTAssertFalse(BundledZenzRuntime.shouldRunNormalReview(inputPat: "sima", minimumLength: 5))
+        XCTAssertTrue(BundledZenzRuntime.shouldRunNormalReview(inputPat: "surun", minimumLength: 5))
+        XCTAssertTrue(BundledZenzRuntime.shouldRunNormalReview(inputPat: "sima", minimumLength: 4))
     }
 
     func testShouldSkipHomophoneReviewForAffinity() {
