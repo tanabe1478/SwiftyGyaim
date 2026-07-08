@@ -34,7 +34,8 @@ python3 -m py_compile \
   Tools/ai-rerank/aggregate-fast-context-log.py \
   Tools/ai-rerank/train-fast-context-weights.py \
   Tools/zenz-tuning/compare-hf-gguf.py \
-  Tools/dict/suggest-connection-entries.py
+  Tools/dict/suggest-connection-entries.py \
+  Tools/ai-rerank/extract-preference-pairs.py
 python3 Tools/ai-rerank/validate-fast-context-eval-cases.py >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --json >/dev/null
 # Quality gate (issue #57): fail CI when a non-model-required case misses top1,
@@ -58,6 +59,12 @@ assert report["results"]
 assert "delta" in report["results"][0]
 PY
 rm -f "$sweep_json"
+pref_dir="$(mktemp -d)"
+printf '[2026-07-10 10:00:00] [input] [info] Fast context accepted detail: input="kousin" payload={"chosenRank":2,"context":"アプリを","top":[{"kind":"raw","rank":0,"word":"kousin"},{"kind":"exact","rank":1,"reading":"kousin","source":"study","studyFrequency":11,"word":"行進"},{"contextAffinity":0.75,"kind":"exact","rank":2,"reading":"kousinn","source":"study","studyFrequency":101,"word":"更新"}]}\n' > "$pref_dir/log.txt"
+python3 Tools/ai-rerank/extract-preference-pairs.py --log "$pref_dir/log.txt" > "$pref_dir/pref.jsonl" 2>/dev/null
+grep -q '"expectedTop": "更新"' "$pref_dir/pref.jsonl" || { echo "preference extraction smoke failed"; exit 1; }
+python3 Tools/ai-rerank/train-fast-context-weights.py "$pref_dir/pref.jsonl" --epochs 2 --json >/dev/null
+rm -rf "$pref_dir"
 suggest_dir="$(mktemp -d)"
 printf 'kyokusho\t局所\t3\t4\nka\t*化\t4\t40\n' > "$suggest_dir/dict.txt"
 printf 'kyokushoka\t局所化\t100.0\t9\nzeijaku\t脆弱\t100.0\t7\n' > "$suggest_dir/study.txt"

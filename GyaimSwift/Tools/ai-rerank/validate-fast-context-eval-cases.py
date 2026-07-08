@@ -62,6 +62,7 @@ KNOWN_TAGS = {
     "homophone",
     "context-affinity",
     "model-required",
+    "preference",
 }
 
 

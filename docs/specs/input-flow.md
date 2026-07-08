@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-07-08 (通常reviewの最小入力長ゲート追加)
+> Last updated: 2026-07-10 (確定詳細ログの追加 — M6-1)
 
 ## 概要
 
@@ -41,7 +41,7 @@ handle(_:client:) → routeEvent() → HandleResult
 
 | パス | メソッド | 学習 | 用途 |
 |------|---------|------|------|
-| Enter/数字キー | `fix(client:)` | あり | 通常確定（prefix mode の先頭候補が raw `inputPat` の場合のみ Enter は完全一致検索へ遷移）。study と同時に ContextDict へ `(文脈末尾, reading, word)` を記録。`aiRerankFastContextLoggingEnabled=true` かつ prefix mode の意図的確定では `Fast context accepted: ... rank=N` を出力し、accepted rank を dogfood 計測できる |
+| Enter/数字キー | `fix(client:)` | あり | 通常確定（prefix mode の先頭候補が raw `inputPat` の場合のみ Enter は完全一致検索へ遷移）。study と同時に ContextDict へ `(文脈末尾, reading, word)` を記録。`aiRerankFastContextLoggingEnabled=true` かつ prefix mode の意図的確定では `Fast context accepted: ... rank=N` と、preference抽出用の `Fast context accepted detail: ... payload={...}`（表示上位8件+確定候補のメタデータJSON）を出力する |
 | F6/`;` | `fixAsKana(hiragana: true)` | あり | ひらがな確定 |
 | F7/`q` | `fixAsKana(hiragana: false)` | あり | カタカナ確定 |
 | IME切替 | `fix(client:sender, skipStudy: true)` | **なし** | deactivation確定 |
