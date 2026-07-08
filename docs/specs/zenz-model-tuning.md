@@ -1,7 +1,7 @@
 # Spec: Zenz / Zenzai model tuning for SwiftyGyaim
 
 > Status: Draft
-> Last updated: 2026-06-18
+> Last updated: 2026-07-05
 > Trigger: Zenzai / zenz model investigation, GGUF model replacement, AIReranker / ZenzRuntime training workflow, pi-tinker suitability review
 
 ## 目的
@@ -99,16 +99,27 @@ Tab 時は候補集合を作り、Swift heuristic と Zenz scoring / generation 
 
 - 4文字未満は model backend を呼ばない。
 - raw input / clipboard / selected-text は順序固定。
-- 読み完全一致の `.exact` / `.compound` 最上位候補は Zenz で沈めない。
+- 読み完全一致の `.exact` / `.compound` 最上位候補は Zenz で prefix 予測候補へ沈めない。
+- ただし左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合は、exact 同音異義語レビューとして protected exact 候補同士を条件付き平均logprobで直接比較し、margin以上勝る候補だけ先頭へ入れ替える（ADR-021。fixRequiredPrefix経由の置換は廃止）。
+- 未完成語幹（`ください` があるときの `くださ`、`使った` があるときの `使っ`）は比較対象から除外する。
+- 入力の生かな表記に一致するひらがな候補は、best以外なら比較対象から除外する（BUG-024: 文字LMのかなバイアス対策）。
+- bestの `contextAffinity` が閾値（既定0.75）以上ならレビューをスキップする（outcome `affinity-skip`）。
+- `score` / `evaluateCandidate` の成功結果はFIFO 256件でメモ化し、同一入力の再レビューを即返しにする。
+- 通常reviewの1文字 `fixRequiredPrefix` は、候補textが完全一致する protected exact 候補に限り昇格に使う（kept-local no-op率48%への対策）。
 - model backend が有効な場合でも、候補全件 scoring ではなく review path を使う。
-- review path は Swift heuristic 最上位候補を1回だけ Zenz で検査し、既存候補内に prefix 一致候補がある場合だけ先頭へ移動する。
+- review path は Swift heuristic 最上位候補を1回だけ Zenz で検査し、既存候補内に prefix 一致候補がある場合だけ先頭へ移動する。通常のprefix予測では1文字prefixを採用しない。
+- candidate evaluation の `best-token-is-eos` は failure ではなく pass として扱う（2026-07 dogfoodで review-unavailable の437/437件がこのreasonだった）。
+- model を呼ぶ前に、ContextDict（ADR-020）の `contextAffinity` と study頻度が Swift heuristic 段階で同音異義語を解決できる場合がある。
 - dogfood log は以下の outcome を出す。
   - `heuristic`
   - `protected-exact-skip`
+  - `affinity-skip`
   - `review-fixed`
   - `review-passed`
   - `review-kept-local`
   - `review-unavailable`
+  - `exact-homophone-fixed` / `exact-homophone-passed` / `exact-homophone-kept-local` / `exact-homophone-unavailable`
+- 確定時の `Fast context accepted: ... rank=N` ログを `aggregate-fast-context-log.py` の `acceptedRanks` が集計し、実入力に対する accepted rank / acceptedTop1Rate を測れる。
 
 ## チューニング対象の分解
 

@@ -92,7 +92,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（222テスト）
+# ユニットテスト（347テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -111,6 +111,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | CopyTextTests | Tests/GyaimTests/ | 7 | CopyText ファイルI/O + NSPasteboard.changeCount |
 | RomaKanaTests | Tests/GyaimTests/ | 18 | ローマ字⇔かな変換の双方向テスト |
 | WordSearchTests | Tests/GyaimTests/ | 48 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
+| ContextDictTests | Tests/GyaimTests/ | 8 | 文脈条件付き学習（contextKey・suffix一致・affinity・永続化・削除・上限） |
 | StudyEntryTests | Tests/GyaimTests/ | 9 | StudyEntryスコア計算・EvictionMode・ファイルI/O |
 | CryptTests | Tests/GyaimTests/ | 6 | 暗号化/復号のラウンドトリップ |
 | ConnectionDictTests | Tests/GyaimTests/ | 3 | 連接辞書の検索 |
@@ -157,7 +158,9 @@ docs/adr/
 ├── 016-exact-reading-match-priority.md (Superseded by ADR-017)
 ├── 017-cross-dict-exact-priority.md
 ├── 018-candidate-window-position-fallback.md
-└── 019-gictionary-connection-dict-import.md
+├── 019-gictionary-connection-dict-import.md
+├── 020-context-conditioned-study.md
+└── 021-exact-homophone-direct-logprob.md
 ```
 
 ## Logging & Monitoring

@@ -231,7 +231,21 @@ final class BundledZenzRuntime: ZenzRuntime {
         // decision and avoid evaluating every candidate. This mirrors Zenzai's
         // review-style use: inspect the current best candidate once, then optionally
         // convert the model's preferred prefix into an existing candidate order.
+        //
+        // Exception: exact-reading homophones such as "向き" / "無機" are already
+        // safe from prefix-prediction demotion. When left context exists, compare the
+        // exact-reading homophones directly by conditional log probability and move
+        // only another exact-reading homophone to the top. This keeps exact
+        // protection while enabling context-sensitive homophone choice.
         if Self.isProtectedExactReadingCandidate(best, request: request) {
+            if Self.shouldReviewExactHomophones(best: best, request: request, localOrder: localOrder) {
+                return exactHomophoneReviewRerank(request,
+                                                  activeContext: activeContext,
+                                                  heuristic: heuristic,
+                                                  localOrder: localOrder,
+                                                  best: best,
+                                                  runtimeStart: runtimeStart)
+            }
             Log.input.info("Zenz fast-context review skipped: input=\"\(request.inputPat)\" "
                 + "reason=protected-exact best=\"\(best.text)\"")
             return AIRerankResponse(order: localOrder,
@@ -279,6 +293,82 @@ final class BundledZenzRuntime: ZenzRuntime {
         return AIRerankResponse(order: order,
                                 scores: heuristic.scores,
                                 model: "bundled-zenz-v3.1-xsmall-review-\(outcome)+swift-local-heuristic")
+    }
+
+    /// Compare exact-reading homophones directly by conditional mean log
+    /// probability instead of routing through fixRequiredPrefix replacement.
+    /// The scored set is restricted to protected exact-reading candidates, so
+    /// prefix-prediction candidates can never be promoted here, and incomplete
+    /// stems (e.g. "くださ" while "ください" exists) are excluded up front.
+    private func exactHomophoneReviewRerank(_ request: AIRerankRequest,
+                                            activeContext: LlamaZenzContext,
+                                            heuristic: AIRerankResponse,
+                                            localOrder: [Int],
+                                            best: AIRerankCandidate,
+                                            runtimeStart: CFAbsoluteTime) -> AIRerankResponse {
+        // Strong ContextDict evidence means the user already chose this
+        // homophone in this context — the model must not override a personal
+        // choice, and skipping saves the review latency entirely.
+        if Self.shouldSkipHomophoneReviewForAffinity(best: best,
+                                                     threshold: Self.exactHomophoneAffinityThreshold()) {
+            Log.input.info("Zenz exact-homophone review skipped: input=\"\(request.inputPat)\" "
+                + "reason=context-affinity best=\"\(best.text)\" "
+                + "affinity=\(String(format: "%.2f", best.contextAffinity ?? 0))")
+            return AIRerankResponse(order: localOrder,
+                                    scores: heuristic.scores,
+                                    model: "swift-local-heuristic+zenz-review-affinity-skipped")
+        }
+
+        let indices = Self.exactHomophoneCandidateIndices(request: request,
+                                                          localOrder: localOrder,
+                                                          limit: Self.exactHomophoneMaxCandidates())
+        guard indices.count >= 2, indices.contains(best.index) else {
+            // All alternatives were filtered as unsafe stems — nothing to compare.
+            Log.input.info("Zenz fast-context review skipped: input=\"\(request.inputPat)\" "
+                + "reason=protected-exact best=\"\(best.text)\"")
+            return AIRerankResponse(order: localOrder,
+                                    scores: heuristic.scores,
+                                    model: "swift-local-heuristic+zenz-review-skipped")
+        }
+
+        let prompt = Self.prompt(for: request)
+        Log.input.info("Zenz exact-homophone review start: input=\"\(request.inputPat)\" "
+            + "best=\"\(best.text)\" indices=\(indices)")
+        var scores: [Int: Double] = [:]
+        for index in indices {
+            guard let candidate = request.candidates.first(where: { $0.index == index }),
+                  let score = activeContext.score(prompt: prompt, continuation: candidate.text) else { continue }
+            scores[index] = score
+            Log.input.info("Zenz exact-homophone score: input=\"\(request.inputPat)\" "
+                + "index=\(index) text=\"\(candidate.text)\" score=\(String(format: "%.4f", score))")
+        }
+
+        var order = localOrder
+        let outcome: String
+        if scores[best.index] == nil || scores.count < 2 {
+            outcome = "unavailable"
+            Log.input.warning("Zenz exact-homophone review unavailable: input=\"\(request.inputPat)\" "
+                + "reason=too-few-scores scored=\(scores.count)/\(indices.count)")
+        } else if let replacement = Self.selectExactHomophoneWinner(scores: scores,
+                                                                    currentBest: best.index,
+                                                                    margin: Self.exactHomophoneScoreMargin()) {
+            outcome = "fixed"
+            order.removeAll { $0 == replacement }
+            order.insert(replacement, at: 0)
+            Log.input.info("Zenz exact-homophone review fixed: input=\"\(request.inputPat)\" "
+                + "replacementIndex=\(replacement)")
+        } else if Self.maxScoreIndex(scores) != best.index {
+            outcome = "kept-local"
+        } else {
+            outcome = "passed"
+        }
+
+        let elapsed = (CFAbsoluteTimeGetCurrent() - runtimeStart) * 1000
+        Log.input.info("Zenz fast-context review finished: input=\"\(request.inputPat)\" "
+            + "outcome=exact-homophone-\(outcome) order=\(order) latency=\(String(format: "%.1f", elapsed))ms")
+        return AIRerankResponse(order: order,
+                                scores: heuristic.scores,
+                                model: "bundled-zenz-v3.1-xsmall-review-exact-homophone-\(outcome)+swift-local-heuristic")
     }
     #endif
 
@@ -389,12 +479,134 @@ final class BundledZenzRuntime: ZenzRuntime {
                                             localOrder: [Int],
                                             request: AIRerankRequest) -> Int? {
         let normalizedPrefix = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard normalizedPrefix.count >= 2, let currentBest = localOrder.first else { return nil }
+        guard !normalizedPrefix.isEmpty, let currentBest = localOrder.first else { return nil }
+        // A 1-char prefix is too broad for hasPrefix matching ("こ" would match
+        // half the candidate list), but dogfood showed ~48% of reviews end as
+        // kept-local no-ops on single-kanji prefixes like "書" / "十". Allow the
+        // narrow safe subset: a candidate whose text IS the prefix and whose
+        // reading exactly matches the input.
+        if normalizedPrefix.count == 1 {
+            return localOrder.first { index in
+                guard index != currentBest,
+                      let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
+                return candidate.text == normalizedPrefix
+                    && isProtectedExactReadingCandidate(candidate, request: request)
+            }
+        }
         return localOrder.first { index in
             guard index != currentBest,
                   let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
             return candidate.text.hasPrefix(normalizedPrefix)
         }
+    }
+
+    /// Candidates eligible for the exact-homophone direct comparison, in local
+    /// order. Restricted to protected exact-reading candidates; incomplete stems
+    /// whose completion exists in the candidate set (e.g. "くださ" while
+    /// "ください" is present, "使っ" while "使った" is present) are excluded so
+    /// the model can never promote a mid-conjugation truncation.
+    ///
+    /// The raw kana spelling of the input (candidate text == request.hiragana)
+    /// is also excluded unless it is the current best: the char-level LM
+    /// systematically assigns higher probability to kana sequences, so "こみ"
+    /// would beat "込み" and "いっか" would beat "一家" regardless of context
+    /// (BUG-024, dogfood 2026-07-05). The kana spelling stays reachable through
+    /// the heuristic order and the kana-confirm keys. Hiragana words that are
+    /// not the raw spelling (e.g. "ください" for input "kudasa") remain
+    /// comparable.
+    static func exactHomophoneCandidateIndices(request: AIRerankRequest,
+                                               localOrder: [Int],
+                                               limit: Int = 3) -> [Int] {
+        var result: [Int] = []
+        for index in localOrder {
+            guard result.count < limit else { break }
+            guard let candidate = request.candidates.first(where: { $0.index == index }),
+                  isProtectedExactReadingCandidate(candidate, request: request),
+                  !isIncompleteStemCandidate(candidate, in: request) else { continue }
+            if index != localOrder.first,
+               isHiraganaOnlyText(candidate.text),
+               candidate.text == request.hiragana { continue }
+            result.append(index)
+        }
+        return result
+    }
+
+    private static func isHiraganaOnlyText(_ text: String) -> Bool {
+        !text.isEmpty && text.unicodeScalars.allSatisfy { scalar in
+            0x3041...0x3096 ~= scalar.value || scalar.value == 0x30FC
+        }
+    }
+
+    private static func isIncompleteStemCandidate(_ candidate: AIRerankCandidate,
+                                                  in request: AIRerankRequest) -> Bool {
+        guard AIReranker.isPotentialIncompleteStem(candidate.text) else { return false }
+        return request.candidates.contains { other in
+            other.index != candidate.index
+                && AIReranker.isIncompleteStemCompletion(stem: candidate.text, completed: other.text)
+        }
+    }
+
+    /// Picks the homophone to promote: the highest-scoring candidate wins only
+    /// when it beats the current best by at least `margin` (mean log-probability
+    /// units), so model noise cannot flap the top candidate.
+    static func selectExactHomophoneWinner(scores: [Int: Double],
+                                           currentBest: Int,
+                                           margin: Double) -> Int? {
+        guard let bestScore = scores[currentBest] else { return nil }
+        var winnerIndex = currentBest
+        var winnerScore = bestScore
+        for (index, score) in scores.sorted(by: { $0.key < $1.key }) where score > winnerScore {
+            winnerIndex = index
+            winnerScore = score
+        }
+        guard winnerIndex != currentBest, winnerScore - bestScore >= margin else { return nil }
+        return winnerIndex
+    }
+
+    private static func maxScoreIndex(_ scores: [Int: Double]) -> Int? {
+        scores.sorted { $0.key < $1.key }.max { $0.value < $1.value }?.key
+    }
+
+    /// True when ContextDict evidence for the current best is strong enough
+    /// (suffix overlap >= 3 chars at the default threshold) to settle the
+    /// homophone choice without consulting the model.
+    static func shouldSkipHomophoneReviewForAffinity(best: AIRerankCandidate,
+                                                     threshold: Double) -> Bool {
+        guard threshold > 0, let affinity = best.contextAffinity else { return false }
+        return affinity >= threshold
+    }
+
+    private static func exactHomophoneAffinityThreshold() -> Double {
+        let configured = GyaimSettings.double(forKey: "aiRerankExactHomophoneAffinityThreshold")
+        return configured > 0 ? min(configured, 1.0) : 0.75
+    }
+
+    private static func exactHomophoneScoreMargin() -> Double {
+        let configured = GyaimSettings.double(forKey: "aiRerankExactHomophoneMargin")
+        return configured > 0 ? configured : 0.10
+    }
+
+    private static func exactHomophoneMaxCandidates() -> Int {
+        let configured = GyaimSettings.integer(forKey: "aiRerankExactHomophoneMaxCandidates")
+        return configured > 0 ? min(configured, 6) : 3
+    }
+
+    static func shouldReviewExactHomophones(best: AIRerankCandidate,
+                                            request: AIRerankRequest,
+                                            localOrder: [Int]) -> Bool {
+        guard isProtectedExactReadingCandidate(best, request: request), hasContext(request.context) else {
+            return false
+        }
+        return localOrder.contains { index in
+            guard index != best.index,
+                  let candidate = request.candidates.first(where: { $0.index == index }) else { return false }
+            return isProtectedExactReadingCandidate(candidate, request: request)
+        }
+    }
+
+    private static func hasContext(_ context: String?) -> Bool {
+        guard let context else { return false }
+        return !context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private static func isProtectedExactReadingCandidate(_ candidate: AIRerankCandidate,

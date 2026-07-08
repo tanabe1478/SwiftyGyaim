@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-06-19 (BUG-019追加)
+> Last updated: 2026-07-06 (BUG-025追加)
 
 ## 概要
 
@@ -260,6 +260,69 @@
 - **修正**: `PreferencesWindow.performKeyEquivalent(with:)` で `Cmd+W` を直接処理し、`Cmd+X/C/V/A/Z` と `Shift+Cmd+Z` は `NSApp.sendAction` で first responder へ標準 text / undo action として送る。
 - **検証**: `PreferencesWindowTests` に `Cmd+W` が window を閉じること、`Cmd+V` が first responder の `paste(_:)` に dispatch されることを確認するテストを追加。
 - **教訓**: `LSBackgroundOnly` なIMEが一時的に設定画面を出す場合、通常アプリのメニュー由来ショートカットを前提にしない。`keyDown` ではなく `performKeyEquivalent` または明示的なメニュー構築で標準Command操作を補う。
+
+### BUG-020: fast-context model reviewがexact同音異義語を比較できない
+
+- **発見日**: 2026-06-22
+- **症状**: `どちらの` の後に `muki` を入力した場合、文脈上は `向き` が自然でも `無機` が上位に出ることがある。
+- **影響**: `向き` / `無機`、`機能` / `昨日` のような同じ読みの候補が、左文脈を使わず学習・元順・heuristicだけで選ばれる。
+- **原因**: fast-context の model opt-in 経路は `.exact` / `.compound` の最上位候補を `protected-exact-skip` として常にZenz reviewから除外していた。これはprefix予測候補へ沈めない安全策として有効だが、同じ読みのexact候補同士の比較まで禁止していた。
+- **修正**: 左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合だけ exact 同音異義語 review を許可する。Zenz の `fixRequiredPrefix` による置換先は同じ読みの `.exact` / `.compound` 候補に限定し、prefix予測候補への移動は引き続き禁止する。
+- **検証**: `ZenzRuntimeTests` に、exact同音異義語レビューの発火条件と、置換先制限がprefix候補を拒否することを確認するテストを追加。
+- **dogfood追記**: `exact-homophone-fixed` 30件を一次レビューしたところ、`ください -> くださ` の未完成候補昇格が1件見つかった。ひらがな候補を末尾 `い` 1文字だけ削った未完成候補へ短縮する置換を拒否し、regression test を追加。
+- **教訓**: 「exact保護」は prefix 予測への誤沈降を防ぐための制約であり、同じ読みの候補間比較まで一律に止めると文脈rerankの価値が出ない。安全境界は候補kindだけでなく、同一reading内/外で分ける。また、同一reading内でも未完成なひらがな短縮候補を上げると入力途中感が強くなるため、表記の完成度も安全条件に含める。
+- **2026-07-04追記**: fixRequiredPrefix 経由の置換は ADR-021 で protected exact 候補同士の直接logprob比較に置き換えた。またユーザー履歴による文脈条件付き学習（ContextDict、ADR-020）でモデルを呼ばずに同音異義語を解決する経路を追加した。
+
+### BUG-021: `ha?` で長いlocal候補が `は？` より上位化する
+
+- **発見日**: 2026-06-23
+- **症状**: `ha?` 入力で `投機的デコーディング` が `は？` より上位になり、確定後に `ha?` の study/local 候補として残った。さらに `h` / `ha` の prefix 候補にも混入した。
+- **影響**: 句読点つき短入力で、直前に誤登録された長いユーザー辞書候補が自然な句読点候補を押しのける。削除操作で study だけ消しても local に残ると復活する。
+- **原因**: `kind=exact` かつ `reading == inputPat` の長い local 候補に exact reading bonus / source bias が強くかかり、句読点を含む自然候補 `は？` の小さな punctuation penalty を上回った。また候補削除は候補sourceに応じて study または local の片方だけを削除していた。
+- **修正**: `inputPat` が `?` / `!` で終わる場合、対応する句読点を含まない候補に `punctuatedInputMismatchPenalty` を与える。候補削除UIでは `.study` / `.local` のどちらから見えた場合でも、同じ word/reading を study/local 両方から削除する。
+- **検証**: `AIRerankerTests` に `ha?` で `は？` が `投機的デコーディング` より上位になる regression test を追加。`WordSearchTests` に `deleteFromUserDictionaries` が study/local 両方を削除するテストを追加。fast-context eval fixture に `ha?` ケースを追加。
+- **教訓**: ユーザー辞書由来の exact 候補でも、句読点つき短入力では「句読点を含むか」を安全条件に含める。削除UIは表示sourceだけを信用せず、同一word/readingのユーザー管理辞書をまとめて掃除する。
+
+### BUG-022: exact-homophone review が `ください` を `くださ` へ再短縮する
+
+- **発見日**: 2026-07-01
+- **症状**: guard導入後のdogfoodでも `kudasa` で `ください -> くださ` が再発した。ログ上は current best が `下さ`、Zenz prefix が `く`、replacement が `くださ` になっていた。
+- **影響**: ユーザーが `kudasai` へ入力継続する途中で、未完成なひらがな語幹 `くださ` が先頭に出る。
+- **原因**: 既存guardは current best と replacement の直接比較だけを見ていたため、`下さ -> くださ` は不完全短縮として検出できなかった。候補集合内に `ください` が存在することを見ていなかった。
+- **修正**: exact-homophone replacement では、replacement だけでなく候補集合全体を見て、`replacement + い` に相当する完成候補がある場合は未完成語幹への置換を拒否する。同じ prefix で安全な `ください` が後続候補にあればそちらへ移動できる。Swift heuristic / offline evaluator でも `少な` / `くださ` のような末尾 `い` 欠落語幹へ `incompleteISuffixStemPenalty` を与える。
+- **検証**: `ZenzRuntimeTests` に current best が `下さ` でも `くださ` を飛ばし `ください` へ到達する regression test を追加。`AIRerankerTests` と fast-context eval fixture に `sukuna -> 少な` / `kudasa -> くださ` 抑制を追加。
+- **教訓**: safety guard は current best との2者比較だけでは足りない。候補集合内のより完成した候補を見て、未完成語幹への降格を拒否する。
+- **2026-07-04追記**: ADR-021 で置換機構を直接logprob比較に変更し、未完成語幹は比較対象から除外（`exactHomophoneCandidateIndices`）する構造にしたため、この置換ガードのクラスは経路ごと解消。heuristic 側は `incompleteStemPenalty` に改名し、`っ` 終わり語幹（`使っ` vs `使った`）にも汎化した。
+
+### BUG-023: 句読点付き読みでコード風clipboardが外部候補登録される
+
+- **発見日**: 2026-07-01
+- **症状**: `sns_origination_identity_arn` をコピーした状態で `korejjanaino?` を入力すると、clipboard候補として表示・確定され `localdict` に登録された。
+- **影響**: snake_case 風の識別子やARN断片が日本語IME候補・ユーザー辞書に混入する。句読点付きの自然文入力では外部候補登録の意図が薄いのに、候補ウィンドウ先頭付近に出る。
+- **原因**: 外部候補検証が URL / Gyazo hash には対応していたが、ASCII snake_case 風識別子を許可していた。また `inputPat` に `?` が含まれていても外部候補を挿入・登録していた。
+- **修正**: 外部候補検証で snake_case 風ASCII識別子を除外する。`inputPat` に `?` / `!` / `？` / `！` が含まれる場合は外部候補の挿入・登録をしない。確定時にも同じ条件で登録を再検証する。
+- **検証**: `ExternalCandidateTests` に snake_case 風識別子の除外、句読点付き入力でのclipboard候補非挿入を追加。
+- **教訓**: clipboard/選択テキストはコード・設定値・secret断片を含みうる。外部候補はURL以外のコード風文字列も疑い、句読点付き自然文入力では登録UXより誤登録防止を優先する。
+
+### BUG-024: 同音異義語レビューがひらがな候補を漢字候補より昇格させる
+
+- **発見日**: 2026-07-05
+- **症状**: exact同音異義語の直接logprob比較（ADR-021）導入後のdogfoodで、`komi` の「込み」より「こみ」、`ikka` の「一家」より「いっか」がZenzレビューで先頭化した。
+- **影響**: study辞書が「込み」（頻度3）を持ち、ユーザーが `komitto` 入力途中でも、意味の薄いひらがな候補が先頭に出る。`exact-homophone-fixed` 42件中3クラス（こみ/いっか/てっていて系）で発生。
+- **原因**: 文字レベルLM（zenz-v3.1-xsmall）はひらがな列に系統的に高い平均logprobを与える（`いっか` -0.33 vs `一家` -1.88、`こみ` -1.88 vs `込み` -2.55）。長さ正規化では消えないLM固有のバイアス。
+- **修正**: 入力の生かな表記（候補text == `request.hiragana` のひらがなのみ候補）を、bestでない限り `exactHomophoneCandidateIndices` の比較対象から除外する。悪性昇格3クラスはすべて生かな表記だった。生かな表記は heuristic 順・かな確定キー（`;` / `q`）から常に到達できるため機能は失われず、`ください`（生かな表記 `くださ` とは別語）のような正当なひらがな語は比較対象に残る。bestが生かな表記そのものの場合は除外せず、漢字同音異義語の昇格を維持する。
+- **検証**: `ZenzRuntimeTests` に、生かな表記の除外・bestが生かな表記の場合の非除外・`ください` が比較対象に残ること（BUG-022回帰意図の維持）を確認するテストを追加。
+- **教訓**: LMスコアの直接比較を導入するときは、モデル固有の系統バイアス（かな優位・短文優位など）を候補フィルタ側で相殺する。dogfoodログに候補別スコアを出しておくと、この種のバイアスが数値で即特定できる。
+
+### BUG-025: typo由来の「+い」学習エントリが完成語をincompleteStemPenaltyで沈める
+
+- **発見日**: 2026-07-06
+- **症状**: `sitehosii` 入力で、頻度22の学習済み「してほしい」が3位に沈み、typo由来の「してほしいい」（頻度1）が1位に出た。
+- **影響**: 「い」で終わる完成語すべてが、過去に「+い」のtypoを一度でも確定していると恒常的に降格される。直近24時間のaccepted rankでrank 4+确定の一因。
+- **原因**: `incompleteStemPenalty`（BUG-022対策）は「候補集合に `stem+い` が存在すれば stem は未完成」と判定していた。completion側が正当な語であることを暗黙に仮定しており、studydictのゴミエントリ「してほしいい」が「してほしい」を未完成語幹に見せた。
+- **修正**: `isIncompleteStemCompletion` に「stemが既に『い』で終わる場合は+い完成とみなさない」ガードを追加（Swift / Python evaluator両方）。「い」欠落ルールの前提は「stemに末尾のいが無い」ことなので、い終わりstemは定義上対象外。`少な→少ない` / `くださ→ください` の既存抑制は維持。
+- **検証**: `AIRerankerTests` に「してほしい」が降格されない regression test、eval fixture に `incomplete-stem-sitehosii-garbage-001` を追加。
+- **教訓**: 「候補集合内の別候補を根拠に penalize する」ルールは、根拠側の候補が正当であることを検証できない（studydictにはtypoが混入する）。ルールの言語的前提（い終わり語幹は既に完成形）を条件に明示することで、ゴミ根拠に対して頑健になる。
 
 ## パターン集
 

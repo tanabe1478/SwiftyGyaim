@@ -1,7 +1,7 @@
 # Zenz / Zenzai model tuning tasklist
 
 > Status: Draft
-> Last updated: 2026-06-19
+> Last updated: 2026-07-04
 > Parent spec: `docs/specs/zenz-model-tuning.md`
 > Related PR: <https://github.com/tanabe1478/SwiftyGyaim/pull/52>
 
@@ -171,6 +171,7 @@ Definition of done:
 - [x] `topChanged=true/false` を集計する
 - [x] input length 別 latency を集計する
 - [x] candidate count 別 latency を集計する
+- [x] 確定時の accepted rank（`Fast context accepted` ログ）を集計する（rank分布 / acceptedTop1Rate / acceptedTop3Rate）
 
 実装: `GyaimSwift/Tools/ai-rerank/aggregate-fast-context-log.py`
 
@@ -198,6 +199,8 @@ Definition of done:
 Definition of done:
 
 - [x] `review-unavailable` が `reason=evaluate-candidate-nil` だけでなく詳細 reason で分類される
+
+2026-07-04 追記: dogfood ログ6,064件の集計で `review-unavailable` の437/437件（100%）が `best-token-is-eos` だった。これは「モデルが候補より短い形で文を完結させたい」という判断であり失敗ではないため、`evaluateCandidate` で pass として扱うよう修正（この信号からの短縮置換は未完成語幹昇格の危険があるため行わない）。以後 `review-unavailable` には本当の失敗だけが残る。
 
 ### M2-3. review-fixed の品質確認
 
@@ -272,13 +275,32 @@ Definition of done:
 
 - [x] model fine-tuning なしで改善できる上限が見える
 
+### M3-3. exact同音異義語のcontext rerank
+
+- [x] exact読み候補をprefix予測候補から守る方針は維持する
+- [x] 左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合だけ model review を許す
+- [x] Zenz の `fixRequiredPrefix` による置換先を同じ読みの `.exact` / `.compound` 候補に限定する
+- [x] outcome に `exact-homophone-*` を追加し、dogfood log aggregator / evaluator が分類できるようにする
+- [x] dogfood log から `exact-homophone-fixed` / `exact-homophone-kept-local` を抽出し、良化 / 悪化 / 不明を手動ラベルする
+  - 2026-06-23 first pass: fixed 30件中 good 15 / bad 1 / unknown 10 / noop 4
+  - bad: `kudasa` で `ください -> くださ`。末尾 `い` 1文字だけ削るひらがな短縮を拒否する regression guard を追加。
+- [x] `muki`: `どちらの -> 向き`, `この素材は -> 無機` のような eval cases を追加する（`homophone-*` / `model-required` タグ。heuristic 単独では解けない伸びしろとして baseline に含める）
+- [x] exact同音異義語の context cue を heuristic feature に落とす
+  - ContextDict（ADR-020）の `contextAffinityBonus` として実装。ユーザー履歴由来の文脈条件付き学習で、モデルなしで同音異義語を選べる
+- [x] fixRequiredPrefix 経由の置換を、protected exact 候補同士の直接logprob比較に置き換える（ADR-021）
+
+Definition of done:
+
+- [ ] exact同音異義語レビューの precision / latency / 悪化パターンが集計できる（直接logprob比較経路のdogfood再ラベルが未実施）
+
 ## Milestone 4: model comparison
 
 ### M4-1. 現行 GGUF と HF non-quantized の差を比較する
 
-- [ ] `Miwa-Keita/zenz-v3.1-xsmall` を Transformers で読む script を作る
-- [ ] 同じ eval cases で score / review を再現する
-- [ ] GGUF Q5_K_M と順位差を比較する
+- [x] `Miwa-Keita/zenz-v3.1-xsmall` を Transformers で読む script を作る
+  - `GyaimSwift/Tools/zenz-tuning/compare-hf-gguf.py`（torch/transformers・llama-cpp-python は backend別 opt-in）
+- [x] 同じ eval cases で score を再現する（LlamaZenzContext.score と同じ条件付き平均logprob）
+- [ ] GGUF Q5_K_M と順位差を比較する（モデルdownload込みの実行が未実施。top1一致率・Kendall tau距離をscriptが出力する）
 
 Definition of done:
 
@@ -349,8 +371,9 @@ Definition of done:
 ### M6-2. pairwise reranker
 
 - [ ] Zenz 本体ではなく小型 reranker に preference data を使う
-- [ ] pairwise loss を試す
-- [ ] Swift / Core ML へ入れられる形式を検討する
+- [x] pairwise loss を試す
+  - `Tools/ai-rerank/train-fast-context-weights.py`: eval fixture（将来はpreference JSONL）から feature multiplier を pairwise logistic regression で学習。1.0初期値・L2正則化・非負クランプで解釈可能な線形モデルのまま、`--feature-weight` / AIReranker.swift へ書き戻せる
+- [ ] Swift / Core ML へ入れられる形式を検討する（線形multiplierは現状のままSwift定数に書き戻せる）
 
 Definition of done:
 

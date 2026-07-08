@@ -29,15 +29,19 @@ struct SearchCandidate: Equatable {
     let reading: String?
     let source: CandidateSource
     let kind: CandidateKind
+    /// Study-dict frequency at search time. Nil for non-study candidates.
+    let studyFrequency: Int?
 
     init(word: String,
          reading: String? = nil,
          source: CandidateSource = .synthetic,
-         kind: CandidateKind? = nil) {
+         kind: CandidateKind? = nil,
+         studyFrequency: Int? = nil) {
         self.word = word
         self.reading = reading
         self.source = source
         self.kind = kind ?? Self.defaultKind(word: word, reading: reading, source: source)
+        self.studyFrequency = studyFrequency
     }
 
     private static func defaultKind(word: String,
@@ -211,7 +215,8 @@ class WordSearch {
                     candidates.append(SearchCandidate(word: entry.word,
                                                       reading: entry.reading,
                                                       source: .study,
-                                                      kind: .exact))
+                                                      kind: .exact,
+                                                      studyFrequency: entry.frequency))
                     candfound.insert(entry.word)
                     if limit > 0, candidates.count >= limit { break }
                 }
@@ -241,7 +246,8 @@ class WordSearch {
                         candidates.append(SearchCandidate(word: entry.word,
                                                           reading: entry.reading,
                                                           source: .study,
-                                                          kind: .prefix))
+                                                          kind: .prefix,
+                                                          studyFrequency: entry.frequency))
                         candfound.insert(entry.word)
                         if limit > 0, candidates.count >= limit { break }
                     }
@@ -274,7 +280,8 @@ class WordSearch {
                         candidates.append(SearchCandidate(word: entry.word,
                                                           reading: entry.reading,
                                                           source: .study,
-                                                          kind: matchKind(for: entry.reading)))
+                                                          kind: matchKind(for: entry.reading),
+                                                          studyFrequency: entry.frequency))
                         candfound.insert(entry.word)
                         if limit > 0, candidates.count >= limit { break }
                     }
@@ -443,6 +450,15 @@ class WordSearch {
             return true
         }
         return false
+    }
+
+    /// Delete a word from both user-managed dictionaries.
+    /// Returns true if at least one entry was found and removed.
+    @discardableResult
+    func deleteFromUserDictionaries(word: String, reading: String) -> Bool {
+        let deletedFromStudy = deleteFromStudy(word: word, reading: reading)
+        let deletedFromLocal = deleteFromLocal(word: word, reading: reading)
+        return deletedFromStudy || deletedFromLocal
     }
 
     func start() {

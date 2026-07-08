@@ -30,11 +30,15 @@ python3 -m py_compile \
   Tools/ai-rerank/evaluate-fast-context-rerank.py \
   Tools/ai-rerank/extract-fast-context-review-cases.py \
   Tools/ai-rerank/summarize-fast-context-review-labels.py \
-  Tools/ai-rerank/sweep-fast-context-weights.py
+  Tools/ai-rerank/sweep-fast-context-weights.py \
+  Tools/ai-rerank/aggregate-fast-context-log.py \
+  Tools/ai-rerank/train-fast-context-weights.py \
+  Tools/zenz-tuning/compare-hf-gguf.py
 python3 Tools/ai-rerank/validate-fast-context-eval-cases.py >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --json >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --feature-weight contextPredictionBonus=1.0 --json >/dev/null
 python3 Tools/ai-rerank/sweep-fast-context-weights.py --limit 1 >/dev/null
+python3 Tools/ai-rerank/train-fast-context-weights.py --epochs 3 --json >/dev/null
 sweep_json="$(mktemp)"
 python3 Tools/ai-rerank/sweep-fast-context-weights.py --json --limit 1 > "$sweep_json"
 python3 - "$sweep_json" <<'PY'

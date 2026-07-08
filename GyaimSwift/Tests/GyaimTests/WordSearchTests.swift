@@ -505,6 +505,22 @@ final class WordSearchTests: XCTestCase {
         XCTAssertFalse(entries.contains(["tesutogo", "テスト語"]))
     }
 
+    func testDeleteFromUserDictionariesRemovesStudyAndLocalEntries() throws {
+        try XCTSkipIf(ws == nil)
+        ws.register(word: "投機的デコーディング", reading: "ha?")
+        ws.study(word: "投機的デコーディング", reading: "ha?")
+
+        let deleted = ws.deleteFromUserDictionaries(word: "投機的デコーディング", reading: "ha?")
+
+        XCTAssertTrue(deleted)
+        let localEntries = WordSearch.loadDict(
+            dictFile: tempDir.appendingPathComponent("localdict.txt").path)
+        let studyEntries = WordSearch.loadStudyDict(
+            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        XCTAssertFalse(localEntries.contains(["ha?", "投機的デコーディング"]))
+        XCTAssertFalse(studyEntries.contains { $0.reading == "ha?" && $0.word == "投機的デコーディング" })
+    }
+
     // MARK: - Exact Reading Match Priority
 
     func testExactReadingMatchPrioritizedOverPrefix() throws {
