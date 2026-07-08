@@ -154,6 +154,32 @@ final class ConnectionDictTests: XCTestCase {
         assertExactMatches(expectations)
     }
 
+    func testConstrainedCompositionsReturnExactCompleteConversions() throws {
+        // Issue #59 / ADR-022: the constraint set for dictionary-constrained
+        // generation contains only complete conversions of the full reading.
+        let compositions = dict.constrainedCompositions(pat: "kyokushoka")
+        let words = compositions.map(\.word)
+
+        XCTAssertTrue(words.contains("局所化"), "Expected 局所化 in \(words)")
+        XCTAssertFalse(words.contains("局所化する"), "Prefix continuations must not appear: \(words)")
+        XCTAssertEqual(words.count, Set(words).count, "Surfaces must be deduplicated: \(words)")
+    }
+
+    func testConstrainedCompositionsHonorResultCap() throws {
+        let capped = dict.constrainedCompositions(pat: "kyokushoka", maxResults: 1)
+        XCTAssertEqual(capped.count, 1)
+    }
+
+    func testConstrainedCompositionsHonorDepthCap() throws {
+        // 局所化する = 局所 + 化 + する (depth 3): a depth cap of 2 must block it
+        // while the default cap allows it.
+        let shallow = dict.constrainedCompositions(pat: "kyokushokasuru", maxDepth: 2)
+        XCTAssertFalse(shallow.map(\.word).contains("局所化する"))
+
+        let deep = dict.constrainedCompositions(pat: "kyokushokasuru")
+        XCTAssertTrue(deep.map(\.word).contains("局所化する"), "Expected 局所化する in \(deep.map(\.word))")
+    }
+
     private func assertExactMatches(_ expectations: [(String, String)], file: StaticString = #filePath, line: UInt = #line) {
         for (pat, expectedWord) in expectations {
             var words: [String] = []

@@ -1005,7 +1005,8 @@ class GyaimController: IMKInputController {
         let zenzGeneratedSnapshot = Self.appendingZenzGeneratedCandidates(to: generatedSnapshot,
                                                                          query: query,
                                                                          hiragana: rk.roma2hiragana(query),
-                                                                         context: recentCommittedText)
+                                                                         context: recentCommittedText,
+                                                                         wordSearch: ws)
         let zenzGenerationMs = Self.elapsedMilliseconds(since: zenzGenerationStart)
 
         let reviewStart = CFAbsoluteTimeGetCurrent()
@@ -1068,18 +1069,46 @@ class GyaimController: IMKInputController {
     private static func appendingZenzGeneratedCandidates(to snapshot: [SearchCandidate],
                                                          query: String,
                                                          hiragana: String,
-                                                         context: String) -> [SearchCandidate] {
+                                                         context: String,
+                                                         wordSearch: WordSearch?) -> [SearchCandidate] {
         var result = snapshot
         var seen = Set(snapshot.map(\.word))
         let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestContext = trimmedContext.isEmpty ? nil : trimmedContext
+
+        // Dictionary-constrained selection (issue #59, ADR-022): enumerate
+        // connection-grammatical compositions of the reading and let Zenz pick
+        // the most natural ones. Surfaces already in the candidate set are not
+        // rescored — the model only surfaces compositions that drowned in the
+        // normal enumeration order.
+        let surfaces = (wordSearch?.connectionCompositions(reading: query) ?? [])
+            .map(\.word)
+            .filter { !seen.contains($0) }
+        let selected = InProcessAIReranker.shared.selectConstrainedCandidates(inputPat: query,
+                                                                              hiragana: hiragana,
+                                                                              context: requestContext,
+                                                                              surfaces: surfaces,
+                                                                              limit: Self.zenzGenerationLimit())
+        for candidate in selected where seen.insert(candidate.word).inserted {
+            result.append(candidate)
+        }
+
+        // Free-form generation can hallucinate words the dictionary cannot
+        // form, so it is opt-in now that constrained selection is the default.
+        guard GyaimSettings.bool(forKey: "aiRerankUseZenzFreeGeneration") else { return result }
         let generated = InProcessAIReranker.shared.generateCandidates(inputPat: query,
                                                                       hiragana: hiragana,
-                                                                      context: trimmedContext.isEmpty ? nil : trimmedContext,
+                                                                      context: requestContext,
                                                                       limit: 1)
         for candidate in generated where seen.insert(candidate.word).inserted {
             result.append(candidate)
         }
         return result
+    }
+
+    private static func zenzGenerationLimit() -> Int {
+        let configured = GyaimSettings.integer(forKey: "aiRerankZenzGenerationLimit")
+        return configured > 0 ? min(configured, 6) : 3
     }
 
     private static func appendingZenzAlternativeCandidates(to snapshot: [SearchCandidate],
