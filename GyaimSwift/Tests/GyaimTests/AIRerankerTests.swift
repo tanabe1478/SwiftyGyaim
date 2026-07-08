@@ -405,7 +405,7 @@ final class AIRerankerTests: XCTestCase {
                                       candidates: [frequent])
 
         let breakdown = AIReranker.localScoreBreakdown(candidate: frequent, request: request)
-        XCTAssertEqual(breakdown.contributions["studyFrequencyBonus"], 0.30)
+        XCTAssertEqual(breakdown.contributions["studyFrequencyBonus"] ?? 0, 0.30, accuracy: 1e-9)
 
         let once = AIRerankCandidate(index: 0,
                                      text: "機能",
@@ -425,6 +425,61 @@ final class AIRerankerTests: XCTestCase {
                                          studyFrequency: 8)
         let nonStudyBreakdown = AIReranker.localScoreBreakdown(candidate: nonStudy, request: request)
         XCTAssertNil(nonStudyBreakdown.contributions["studyFrequencyBonus"])
+    }
+
+    func testLocalRerankTreatsKanaEquivalentReadingAsExact() {
+        // BUG-026: 更新 was learned as "kousinn" while the user types "kousin".
+        // WordSearch marks the kana-equivalent reading as kind=exact; the
+        // reranker must not apply a prefix prediction penalty, and the higher
+        // study frequency (101 vs 11) must win over MRU position.
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "kousin",
+            hiragana: "こうしん",
+            context: nil,
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "行進",
+                                  reading: "kousin",
+                                  source: "study",
+                                  kind: "exact",
+                                  studyFrequency: 11),
+                AIRerankCandidate(index: 1,
+                                  text: "更新",
+                                  reading: "kousinn",
+                                  source: "study",
+                                  kind: "exact",
+                                  studyFrequency: 101)
+            ]
+        )
+
+        let response = AIReranker.localRerank(request)
+
+        XCTAssertEqual(response.order.first, 1)
+        let breakdown = AIReranker.localScoreBreakdown(candidate: request.candidates[1], request: request)
+        XCTAssertNil(breakdown.contributions["prefixPredictionPenalty"])
+        XCTAssertEqual(breakdown.contributions["exactReadingMatchBonus"], 0.20)
+        XCTAssertEqual(breakdown.contributions["studyFrequencyBonus"], 0.60)
+    }
+
+    func testIsExactReadingMatchTrustsDictionaryExactKindOnly() {
+        let request = AIRerankRequest(version: 1,
+                                      mode: "fast-context-rerank",
+                                      inputPat: "kousin",
+                                      hiragana: "こうしん",
+                                      context: nil,
+                                      candidates: [])
+        let kanaVariant = AIRerankCandidate(index: 0, text: "更新", reading: "kousinn",
+                                            source: "study", kind: "exact")
+        let external = AIRerankCandidate(index: 1, text: "コピー内容", reading: nil,
+                                         source: "external", kind: "exact")
+        let prefix = AIRerankCandidate(index: 2, text: "更新して", reading: "kousinnsite",
+                                       source: "connection", kind: "prefix")
+
+        XCTAssertTrue(AIReranker.isExactReadingMatch(candidate: kanaVariant, request: request))
+        XCTAssertFalse(AIReranker.isExactReadingMatch(candidate: external, request: request))
+        XCTAssertFalse(AIReranker.isExactReadingMatch(candidate: prefix, request: request))
     }
 
     func testCandidateDecodingDefaultsOptionalFeaturesToNil() throws {

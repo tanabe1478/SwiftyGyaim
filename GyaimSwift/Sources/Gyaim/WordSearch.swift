@@ -98,6 +98,7 @@ class WordSearch {
     private var localDict: [[String]]   // [[yomi, word], ...]
     private var localDictTime: Date
     private var searchMode: Int = 0
+    private let rk = RomaKana()
 
     // MARK: - Shared Study Dict (process-wide singleton)
     // IMKInputControllerはクライアントアプリごとにインスタンスを生成するため、
@@ -191,8 +192,17 @@ class WordSearch {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return candidates }
 
         let exactPriority = searchMode == 0 && Self.isExactReadingMatchPriority
+        // Romaji spelling variants of the same kana must count as exact reading
+        // matches: a study entry learned as "kousinn" (更新) is the same reading
+        // as typed "kousin", and must not degrade to a prefix prediction
+        // (BUG-026). Conversion runs only for regex-matched entries.
+        let queryHiragana = rk.roma2hiragana(q)
+        func isKanaEquivalentReading(_ reading: String) -> Bool {
+            guard !queryHiragana.isEmpty, reading != q else { return false }
+            return rk.roma2hiragana(reading) == queryHiragana
+        }
         func matchKind(for reading: String) -> CandidateKind {
-            searchMode > 0 || reading == q ? .exact : .prefix
+            searchMode > 0 || reading == q || isKanaEquivalentReading(reading) ? .exact : .prefix
         }
 
         func connectionCandidateKind(for result: ConnectionSearchResult) -> CandidateKind {
@@ -246,7 +256,7 @@ class WordSearch {
                         candidates.append(SearchCandidate(word: entry.word,
                                                           reading: entry.reading,
                                                           source: .study,
-                                                          kind: .prefix,
+                                                          kind: isKanaEquivalentReading(entry.reading) ? .exact : .prefix,
                                                           studyFrequency: entry.frequency))
                         candfound.insert(entry.word)
                         if limit > 0, candidates.count >= limit { break }
@@ -265,7 +275,7 @@ class WordSearch {
                         candidates.append(SearchCandidate(word: word,
                                                           reading: yomi,
                                                           source: .local,
-                                                          kind: .prefix))
+                                                          kind: isKanaEquivalentReading(yomi) ? .exact : .prefix))
                         candfound.insert(word)
                         if limit > 0, candidates.count >= limit { break }
                     }
