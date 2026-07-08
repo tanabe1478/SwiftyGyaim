@@ -36,6 +36,9 @@ python3 -m py_compile \
   Tools/zenz-tuning/compare-hf-gguf.py
 python3 Tools/ai-rerank/validate-fast-context-eval-cases.py >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --json >/dev/null
+# Quality gate (issue #57): fail CI when a non-model-required case misses top1,
+# any case has an unsafe top, or a protected-exact candidate is demoted.
+python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --gate >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --feature-weight contextPredictionBonus=1.0 --json >/dev/null
 python3 Tools/ai-rerank/sweep-fast-context-weights.py --limit 1 >/dev/null
 python3 Tools/ai-rerank/train-fast-context-weights.py --epochs 3 --json >/dev/null
