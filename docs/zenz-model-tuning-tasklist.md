@@ -359,14 +359,18 @@ Definition of done:
 
 ### M6-1. preference data extraction
 
-- [ ] dogfood log から chosen / rejected pair を作る条件を定義する
-- [ ] 誤確定・番号選択・deactivation 確定を区別する
-- [ ] private data redaction を入れる
-- [ ] opt-in export command を作る
+- [x] dogfood log から chosen / rejected pair を作る条件を定義する
+  - rank>=2 の意図的確定を強シグナルとし、確定候補より上に表示されていた候補を rejected とする
+- [x] 誤確定・番号選択・deactivation 確定を区別する
+  - deactivation は accepted ログ自体が出ない（skipStudy経路）。rank1確定は位置バイアスとして既定除外
+- [x] private data redaction を入れる
+  - ASCII識別子・URL・数字列を含むケースを既定で除外（`--no-redact` でopt-out）
+- [x] opt-in export command を作る
+  - `Tools/ai-rerank/extract-preference-pairs.py`（手動実行、出力はレビュー必須）
 
 Definition of done:
 
-- [ ] 人間が確認可能な preference JSONL が作れる
+- [x] 人間が確認可能な preference JSONL が作れる（eval fixtureと同一スキーマ、trainerに直結）
 
 ### M6-2. pairwise reranker
 
