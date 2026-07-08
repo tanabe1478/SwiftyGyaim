@@ -6,6 +6,27 @@ struct AIRerankCandidate: Codable, Equatable {
     let reading: String?
     let source: String
     let kind: String
+    /// Context-conditioned learning score (0.0...1.0) from ContextDict.
+    /// Nil / 0 means no history evidence for this (context, reading, word).
+    let contextAffinity: Double?
+    /// Study-dict frequency for study-sourced candidates. Nil for other sources.
+    let studyFrequency: Int?
+
+    init(index: Int,
+         text: String,
+         reading: String?,
+         source: String,
+         kind: String,
+         contextAffinity: Double? = nil,
+         studyFrequency: Int? = nil) {
+        self.index = index
+        self.text = text
+        self.reading = reading
+        self.source = source
+        self.kind = kind
+        self.contextAffinity = contextAffinity
+        self.studyFrequency = studyFrequency
+    }
 }
 
 struct AIRerankRequest: Codable, Equatable {
@@ -81,6 +102,12 @@ enum AIReranker {
                                                                                  inputPat: request.inputPat)
         }
         contributions["contextPredictionBonus"] = contextPredictionBonus(candidate: candidate, request: request)
+        if let affinity = candidate.contextAffinity, affinity > 0 {
+            contributions["contextAffinityBonus"] = min(affinity, 1.0) * 1.50
+        }
+        if candidate.source == "study", let frequency = candidate.studyFrequency, frequency > 1 {
+            contributions["studyFrequencyBonus"] = min(0.30, log2(Double(frequency)) * 0.10)
+        }
         contributions["politeNegativePredictionPenalty"] = -politeNegativePredictionPenalty(candidate: candidate,
                                                                                              request: request)
         if candidate.text.contains(where: isKanji) {
@@ -88,6 +115,10 @@ enum AIReranker {
         }
         contributions["naturalFunctionWordPhraseBonus"] = naturalFunctionWordPhraseBonus(candidate.text)
         contributions["punctuationSuffixPenalty"] = -punctuationSuffixPenalty(candidate.text)
+        contributions["punctuatedInputMismatchPenalty"] = -punctuatedInputMismatchPenalty(candidate: candidate,
+                                                                                         request: request)
+        contributions["incompleteStemPenalty"] = -incompleteStemPenalty(candidate: candidate,
+                                                                        request: request)
         if candidate.kind == CandidateKind.zenz.rawValue && isAllKanjiWord(candidate.text) {
             contributions["zenzKanjiBonus"] = 0.50
         }
@@ -173,6 +204,52 @@ enum AIReranker {
 
     private static func punctuationSuffixPenalty(_ text: String) -> Double {
         text.hasSuffix("？") || text.hasSuffix("！") ? 0.10 : 0.0
+    }
+
+    private static func punctuatedInputMismatchPenalty(candidate: AIRerankCandidate,
+                                                       request: AIRerankRequest) -> Double {
+        let expectedPunctuation: [Character]
+        if request.inputPat.hasSuffix("?") {
+            expectedPunctuation = ["?", "？"]
+        } else if request.inputPat.hasSuffix("!") {
+            expectedPunctuation = ["!", "！"]
+        } else {
+            return 0
+        }
+        guard !candidate.text.contains(where: { expectedPunctuation.contains($0) }) else { return 0 }
+        return 3.00
+    }
+
+    private static func incompleteStemPenalty(candidate: AIRerankCandidate,
+                                              request: AIRerankRequest) -> Double {
+        guard isPotentialIncompleteStem(candidate.text) else { return 0 }
+        let longerCompletedCandidateExists = request.candidates.contains { other in
+            other.index != candidate.index && isIncompleteStemCompletion(stem: candidate.text, completed: other.text)
+        }
+        return longerCompletedCandidateExists ? 4.00 : 0
+    }
+
+    static func isPotentialIncompleteStem(_ text: String) -> Bool {
+        guard !text.isEmpty, !text.allSatisfy(isKanji) else { return false }
+        return text.unicodeScalars.contains { 0x3041...0x3096 ~= $0.value }
+    }
+
+    /// True when `completed` is `stem` plus exactly one character and the pair
+    /// looks like a mid-conjugation truncation:
+    /// - "少な" → "少ない" (i-adjective missing the final い)
+    /// - "使っ" → "使った" / "言っ" → "言って" (no Japanese word ends with っ)
+    ///
+    /// A stem that already ends with い is NOT missing its い — the premise of
+    /// the い rule doesn't apply. Without this guard, a garbage study entry
+    /// like "してほしいい" made the legitimate "してほしい" look like an
+    /// incomplete stem and demoted it (BUG-025).
+    static func isIncompleteStemCompletion(stem: String, completed: String) -> Bool {
+        guard completed != stem,
+              completed.hasPrefix(stem),
+              completed.dropFirst(stem.count).count == 1 else { return false }
+        if completed.last == "い", stem.last != "い" { return true }
+        if stem.last == "っ" { return true }
+        return false
     }
 
     private static func sourceBias(_ source: String) -> Double {

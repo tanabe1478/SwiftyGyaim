@@ -22,6 +22,10 @@ enum Config {
         "\(gyaimDir)/studydict.txt"
     }()
 
+    static let contextDictFile: String = {
+        "\(gyaimDir)/contextdict.txt"
+    }()
+
     static let importedConnectionDictFile: String = {
         "\(gyaimDir)/connectiondict.txt"
     }()
@@ -54,7 +58,7 @@ enum Config {
                 }
             }
         }
-        for file in [localDictFile, studyDictFile] {
+        for file in [localDictFile, studyDictFile, contextDictFile] {
             if !fm.fileExists(atPath: file) {
                 fm.createFile(atPath: file, contents: nil)
             }

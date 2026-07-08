@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-06-20 (rerank-only shortcut廃止)
+> Last updated: 2026-07-06 (い終わり語幹はincompleteStem対象外に)
 
 ## 概要
 
@@ -37,6 +37,9 @@ Google Input Tools は後追い補助として optional に使う。Google込み
 - Zenz generation beam: `aiRerankZenzGenerationBeamWidth`（未設定時 1、最大 6）
 - Zenz review rounds: `aiRerankZenzReviewRounds`（未設定時 2、最大 3）
 - Zenz alternative limit: `aiRerankZenzAlternativeLimit`（未設定時 2、最大 4）
+- exact同音異義語margin: `aiRerankExactHomophoneMargin`（未設定時 0.10、平均logprob単位）
+- exact同音異義語比較候補数: `aiRerankExactHomophoneMaxCandidates`（未設定時 3、最大 6）
+- affinityスキップ閾値: `aiRerankExactHomophoneAffinityThreshold`（未設定時 0.75、上限 1.0）
 - legacy opt-in 設定キー: `aiRerankUseLegacyExternalReranker=true`
 - legacy HTTP 設定キー: `aiRerankServerURL`
 - legacy HTTP env: `GYAIM_AI_RERANK_SERVER`
@@ -65,12 +68,14 @@ SwiftyGyaim は external command の stdin に JSON を渡す。
   "hiragana": "きのう",
   "context": "直前に確定した文脈",
   "candidates": [
-    {"index": 0, "text": "昨日", "reading": "kinou", "source": "study", "kind": "exact"},
-    {"index": 1, "text": "機能", "reading": "kinou", "source": "connection", "kind": "exact"},
+    {"index": 0, "text": "昨日", "reading": "kinou", "source": "study", "kind": "exact", "studyFrequency": 3},
+    {"index": 1, "text": "機能", "reading": "kinou", "source": "connection", "kind": "exact", "contextAffinity": 0.75},
     {"index": 2, "text": "きのう", "reading": null, "source": "synthetic", "kind": "kana"}
   ]
 }
 ```
+
+候補の `contextAffinity`（0.0〜1.0、ContextDictの文脈一致度）と `studyFrequency`（study辞書の使用回数）は optional。省略時は評価に影響しない。
 
 ## Response JSON
 
@@ -106,9 +111,11 @@ External command は stdout に JSON を返す。
 
 ## In-process local rerank scoring
 
-Swift heuristic rerank は source bias / kind bias / reading一致 / 漢字含有 / script transition penalty を足し合わせる。raw input は候補0に保持するが、ランキング上は強い負スコアを与える。完全一致読み (`kind=exact` かつ `reading == inputPat`) は、prefix / lattice のノイズより優先されるよう追加 bonus を与える。ただし `決して` / `絶対に` / `してはいけ` / `してはなら` / `禁止` / `だめ` / `ダメ` / `ないで` のような強い禁止・否定命令 cue が左文脈にあり、prefix 候補が `な` で終わる場合は contextPredictionBonus で prefix 候補を上げる。一方で、`masen` を明示的に入力しておらず、左文脈にも否定 cue がない段階では、`お願いします` / `思います` への途中入力で `お願いしません` / `思いません` が先頭化しないよう polite negative prediction penalty を与える。さらに `漢字 + の + 漢字` や文末 `では` / `には` / `とは` のような機能語を含む自然なphraseに bonus を与え、ログ由来の `imanodankaideha -> 今の段階では` のような長文候補を、固定phrase辞書なしでも `今野...` 系のprefix複合より上げる。同じ読み・同種候補で句読点付きが元順だけで勝つのを避けるため、文末 `？` / `！` には小さな penalty を与える。Zenz generation / review 由来の全漢字語には小さな追加 bonus を与え、`kyoukaisen -> 境界線` のようにモデルが示した全漢字候補が `教会せん` などの混在script lattice候補に埋もれないようにする。
+Swift heuristic rerank は source bias / kind bias / reading一致 / 漢字含有 / script transition penalty を足し合わせる。raw input は候補0に保持するが、ランキング上は強い負スコアを与える。完全一致読み (`kind=exact` かつ `reading == inputPat`) は、prefix / lattice のノイズより優先されるよう追加 bonus を与える。ただし `決して` / `絶対に` / `してはいけ` / `してはなら` / `禁止` / `だめ` / `ダメ` / `ないで` のような強い禁止・否定命令 cue が左文脈にあり、prefix 候補が `な` で終わる場合は contextPredictionBonus で prefix 候補を上げる。一方で、`masen` を明示的に入力しておらず、左文脈にも否定 cue がない段階では、`お願いします` / `思います` への途中入力で `お願いしません` / `思いません` が先頭化しないよう polite negative prediction penalty を与える。さらに `漢字 + の + 漢字` や文末 `では` / `には` / `とは` のような機能語を含む自然なphraseに bonus を与え、ログ由来の `imanodankaideha -> 今の段階では` のような長文候補を、固定phrase辞書なしでも `今野...` 系のprefix複合より上げる。同じ読み・同種候補で句読点付きが元順だけで勝つのを避けるため、文末 `？` / `！` には小さな penalty を与える。一方、`ha?` のように inputPat が `?` / `!` で終わる場合は、対応する句読点を含まない候補に `punctuatedInputMismatchPenalty` を与え、`投機的デコーディング` のような長い local/study 候補が `は？` より上がらないようにする。さらに、同じ候補集合に完成形がある未完成語幹へ `incompleteStemPenalty` を与える。対象は `少な -> 少ない` / `くださ -> ください` のような末尾 `い` 欠落と、`使っ -> 使った` / `言っ -> 言って` のような促音 `っ` 終わり語幹（日本語の語は `っ` で終わらないため誤爆しない）の2クラス。`ため -> ために` や `する -> するな` のような正当な短縮形は penalize しない。また、stemが既に `い` で終わる場合は「いの欠落」という前提が成り立たないため対象外とする（BUG-025: typo由来の `してほしいい` が `してほしい` を沈めた）。Zenz generation / review 由来の全漢字語には小さな追加 bonus を与え、`kyoukaisen -> 境界線` のようにモデルが示した全漢字候補が `教会せん` などの混在script lattice候補に埋もれないようにする。
 
-Swift runtime 側でも `AIReranker.localScoreBreakdown(candidate:request:)` が feature contribution と total score を返す。これにより、offline evaluator の `--show-features` と同じ観点で source bias / kind bias / exact reading bonus / prefix penalty / context bonus / kanji bonus / natural phrase bonus / punctuation penalty / script transition penalty / zenz kanji bonus / raw ASCII penalty をテスト・debug できる。
+文脈条件付き学習（ADR-020）として、確定時に `(左文脈末尾8文字, reading, word)` を `~/.gyaim/contextdict.txt` に記録し、rerank時に同じ (reading, word) の文脈suffix一致度を `contextAffinity`（suffix共通長2文字以上で発火、4文字で1.0に飽和）として候補に付与する。`AIReranker` は `contextAffinityBonus = min(affinity, 1.0) * 1.50` を加点し、`向き` / `無機` のような同音異義語をユーザー履歴からモデルなしで選べるようにする。また study 候補には `studyFrequency` を渡し、`studyFrequencyBonus = min(0.30, log2(frequency) * 0.10)`（frequency 2以上で発火）でフラットな sourceBias を頻度で補正する。
+
+Swift runtime 側でも `AIReranker.localScoreBreakdown(candidate:request:)` が feature contribution と total score を返す。これにより、offline evaluator の `--show-features` と同じ観点で source bias / kind bias / exact reading bonus / prefix penalty / context bonus / context affinity bonus / study frequency bonus / kanji bonus / natural phrase bonus / punctuation penalty / punctuated input mismatch penalty / incomplete stem penalty / script transition penalty / zenz kanji bonus / raw ASCII penalty をテスト・debug できる。
 
 ## CandidateGenerator lattice scoring
 
@@ -134,7 +141,17 @@ Tab 候補集合を作った後、同梱Zenzで候補を評価する。azooKey/Z
 
 SwiftyGyaim ではまず Swift local rerank の順で上位候補を評価し、fixRequired prefix が出たらその prefix で `CandidateGenerator` の lattice を再探索する。pass 時の alternative constraint は確率比 `> 0.25` のものだけを補助候補として使う。追加候補が得られた場合は、更新された候補集合でもう一度 candidate evaluation を行う。現時点の review loop は既定2 round、設定キー `aiRerankZenzReviewRounds` で最大3 roundまで調整可能とし、azooKey のような `fixRequired -> prefix constraint付きlattice再探索 -> 再評価` の形へ寄せる。これは自由生成で候補を広げるのではなく、Zenz の評価結果で lattice 再探索を誘導するための経路である。
 
-fast-context rerank の model opt-in 経路では latency と安全性を優先し、Swift heuristic の最上位候補だけを1回 review する。`fixRequiredPrefix` は既存候補に prefix 一致する場合だけ先頭移動に使うが、1文字 prefix は `こうほ -> 高品質` や `つか... -> つかっちゃ` のような広すぎる置換を誘発しやすいため採用しない。また現在の最上位候補自身に一致する prefix は順位変更として扱わず、local order を維持する。
+fast-context rerank の model opt-in 経路では latency と安全性を優先し、Swift heuristic の最上位候補だけを1回 review する。`fixRequiredPrefix` は既存候補に prefix 一致する場合だけ先頭移動に使うが、通常のprefix予測では1文字 prefix を採用しない（`こうほ -> 高品質` や `つか... -> つかっちゃ` のような広すぎる置換を誘発しやすいため）。また現在の最上位候補自身に一致する prefix は順位変更として扱わず、local order を維持する。
+
+読み完全一致の `.exact` / `.compound` 最上位候補は、原則として model review で prefix 予測候補へ沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`、`kinou` の `機能` / `昨日`）は exact 同音異義語レビューとして扱う（ADR-021）。この場合は `fixRequiredPrefix` 経由の置換ではなく、`exactHomophoneCandidateIndices` が返す protected exact 候補（既定上位3件、`aiRerankExactHomophoneMaxCandidates` で最大6）を `LlamaZenzContext.score` の条件付き平均logprobで**直接比較**する。未完成語幹（候補集合内に `語幹+い` または `っ` 終わり語幹の完成形が存在する候補、例: `ください` があるときの `くださ`）は比較対象から除外するため、モデルが未完成候補を昇格させることは構造上できない。また、**入力の生かな表記**（候補textが `request.hiragana` と一致するひらがなのみ候補）は、bestでない限り比較対象から除外する。文字レベルLMはかな列に系統的に高い確率を与えるため、`こみ` が `込み` に、`いっか` が `一家` に文脈と無関係に勝ってしまう（BUG-024）。生かな表記は heuristic 順・かな確定キー（`;` / `q`）から常に到達できるので失うものはなく、`ください`（入力 `kudasa` の生かな表記は `くださ`）のような正当なひらがな語は比較対象に残る。bestが生かな表記そのものの場合は除外せず、漢字同音異義語を上へ昇格できる。勝者が現在のbestを margin（`aiRerankExactHomophoneMargin`、既定0.10）以上上回った場合のみ先頭を入れ替える。ログ outcome は `exact-homophone-fixed`（入れ替え）/ `exact-homophone-kept-local`（勝者が別候補だがmargin不足）/ `exact-homophone-passed`（bestが勝者）/ `exact-homophone-unavailable`（scoring失敗）を使う。
+
+bestの `contextAffinity` が閾値（`aiRerankExactHomophoneAffinityThreshold`、既定0.75 = suffix一致3文字以上）以上の場合、同音異義語レビュー自体をスキップする（outcome `affinity-skip`）。ユーザーがその文脈で既に選んだ同音異義語をモデルが覆すべきではなく、レビューのレイテンシも節約できる。
+
+通常review経路の `fixRequiredPrefix` が1文字の場合、`hasPrefix` 一致は広すぎるため従来は常に `kept-local` の no-op だった（dogfood 2026-07-05 で通常reviewの約48%が `書` / `十` のような1文字漢字prefixで空振り）。現在は「候補textがprefixと完全一致し、かつ読み完全一致（protected exact）」の候補に限って昇格を許可する。
+
+`LlamaZenzContext` は `score` と `evaluateCandidate` の成功結果を FIFO 256件でメモ化する。モデルは固定なので結果は不変であり、同一 (context, input) の再レビュー（ウィンドウ再描画・backspace戻り等。dogfoodで1秒以内の同一レビューを複数観測）が即返しになる。失敗（logits確保など一時的要因）はキャッシュしない。
+
+candidate evaluation で モデル最尤 token が EOS の場合（モデルが「ここで文が完結する」と判断したケース）は、failure ではなく pass として扱う。dogfood（2026-07）では `review-unavailable` の437/437件がこの `best-token-is-eos` であり、1回あたり約25msの無駄撃ちと誤った警告ログになっていた。この信号から短縮置換は行わない（未完成語幹昇格の危険があるため）。
 
 ## Zenz candidate generation
 
@@ -273,6 +290,12 @@ export GYAIM_AI_RERANK_SERVER=http://127.0.0.1:9876/rerank
 ```
 
 ## 評価ループ
+
+dogfood中は確定のたびに `Fast context accepted: input=... word=... rank=N candidates=M source=... kind=...` を出力し（`aiRerankFastContextLoggingEnabled=true` 時のみ、prefix mode・意図的確定のみ）、`aggregate-fast-context-log.py` の `acceptedRanks` セクションが rank分布・acceptedTop1Rate / acceptedTop3Rate を集計する。これはユーザーの実入力に対する top1/top3 accuracy の代替指標で、eval fixture のチューニングが実使用と乖離していないかを常時監視する。
+
+feature weight の学習には `train-fast-context-weights.py` を使う。eval fixture（または同スキーマのpreference JSONL）から `expectedTop` vs 他候補の pairwise logistic regression で feature multiplier を学習し（1.0初期値・1.0方向へL2正則化・非負クランプ）、`--feature-weight` 引数として出力する。`model-required` タグ（heuristic featureでは解けない文脈依存同音異義語）は既定で学習から除外する。
+
+量子化の影響は `Tools/zenz-tuning/compare-hf-gguf.py`（M4-1）で計測する。HF非量子化モデルと GGUF Q5_K_M を同じ eval fixture・同じ条件付き平均logprob scoringで比較し、top1一致率・Kendall tau距離を出す（transformers / llama-cpp-python は backend別 opt-in 依存）。
 
 実ログから、azooKey の `anco evaluate` と同様に query / answer / outputs / rank を評価するデータを作る。SwiftyGyaim 内部ループでは JSONL を使い、azooKey 側との比較には `--azookey-json` で `anco evaluate` 互換JSONも出力できる。ログの確定結果を学習辞書として再生する場合は `--study-dict` で SwiftyGyaim study TSV を作る。
 

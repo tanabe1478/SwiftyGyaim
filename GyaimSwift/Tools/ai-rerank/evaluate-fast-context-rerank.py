@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import math
 import os
 import re
 import subprocess
@@ -90,6 +91,8 @@ def make_request(record: dict[str, Any], *, context_mode: str) -> dict[str, Any]
                 "reading": candidate.get("reading"),
                 "source": candidate["source"],
                 "kind": candidate["kind"],
+                "contextAffinity": candidate.get("contextAffinity"),
+                "studyFrequency": candidate.get("studyFrequency"),
             }
             for index, candidate in enumerate(record["candidates"])
         ],
@@ -222,8 +225,18 @@ def is_expected_protected_exact(record: dict[str, Any], expected: str) -> bool:
 
 def infer_outcome(model: Any) -> str:
     value = str(model or "unknown")
+    if "review-affinity-skipped" in value:
+        return "affinity-skip"
     if "review-skipped" in value:
         return "protected-exact-skip"
+    if "review-exact-homophone-unavailable" in value:
+        return "exact-homophone-unavailable"
+    if "review-exact-homophone-fixed" in value:
+        return "exact-homophone-fixed"
+    if "review-exact-homophone-kept-local" in value:
+        return "exact-homophone-kept-local"
+    if "review-exact-homophone-passed" in value:
+        return "exact-homophone-passed"
     if "review-unavailable" in value:
         return "review-unavailable"
     if "review-fixed" in value:
@@ -261,11 +274,19 @@ def local_score_breakdown(
     else:
         contributions["prefixPredictionPenalty"] = -prefix_prediction_penalty(candidate, request["inputPat"])
     contributions["contextPredictionBonus"] = context_prediction_bonus(candidate, request)
+    affinity = candidate.get("contextAffinity")
+    if isinstance(affinity, (int, float)) and affinity > 0:
+        contributions["contextAffinityBonus"] = min(float(affinity), 1.0) * 1.50
+    study_frequency = candidate.get("studyFrequency")
+    if candidate["source"] == "study" and isinstance(study_frequency, int) and study_frequency > 1:
+        contributions["studyFrequencyBonus"] = min(0.30, math.log2(float(study_frequency)) * 0.10)
     contributions["politeNegativePredictionPenalty"] = -polite_negative_prediction_penalty(candidate, request)
     if any(is_kanji(ch) for ch in candidate["text"]):
         contributions["kanjiBonus"] = 0.10
     contributions["naturalFunctionWordPhraseBonus"] = natural_function_word_phrase_bonus(candidate["text"])
     contributions["punctuationSuffixPenalty"] = -punctuation_suffix_penalty(candidate["text"])
+    contributions["punctuatedInputMismatchPenalty"] = -punctuated_input_mismatch_penalty(candidate, request)
+    contributions["incompleteStemPenalty"] = -incomplete_stem_penalty(candidate, request)
     if candidate["kind"] == "zenz" and is_all_kanji_word(candidate["text"]):
         contributions["zenzKanjiBonus"] = 0.50
     if candidate["text"] == request["inputPat"] and candidate["text"].isascii():
@@ -350,6 +371,41 @@ def natural_function_word_phrase_bonus(text: str) -> float:
 
 def punctuation_suffix_penalty(text: str) -> float:
     return 0.10 if text.endswith(("？", "！")) else 0.0
+
+
+def punctuated_input_mismatch_penalty(candidate: dict[str, Any], request: dict[str, Any]) -> float:
+    input_pat = request["inputPat"]
+    if input_pat.endswith("?"):
+        expected = ("?", "？")
+    elif input_pat.endswith("!"):
+        expected = ("!", "！")
+    else:
+        return 0.0
+    return 0.0 if any(mark in candidate["text"] for mark in expected) else 3.0
+
+
+def incomplete_stem_penalty(candidate: dict[str, Any], request: dict[str, Any]) -> float:
+    text = candidate["text"]
+    if not is_potential_incomplete_stem(text):
+        return 0.0
+    for other in request["candidates"]:
+        if other["index"] != candidate["index"] and is_incomplete_stem_completion(text, other["text"]):
+            return 4.0
+    return 0.0
+
+
+def is_potential_incomplete_stem(text: str) -> bool:
+    return bool(text) and not all(is_kanji(ch) for ch in text) and any("\u3041" <= ch <= "\u3096" for ch in text)
+
+
+def is_incomplete_stem_completion(stem: str, completed: str) -> bool:
+    if completed == stem or not completed.startswith(stem) or len(completed) != len(stem) + 1:
+        return False
+    # A stem already ending in い is not "missing" its い (BUG-025:
+    # garbage "してほしいい" must not demote "してほしい").
+    if completed[-1] == "い" and not stem.endswith("い"):
+        return True
+    return stem.endswith("っ")
 
 
 def source_bias(source: str) -> float:

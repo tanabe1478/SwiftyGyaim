@@ -642,7 +642,7 @@ class GyaimController: IMKInputController {
         }
     }
 
-    /// Check if a string is a valid external candidate (not a Gyazo hash, not a URL).
+    /// Check if a string is a valid external candidate (not a Gyazo hash, URL, or code-like identifier).
     static func isValidExternalCandidate(_ s: String) -> Bool {
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return false }
@@ -650,7 +650,25 @@ class GyaimController: IMKInputController {
         let lowercased = trimmed.lowercased()
         if lowercased.hasPrefix("http") { return false }
         if lowercased.contains("://") { return false }
+        if isCodeLikeExternalCandidate(trimmed) { return false }
         return true
+    }
+
+    static func isExternalCandidateAllowed(forInput inputPat: String) -> Bool {
+        !inputPat.contains { character in
+            character == "?" || character == "？" || character == "!" || character == "！"
+        }
+    }
+
+    private static func isCodeLikeExternalCandidate(_ text: String) -> Bool {
+        let scalars = Array(text.unicodeScalars)
+        guard scalars.contains(where: { $0.value == 0x5F }) else { return false } // "_"
+        return scalars.allSatisfy { scalar in
+            (0x41...0x5A).contains(scalar.value)
+                || (0x61...0x7A).contains(scalar.value)
+                || (0x30...0x39).contains(scalar.value)
+                || scalar.value == 0x5F
+        }
     }
 
     /// Build prefix-mode candidate list with external candidates injected.
@@ -671,8 +689,9 @@ class GyaimController: IMKInputController {
         // prefix match such as "gu" -> "具体的" or "maeno" -> "前のめり".
         // External candidates follow raw input so they appear at the top of the
         // candidate window, matching the original Gyaim registration workflow.
+        let externalAllowedForInput = isExternalCandidateAllowed(forInput: inputPat)
         if let clip = clipboardCandidate {
-            if isValidExternalCandidate(clip) {
+            if externalAllowedForInput && isValidExternalCandidate(clip) {
                 candidates.append(SearchCandidate(word: clip, source: .external, kind: .exact))
             } else if isFastContextRerankLoggingEnabled {
                 Log.input.info("External clipboard candidate rejected: \"\(clip.prefix(50))\"")
@@ -680,7 +699,7 @@ class GyaimController: IMKInputController {
         }
 
         if let sel = selectedCandidate {
-            if isValidExternalCandidate(sel) {
+            if externalAllowedForInput && isValidExternalCandidate(sel) {
                 candidates.append(SearchCandidate(word: sel, source: .external, kind: .exact))
             } else if isFastContextRerankLoggingEnabled {
                 Log.input.info("External selected-text candidate rejected: \"\(sel.prefix(50))\"")
@@ -745,7 +764,11 @@ class GyaimController: IMKInputController {
                                   text: candidate.word,
                                   reading: candidate.reading,
                                   source: String(describing: candidate.source),
-                                  kind: candidate.kind.rawValue)
+                                  kind: candidate.kind.rawValue,
+                                  contextAffinity: ContextDict.shared.affinity(context: trimmedContext,
+                                                                               reading: candidate.reading,
+                                                                               word: candidate.word),
+                                  studyFrequency: candidate.studyFrequency)
             }
         )
         let response = fastContextRerankResponse(for: request)
@@ -804,7 +827,12 @@ class GyaimController: IMKInputController {
     }
 
     private static func fastContextRerankOutcome(model: String) -> String {
+        if model.contains("review-affinity-skipped") { return "affinity-skip" }
         if model.contains("review-skipped") { return "protected-exact-skip" }
+        if model.contains("review-exact-homophone-unavailable") { return "exact-homophone-unavailable" }
+        if model.contains("review-exact-homophone-fixed") { return "exact-homophone-fixed" }
+        if model.contains("review-exact-homophone-kept-local") { return "exact-homophone-kept-local" }
+        if model.contains("review-exact-homophone-passed") { return "exact-homophone-passed" }
         if model.contains("review-unavailable") { return "review-unavailable" }
         if model.contains("review-fixed") { return "review-fixed" }
         if model.contains("review-kept-local") { return "review-kept-local" }
@@ -1135,7 +1163,11 @@ class GyaimController: IMKInputController {
                                   text: candidate.word,
                                   reading: candidate.reading,
                                   source: String(describing: candidate.source),
-                                  kind: candidate.kind.rawValue)
+                                  kind: candidate.kind.rawValue,
+                                  contextAffinity: ContextDict.shared.affinity(context: context,
+                                                                               reading: candidate.reading,
+                                                                               word: candidate.word),
+                                  studyFrequency: candidate.studyFrequency)
             }
         )
 
@@ -1260,6 +1292,15 @@ class GyaimController: IMKInputController {
         let candidateWords = candidates.map(\.word)
         Log.input.info("Fixed: \"\(word)\" (reading: \"\(reading)\", index: \(nthCand)/\(candidates.count), candidates: \(candidateWords))")
 
+        // Accepted-rank metric for dogfood evaluation: which rank the user
+        // actually committed. rank=0 is the raw input; rank=1 is the first
+        // displayed candidate. Aggregated by aggregate-fast-context-log.py.
+        if Self.isFastContextRerankLoggingEnabled, !skipStudy, searchMode == 0 {
+            Log.input.info("Fast context accepted: input=\"\(self.inputPat)\" word=\"\(word)\" "
+                + "rank=\(self.nthCand) candidates=\(self.candidates.count) "
+                + "source=\(String(describing: candidate.source)) kind=\(candidate.kind.rawValue)")
+        }
+
         let resolvedClient = (sender as? IMKTextInput) ?? (self.client() as? IMKTextInput)
         guard let client = resolvedClient else {
             resetState()
@@ -1281,17 +1322,23 @@ class GyaimController: IMKInputController {
         } else {
             let isExternalCandidate = (word == clipboardCandidate || word == selectedCandidate)
             if isExternalCandidate {
-                // External candidate (clipboard/selected text) → register to user dict
-                ws?.register(word: word, reading: inputPat)
-                Log.input.info("Registered to user dict: \"\(word)\" (reading: \"\(inputPat)\")")
+                // External candidate (clipboard/selected text) → register to user dict only when the reading is safe.
+                if Self.isExternalCandidateAllowed(forInput: inputPat), Self.isValidExternalCandidate(word) {
+                    ws?.register(word: word, reading: inputPat)
+                    Log.input.info("Registered to user dict: \"\(word)\" (reading: \"\(inputPat)\")")
+                } else {
+                    Log.input.info("External candidate registration skipped: \"\(word.prefix(50))\" (reading: \"\(inputPat)\")")
+                }
             } else if let reading = candidate.reading {
                 if reading != "ds" {
                     ws?.study(word: word, reading: reading)
+                    ContextDict.shared.record(context: recentCommittedText, reading: reading, word: word)
                     Log.input.info("Studied: \"\(word)\" (reading: \"\(reading)\")")
                 }
             } else {
                 if inputPat != "ds" {
                     ws?.study(word: word, reading: inputPat)
+                    ContextDict.shared.record(context: recentCommittedText, reading: inputPat, word: word)
                     Log.input.info("Studied: \"\(word)\" (reading: \"\(inputPat)\")")
                 }
             }
@@ -1312,10 +1359,10 @@ class GyaimController: IMKInputController {
         let reading = candidate.reading ?? inputPat
 
         switch candidate.source {
-        case .study:
-            ws?.deleteFromStudy(word: candidate.word, reading: reading)
-        case .local:
-            ws?.deleteFromLocal(word: candidate.word, reading: reading)
+        case .study, .local:
+            ws?.deleteFromUserDictionaries(word: candidate.word, reading: reading)
+            // Context memory must not resurrect a deleted candidate.
+            ContextDict.shared.deleteEntries(word: candidate.word, reading: reading)
         case .connection, .google, .external, .synthetic:
             Log.dict.info("Cannot delete candidate: \"\(candidate.word)\" (source: \(candidate.source))")
             return

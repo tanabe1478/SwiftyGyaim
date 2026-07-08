@@ -87,6 +87,16 @@ def parse_literal_list(value: str) -> list:
 
 
 def infer_outcome(model: str) -> str:
+    if "review-affinity-skipped" in model:
+        return "affinity-skip"
+    if "review-exact-homophone-fixed" in model:
+        return "exact-homophone-fixed"
+    if "review-exact-homophone-passed" in model:
+        return "exact-homophone-passed"
+    if "review-exact-homophone-kept-local" in model:
+        return "exact-homophone-kept-local"
+    if "review-exact-homophone-unavailable" in model:
+        return "exact-homophone-unavailable"
     if "review-fixed" in model:
         return "review-fixed"
     if "review-passed" in model:

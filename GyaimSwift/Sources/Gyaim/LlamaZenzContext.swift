@@ -30,6 +30,38 @@ final class LlamaZenzContext {
     private let generationSeqId: llama_seq_id = 1
     private var previousTokensBySeq: [llama_seq_id: [llama_token]] = [:]
 
+    /// FIFO-bounded memo for deterministic model outputs. Fast-context reviews
+    /// re-run for the same (context, input) on window redraws and backspace
+    /// returns (dogfood 2026-07-05: identical reviews within 1s); the model is
+    /// frozen so cached results never go stale. Access is serialized by
+    /// BundledZenzRuntime's lock.
+    private struct BoundedCache<Value> {
+        private var storage: [String: Value] = [:]
+        private var insertionOrder: [String] = []
+        private let capacity: Int
+
+        init(capacity: Int) {
+            self.capacity = capacity
+        }
+
+        subscript(key: String) -> Value? {
+            get { storage[key] }
+            set {
+                guard let newValue else { return }
+                if storage[key] == nil {
+                    insertionOrder.append(key)
+                    if insertionOrder.count > capacity {
+                        storage.removeValue(forKey: insertionOrder.removeFirst())
+                    }
+                }
+                storage[key] = newValue
+            }
+        }
+    }
+
+    private var scoreCache = BoundedCache<Double>(capacity: 256)
+    private var evaluationCache = BoundedCache<CandidateEvaluation>(capacity: 256)
+
     private struct GenerationBeam {
         let tokens: [llama_token]
         let generated: [llama_token]
@@ -106,6 +138,9 @@ final class LlamaZenzContext {
     }
 
     func score(prompt: String, continuation: String) -> Double? {
+        let cacheKey = "\(prompt)\u{0}\(continuation)"
+        if let cached = scoreCache[cacheKey] { return cached }
+
         let promptTokens = encode(prompt, addBOS: true)
         let continuationTokens = encode(continuation, addBOS: false)
         guard !promptTokens.isEmpty, !continuationTokens.isEmpty else { return nil }
@@ -123,7 +158,9 @@ final class LlamaZenzContext {
             let logsumexp = logSumExp(logits: logits, startIndex: startIndex, count: vocabCount)
             logProbability += Double(logits[startIndex + Int(tokenID)] - logsumexp)
         }
-        return logProbability / Double(continuationTokens.count)
+        let meanLogProbability = logProbability / Double(continuationTokens.count)
+        scoreCache[cacheKey] = meanLogProbability
+        return meanLogProbability
     }
 
     func generate(prompt: String, maxTokens: Int) -> String? {
@@ -190,9 +227,19 @@ final class LlamaZenzContext {
                            candidateText: String,
                            alternativeLimit: Int,
                            failureReason: ((String) -> Void)? = nil) -> CandidateEvaluation? {
+        // Successful evaluations are deterministic; failures may be transient
+        // (logits allocation), so only successes are cached.
+        let cacheKey = "\(alternativeLimit)\u{0}\(prompt)\u{0}\(candidateText)"
+        if let cached = evaluationCache[cacheKey] { return cached }
+
         func fail(_ reason: String) -> CandidateEvaluation? {
             failureReason?(reason)
             return nil
+        }
+
+        func succeed(_ evaluation: CandidateEvaluation) -> CandidateEvaluation {
+            evaluationCache[cacheKey] = evaluation
+            return evaluation
         }
 
         let promptTokens = encode(prompt, addBOS: true)
@@ -213,12 +260,21 @@ final class LlamaZenzContext {
             let top = topTokens(from: logits.advanced(by: startIndex), limit: max(1, alternativeLimit + 1))
             guard let best = top.first else { return fail("empty-top-token-list") }
             if best.token != tokenID {
-                guard best.token != llama_vocab_eos(vocab) else { return fail("best-token-is-eos") }
+                // The model prefers to end the output here: the candidate is an
+                // extension of a form the model already considers complete. This
+                // is a judgment, not a failure — treating it as "unavailable"
+                // wasted ~25ms per review and hid real failures (dogfood
+                // 2026-07: 437/437 review-unavailable were best-token-is-eos).
+                // Never promote a truncation from this signal; just pass.
+                if best.token == llama_vocab_eos(vocab) {
+                    return succeed(CandidateEvaluation(fixRequiredPrefix: nil,
+                                                       alternatives: alternatives.sorted { $0.probabilityRatio > $1.probabilityRatio }))
+                }
                 guard let prefix = decodedCandidatePrefix(tokens: Array(tokens[..<tokenIndex]) + [best.token],
                                                           promptText: promptText) else {
                     return fail("decoded-prefix-mismatch")
                 }
-                return CandidateEvaluation(fixRequiredPrefix: prefix, alternatives: [])
+                return succeed(CandidateEvaluation(fixRequiredPrefix: prefix, alternatives: []))
             }
 
             for alternative in top.dropFirst().prefix(alternativeLimit) where alternative.token != llama_vocab_eos(vocab) {
@@ -228,8 +284,8 @@ final class LlamaZenzContext {
                 alternatives.append(CandidateEvaluation.Alternative(prefix: prefix, probabilityRatio: ratio))
             }
         }
-        return CandidateEvaluation(fixRequiredPrefix: nil,
-                                   alternatives: alternatives.sorted { $0.probabilityRatio > $1.probabilityRatio })
+        return succeed(CandidateEvaluation(fixRequiredPrefix: nil,
+                                           alternatives: alternatives.sorted { $0.probabilityRatio > $1.probabilityRatio }))
     }
 
     private func decodedCandidatePrefix(tokens: [llama_token], promptText: String) -> String? {

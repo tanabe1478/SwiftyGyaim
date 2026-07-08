@@ -37,6 +37,17 @@ final class ExternalCandidateTests: XCTestCase {
         XCTAssertTrue(GyaimController.isValidExternalCandidate("abcdef"))
     }
 
+    func testSnakeCaseIdentifierIsInvalid() {
+        XCTAssertFalse(GyaimController.isValidExternalCandidate("sns_origination_identity_arn"))
+        XCTAssertFalse(GyaimController.isValidExternalCandidate("AWS_SECRET_ACCESS_KEY"))
+    }
+
+    func testExternalCandidateIsNotAllowedForPunctuatedInput() {
+        XCTAssertFalse(GyaimController.isExternalCandidateAllowed(forInput: "korejjanaino?"))
+        XCTAssertFalse(GyaimController.isExternalCandidateAllowed(forInput: "sou!"))
+        XCTAssertTrue(GyaimController.isExternalCandidateAllowed(forInput: "horisage"))
+    }
+
     // MARK: - buildPrefixCandidates
 
     func testBuildWithNoExternalCandidates() {
@@ -148,6 +159,19 @@ final class ExternalCandidateTests: XCTestCase {
             fastContextRerankEnabled: false
         )
         XCTAssertEqual(result.map(\.word).prefix(3), ["shitagau", "従うな", "従う"])
+    }
+
+    func testBuildRejectsClipboardCandidateForPunctuatedInput() {
+        let result = GyaimController.buildPrefixCandidates(
+            searchResults: [SearchCandidate(word: "これっじゃないの？", reading: "korejjanaino?")],
+            inputPat: "korejjanaino?",
+            clipboardCandidate: "sns_origination_identity_arn",
+            selectedCandidate: nil,
+            hiragana: "これっじゃないの？"
+        )
+        let words = result.map(\.word)
+        XCTAssertFalse(words.contains("sns_origination_identity_arn"))
+        XCTAssertEqual(words.prefix(2), ["korejjanaino?", "これっじゃないの？"])
     }
 
     func testBuildWithClipboardCandidate() {
