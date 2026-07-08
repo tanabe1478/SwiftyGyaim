@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-07-08 (ConnectionDictの有界列挙API追加 — ADR-022)
+> Last updated: 2026-07-09 (辞書提案CLI追加 — issue #59 方向性4)
 
 ## 概要
 
@@ -87,6 +87,19 @@ https://raw.githubusercontent.com/masui/Gictionary/master/dict2.txt
 - 起動時/再読み込み時は `Config.activeConnectionDictFile(bundleDictPath:)` で、インポート済みファイルが存在し非空ならそれを使用し、なければbundle内 `Resources/dict.txt` を使用する
 - インポート成功後は `GyaimController.reloadConnectionDictionary()` で現在の `WordSearch` を作り直し、再起動せずに反映する
 - 「内蔵辞書に戻す」で `~/.gyaim/connectiondict.txt` とURL設定を削除し、bundle辞書を再ロードする
+
+### 辞書提案CLI（issue #59 方向性4）
+
+`Tools/dict/suggest-connection-entries.py` は、ユーザーの実使用から接続辞書の不足語を提案する。
+
+- 入力: `~/.gyaim/studydict.txt`（頻度閾値、既定5）/ `localdict.txt` / `gyaim.log`（Google Transliterate経由の確定 = 辞書の穴の実証）
+- 除外: 接続辞書で合成可能な語（ConnectionDictの有界exact探索のPython port）、全ひらがな語、非ローマ字reading、日本語以外の表記
+- 出力: レビュー用チェックリスト（`--format markdown`）または TSV 行（一般名詞 `3 -> 4` 想定）。**自動適用はしない**。動詞・形容詞・助詞類のクラスは手動判断（#45）
+- プライバシー: ローカルファイルのみ読み、外部送信しない。出力は私的語彙を含むためレビューなしで共有しない
+
+```bash
+python3 Tools/dict/suggest-connection-entries.py --limit 50
+```
 
 ### Gictionary JSON の解釈
 

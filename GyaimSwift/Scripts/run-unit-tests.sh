@@ -33,7 +33,8 @@ python3 -m py_compile \
   Tools/ai-rerank/sweep-fast-context-weights.py \
   Tools/ai-rerank/aggregate-fast-context-log.py \
   Tools/ai-rerank/train-fast-context-weights.py \
-  Tools/zenz-tuning/compare-hf-gguf.py
+  Tools/zenz-tuning/compare-hf-gguf.py \
+  Tools/dict/suggest-connection-entries.py
 python3 Tools/ai-rerank/validate-fast-context-eval-cases.py >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --json >/dev/null
 # Quality gate (issue #57): fail CI when a non-model-required case misses top1,
@@ -57,6 +58,16 @@ assert report["results"]
 assert "delta" in report["results"][0]
 PY
 rm -f "$sweep_json"
+suggest_dir="$(mktemp -d)"
+printf 'kyokusho\t局所\t3\t4\nka\t*化\t4\t40\n' > "$suggest_dir/dict.txt"
+printf 'kyokushoka\t局所化\t100.0\t9\nzeijaku\t脆弱\t100.0\t7\n' > "$suggest_dir/study.txt"
+: > "$suggest_dir/local.txt"
+: > "$suggest_dir/log.txt"
+suggest_out="$(python3 Tools/dict/suggest-connection-entries.py --dict "$suggest_dir/dict.txt" \
+  --study "$suggest_dir/study.txt" --local "$suggest_dir/local.txt" --log "$suggest_dir/log.txt" --format tsv)"
+echo "$suggest_out" | grep -q "脆弱" || { echo "dict suggestion smoke failed: missing gap"; exit 1; }
+echo "$suggest_out" | grep -q "局所化" && { echo "dict suggestion smoke failed: composable word suggested"; exit 1; }
+rm -rf "$suggest_dir"
 review_cases_jsonl="$(mktemp)"
 python3 Tools/ai-rerank/extract-fast-context-review-cases.py --limit 1 > "$review_cases_jsonl"
 python3 Tools/ai-rerank/summarize-fast-context-review-labels.py "$review_cases_jsonl" >/dev/null
