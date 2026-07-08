@@ -125,7 +125,13 @@ class WordSearch {
         // ファイルパスが変わった場合（テスト等）は再ロード。
         if Self.studyDictFile != studyDictFile {
             Self.studyDictFile = studyDictFile
-            Self.studyDict = Self.loadStudyDict(dictFile: studyDictFile)
+            let loaded = Self.loadStudyDict(dictFile: studyDictFile)
+            let merged = Self.mergeKanaEquivalentStudyEntries(loaded)
+            Self.studyDict = merged
+            if merged.count != loaded.count {
+                Self.saveStudyDict(dictFile: studyDictFile, dict: merged)
+                Log.dict.info("Study dict kana-variant merge: \(loaded.count) -> \(merged.count) entries")
+            }
         }
         Log.dict.info("WordSearch initialized: local=\(localDict.count), study=\(Self.studyDict.count) entries")
     }
@@ -397,7 +403,10 @@ class WordSearch {
         }
 
         let now = Date().timeIntervalSince1970
-        if let idx = Self.studyDict.firstIndex(where: { $0.reading == reading && $0.word == word }) {
+        // Kana-equivalent lookup (issue #58): committing 更新 as "kousin" must
+        // bump the existing "kousinn" entry instead of creating a duplicate
+        // romaji-variant entry (the stored canonical reading is kept).
+        if let idx = studyEntryIndex(word: word, reading: reading) {
             var entry = Self.studyDict.remove(at: idx)
             entry.lastAccessTime = now
             entry.frequency += 1
@@ -433,12 +442,78 @@ class WordSearch {
         }
     }
 
+    /// Index of the study entry matching (word, reading) where the reading may
+    /// be any romaji spelling variant of the same kana (issue #58).
+    /// Word equality is checked first so kana conversion only runs for
+    /// same-word entries.
+    private func studyEntryIndex(word: String, reading: String) -> Int? {
+        if let exact = Self.studyDict.firstIndex(where: { $0.reading == reading && $0.word == word }) {
+            return exact
+        }
+        let kana = rk.roma2hiragana(reading)
+        guard !kana.isEmpty else { return nil }
+        return Self.studyDict.firstIndex { entry in
+            entry.word == word && entry.reading != reading && rk.roma2hiragana(entry.reading) == kana
+        }
+    }
+
+    /// Merge study entries whose readings are romaji spelling variants of the
+    /// same kana (issue #58, storage-side completion of BUG-026): "kousinn"
+    /// and "kousin" for 更新 become one entry. The higher-frequency member
+    /// keeps the canonical reading, frequencies are summed, lastAccessTime is
+    /// the max, and the merged entry keeps the earliest (most recent in MRU
+    /// order) position. Only words that appear more than once are kana
+    /// converted, so startup cost stays proportional to actual duplicates.
+    static func mergeKanaEquivalentStudyEntries(_ entries: [StudyEntry]) -> [StudyEntry] {
+        var wordCounts: [String: Int] = [:]
+        for entry in entries {
+            wordCounts[entry.word, default: 0] += 1
+        }
+        guard wordCounts.values.contains(where: { $0 > 1 }) else { return entries }
+
+        let rk = RomaKana()
+        var indexByKey: [String: Int] = [:]
+        var canonicalFrequencyByKey: [String: Int] = [:]
+        var result: [StudyEntry] = []
+        for entry in entries {
+            guard wordCounts[entry.word, default: 0] > 1 else {
+                result.append(entry)
+                continue
+            }
+            let kana = rk.roma2hiragana(entry.reading)
+            let key = (kana.isEmpty ? entry.reading : kana) + "\t" + entry.word
+            if let index = indexByKey[key] {
+                let kept = result[index]
+                let keptCanonicalFrequency = canonicalFrequencyByKey[key] ?? kept.frequency
+                let useNewReading = entry.frequency > keptCanonicalFrequency
+                result[index] = StudyEntry(reading: useNewReading ? entry.reading : kept.reading,
+                                           word: kept.word,
+                                           lastAccessTime: max(kept.lastAccessTime, entry.lastAccessTime),
+                                           frequency: kept.frequency + entry.frequency)
+                if useNewReading {
+                    canonicalFrequencyByKey[key] = entry.frequency
+                }
+            } else {
+                indexByKey[key] = result.count
+                canonicalFrequencyByKey[key] = entry.frequency
+                result.append(entry)
+            }
+        }
+        return result
+    }
+
     /// Delete a word from the study dictionary.
     /// Returns true if the entry was found and removed.
+    /// Romaji spelling variants of the same kana reading are removed together
+    /// (issue #58), so a deleted word cannot survive under a variant reading.
     @discardableResult
     func deleteFromStudy(word: String, reading: String) -> Bool {
         let before = Self.studyDict.count
-        Self.studyDict.removeAll { $0.reading == reading && $0.word == word }
+        let kana = rk.roma2hiragana(reading)
+        Self.studyDict.removeAll { entry in
+            entry.word == word
+                && (entry.reading == reading || (!kana.isEmpty && rk.roma2hiragana(entry.reading) == kana))
+        }
         if Self.studyDict.count < before {
             Self.saveStudyDict(dictFile: Self.studyDictFile, dict: Self.studyDict)
             Log.dict.info("Deleted from study dict: \"\(word)\" (reading: \"\(reading)\")")

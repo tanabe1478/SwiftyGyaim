@@ -64,6 +64,74 @@ final class WordSearchTests: XCTestCase {
         XCTAssertEqual(koushin?.reading, "kousinn")
     }
 
+    func testKanaVariantStudyEntriesMergeOnLoad() throws {
+        // Issue #58: romaji spelling variants of the same kana reading merge
+        // into one entry at load time (frequencies summed, canonical reading
+        // from the highest-frequency member) and the merged file is persisted.
+        let tempDir = try XCTUnwrap(tempDir)
+        let mergeStudyDict = tempDir.appendingPathComponent("studydict-merge.txt")
+        try """
+        kousin\t更新\t1000.0\t2
+        kousin\t行進\t1000.0\t11
+        kousinn\t更新\t2000.0\t101
+        """.write(to: mergeStudyDict, atomically: true, encoding: .utf8)
+
+        WordSearch.resetStudyDict()
+        let projectDir = URL(fileURLWithPath: #file)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let dictPath = projectDir.appendingPathComponent("Resources/dict.txt").path
+        _ = WordSearch(connectionDictFile: dictPath,
+                       localDictFile: tempDir.appendingPathComponent("localdict.txt").path,
+                       studyDictFile: mergeStudyDict.path)
+
+        let entries = WordSearch.studyDict
+        let koushin = try XCTUnwrap(entries.first { $0.word == "更新" })
+        XCTAssertEqual(koushin.reading, "kousinn")
+        XCTAssertEqual(koushin.frequency, 103)
+        XCTAssertEqual(koushin.lastAccessTime, 2000.0)
+        XCTAssertEqual(entries.filter { $0.word == "更新" }.count, 1)
+        // Different word with the same reading is untouched.
+        XCTAssertEqual(entries.first { $0.word == "行進" }?.frequency, 11)
+        // Merged result was persisted back to the file.
+        let persisted = WordSearch.loadStudyDict(dictFile: mergeStudyDict.path)
+        XCTAssertEqual(persisted.count, 2)
+    }
+
+    func testMergeKanaEquivalentStudyEntriesKeepsMRUPositionAndOrder() {
+        let entries = [
+            StudyEntry(reading: "kousin", word: "更新", lastAccessTime: 1000, frequency: 2),
+            StudyEntry(reading: "kinou", word: "機能", lastAccessTime: 900, frequency: 5),
+            StudyEntry(reading: "kousinn", word: "更新", lastAccessTime: 2000, frequency: 101),
+        ]
+
+        let merged = WordSearch.mergeKanaEquivalentStudyEntries(entries)
+
+        XCTAssertEqual(merged.map(\.word), ["更新", "機能"])
+        XCTAssertEqual(merged[0].reading, "kousinn")
+        XCTAssertEqual(merged[0].frequency, 103)
+    }
+
+    func testStudyWithKanaVariantReadingBumpsExistingEntry() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "更新", reading: "kousinn")
+        ws.study(word: "更新", reading: "kousin")
+
+        let entries = WordSearch.studyDict.filter { $0.word == "更新" }
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries.first?.reading, "kousinn")
+        XCTAssertEqual(entries.first?.frequency, 2)
+    }
+
+    func testDeleteFromStudyRemovesKanaVariantReading() throws {
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "更新", reading: "kousinn")
+
+        XCTAssertTrue(ws.deleteFromStudy(word: "更新", reading: "kousin"))
+        XCTAssertTrue(WordSearch.studyDict.filter { $0.word == "更新" }.isEmpty)
+    }
+
     func testSearchProductiveKaSuffixCandidate() throws {
         try XCTSkipIf(ws == nil)
         let results = ws.search(query: "kyokushoka", searchMode: 1)
