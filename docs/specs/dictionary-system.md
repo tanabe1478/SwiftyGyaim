@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-07-08 (studydictのかな等価統合マイグレーション)
+> Last updated: 2026-07-08 (ConnectionDictの有界列挙API追加 — ADR-022)
 
 ## 概要
 
@@ -44,6 +44,8 @@ romaji surface inConnection outConnection
 - 表記に含まれる `*` は内部接続用マーカー。`ConnectionDict` はこれを `canStart` / `canTerminate` / `contributesSurface` に正規化して扱う
 
 例: `けいおう 大学名 大学名接続` と `だいがく 大学名接続 名詞接続` があれば、`けいおうだいがく` から `慶應大学` を生成できる。動詞活用も同様に `むす -> 結`、`べ -> *べ*`、`ない -> *ない` のような接続で `結べない` を生成する。
+
+`constrainedCompositions(pat:maxResults:maxDepth:)`（ADR-022）は同じ遷移探索の**有界版**で、完全変換の表層のみを重複なく列挙し、結果上限（既定12）と深さ上限（既定8）で再帰を打ち切る。辞書制約付きZenz生成の制約集合として使われる。`searchDetailed` 側の探索は従来どおり無制限（通常候補の互換性維持のため）。
 
 生産的な接尾辞も接続辞書で扱う。`化` は suffix-only の `*化` として `名詞接続/普通名詞接続 -> する接続` に追加し、`局所 + 化 -> 局所化`、`局所 + 化 + する -> 局所化する` のような候補を通常辞書検索で生成する。先頭 `*` により単独 `ka` のトップレベル候補は増やさず、接続経路上でのみ利用する。
 

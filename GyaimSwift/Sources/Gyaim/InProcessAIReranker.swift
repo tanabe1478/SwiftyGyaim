@@ -56,4 +56,21 @@ final class InProcessAIReranker {
         }
         return []
     }
+
+    func selectConstrainedCandidates(inputPat: String,
+                                     hiragana: String,
+                                     context: String?,
+                                     surfaces: [String],
+                                     limit: Int = 3) -> [SearchCandidate] {
+        for backend in backends {
+            guard let generator = backend as? AICandidateGenerationBackend else { continue }
+            let candidates = generator.selectConstrainedCandidates(inputPat: inputPat,
+                                                                   hiragana: hiragana,
+                                                                   context: context,
+                                                                   surfaces: surfaces,
+                                                                   limit: limit)
+            if !candidates.isEmpty { return candidates }
+        }
+        return []
+    }
 }

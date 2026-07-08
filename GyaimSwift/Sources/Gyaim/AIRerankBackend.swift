@@ -15,6 +15,23 @@ protocol AIRerankBackend {
 protocol AICandidateGenerationBackend {
     func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate]
     func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate]
+    /// Dictionary-constrained selection (issue #59): rank dictionary-composable
+    /// surfaces and return the best ones as candidates.
+    func selectConstrainedCandidates(inputPat: String,
+                                     hiragana: String,
+                                     context: String?,
+                                     surfaces: [String],
+                                     limit: Int) -> [SearchCandidate]
+}
+
+extension AICandidateGenerationBackend {
+    func selectConstrainedCandidates(inputPat: String,
+                                     hiragana: String,
+                                     context: String?,
+                                     surfaces: [String],
+                                     limit: Int) -> [SearchCandidate] {
+        []
+    }
 }
 
 struct HeuristicAIRerankBackend: AIRerankBackend {
@@ -65,5 +82,18 @@ final class BundledZenzAIRerankBackend: AIRerankBackend, AICandidateGenerationBa
     func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate] {
         guard canRun() else { return [] }
         return runtime.alternativeCandidates(for: request, limit: limit)
+    }
+
+    func selectConstrainedCandidates(inputPat: String,
+                                     hiragana: String,
+                                     context: String?,
+                                     surfaces: [String],
+                                     limit: Int) -> [SearchCandidate] {
+        guard canRun() else { return [] }
+        return runtime.selectCandidates(inputPat: inputPat,
+                                        hiragana: hiragana,
+                                        context: context,
+                                        surfaces: surfaces,
+                                        limit: limit)
     }
 }
