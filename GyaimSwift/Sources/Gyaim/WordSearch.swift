@@ -522,6 +522,14 @@ class WordSearch {
         return false
     }
 
+    /// Connection-grammatical compositions of the full reading, bounded
+    /// (issue #59). Used as the constraint set for dictionary-constrained
+    /// Zenz candidate selection; safety filters match the normal search path.
+    func connectionCompositions(reading: String, limit: Int = 12) -> [ConnectionComposition] {
+        connectionDict.constrainedCompositions(pat: reading, maxResults: limit)
+            .filter { Self.isSafeDisplayCandidate($0.word) && !Self.isSuspiciousConnectionSurface($0.word) }
+    }
+
     /// Delete a word from the local dictionary.
     /// Returns true if the entry was found and removed.
     @discardableResult

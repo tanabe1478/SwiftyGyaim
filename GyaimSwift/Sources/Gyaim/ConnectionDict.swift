@@ -43,6 +43,12 @@ struct ConnectionSearchResult {
     let depth: Int
 }
 
+/// A complete, connection-grammatical composition of a reading (issue #59).
+struct ConnectionComposition: Equatable {
+    let word: String
+    let depth: Int
+}
+
 /// Morphological connection dictionary for compound word matching.
 /// Ported from ConnectionDict.rb (Toshiyuki Masui, 2011)
 class ConnectionDict {
@@ -127,6 +133,63 @@ class ConnectionDict {
                         callback: (_ result: ConnectionSearchResult) -> Void) {
         generateCand(connection: nil, pat: pat, foundWord: "", foundPat: "", depth: 0,
                      searchMode: searchMode, callback: callback)
+    }
+
+    /// Enumerate complete compositions of `pat` with bounded work (issue #59,
+    /// ADR-022). Unlike `searchDetailed`, this emits only exact full-reading
+    /// conversions, deduplicates surfaces, and stops at `maxResults` /
+    /// `maxDepth` so long or ambiguous readings cannot explode the recursion.
+    /// The result set is the "grammar" for dictionary-constrained generation:
+    /// the model may only choose among these surfaces.
+    func constrainedCompositions(pat: String,
+                                 maxResults: Int = 12,
+                                 maxDepth: Int = 8) -> [ConnectionComposition] {
+        guard maxResults > 0, maxDepth > 0 else { return [] }
+        var seen = Set<String>()
+        var results: [ConnectionComposition] = []
+        enumerateCompositions(connection: nil, pat: pat, foundWord: "", depth: 0,
+                              maxResults: maxResults, maxDepth: maxDepth,
+                              seen: &seen, results: &results)
+        return results
+    }
+
+    private func enumerateCompositions(connection: Int?, pat: String,
+                                       foundWord: String, depth: Int,
+                                       maxResults: Int, maxDepth: Int,
+                                       seen: inout Set<String>,
+                                       results: inout [ConnectionComposition]) {
+        guard results.count < maxResults, depth < maxDepth,
+              let firstScalar = pat.unicodeScalars.first else { return }
+        var d: Int?
+        if let conn = connection {
+            d = connectionLink[conn]
+        } else {
+            d = keyLink[Int(firstScalar.value)]
+        }
+
+        while let idx = d {
+            guard results.count < maxResults else { return }
+            let entry = dict[idx]
+            let nextWord = entry.contributesSurface ? foundWord + entry.word : foundWord
+            if pat == entry.pat {
+                if entry.canTerminate, !nextWord.isEmpty, seen.insert(nextWord).inserted {
+                    results.append(ConnectionComposition(word: nextWord, depth: depth + 1))
+                }
+            } else if pat.hasPrefix(entry.pat), !entry.pat.isEmpty {
+                enumerateCompositions(connection: entry.outConnection,
+                                      pat: String(pat.dropFirst(entry.pat.count)),
+                                      foundWord: nextWord,
+                                      depth: depth + 1,
+                                      maxResults: maxResults, maxDepth: maxDepth,
+                                      seen: &seen, results: &results)
+            }
+
+            if connection != nil {
+                d = dict[idx].connectionLink
+            } else {
+                d = dict[idx].keyLink
+            }
+        }
     }
 
     private func generateCand(connection: Int?, pat: String,

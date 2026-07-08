@@ -26,6 +26,15 @@ protocol ZenzRuntime {
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse?
     func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate]
     func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate]
+    /// Dictionary-constrained selection (issue #59, ADR-022): rank the given
+    /// dictionary-composable surfaces by conditional log probability and return
+    /// the best ones. The model can only choose among `surfaces`, so it can
+    /// never emit a word the dictionary cannot form.
+    func selectCandidates(inputPat: String,
+                          hiragana: String,
+                          context: String?,
+                          surfaces: [String],
+                          limit: Int) -> [SearchCandidate]
 }
 
 extension ZenzRuntime {
@@ -34,6 +43,14 @@ extension ZenzRuntime {
     }
 
     func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate] {
+        []
+    }
+
+    func selectCandidates(inputPat: String,
+                          hiragana: String,
+                          context: String?,
+                          surfaces: [String],
+                          limit: Int) -> [SearchCandidate] {
         []
     }
 }
@@ -175,6 +192,64 @@ final class BundledZenzRuntime: ZenzRuntime {
         #else
         return []
         #endif
+    }
+
+    func selectCandidates(inputPat: String,
+                          hiragana: String,
+                          context requestContext: String?,
+                          surfaces: [String],
+                          limit: Int) -> [SearchCandidate] {
+        #if canImport(llama)
+        guard limit > 0, !surfaces.isEmpty,
+              GyaimSettings.bool(forKey: "aiRerankUseZenzGeneration", default: true) else { return [] }
+        lock.lock()
+        defer { lock.unlock() }
+        guard let activeContext = context else { return [] }
+
+        let request = AIRerankRequest(version: 1,
+                                      mode: "constrained-select",
+                                      inputPat: inputPat,
+                                      hiragana: hiragana,
+                                      context: requestContext,
+                                      candidates: [])
+        let prompt = Self.prompt(for: request)
+        let scoringBudget = Self.constrainedSelectionMaxSurfaces()
+        if surfaces.count > scoringBudget {
+            Log.input.info("Zenz constrained selection truncated: input=\"\(inputPat)\" "
+                + "surfaces=\(surfaces.count) budget=\(scoringBudget)")
+        }
+        var scored: [(surface: String, score: Double)] = []
+        for surface in surfaces.prefix(scoringBudget) {
+            guard let score = activeContext.score(prompt: prompt, continuation: surface) else { continue }
+            scored.append((surface, score))
+            Log.input.info("Zenz constrained score: input=\"\(inputPat)\" "
+                + "surface=\"\(surface)\" score=\(String(format: "%.4f", score))")
+        }
+        return Self.rankConstrainedSurfaces(scored).prefix(limit).map { surface in
+            SearchCandidate(word: surface,
+                            reading: inputPat,
+                            source: .connection,
+                            kind: .zenz)
+        }
+        #else
+        return []
+        #endif
+    }
+
+    /// Pure ranking for dictionary-constrained selection: highest conditional
+    /// mean log probability first; ties keep the dictionary enumeration order.
+    static func rankConstrainedSurfaces(_ scored: [(surface: String, score: Double)]) -> [String] {
+        scored.enumerated()
+            .sorted { lhs, rhs in
+                if lhs.element.score == rhs.element.score { return lhs.offset < rhs.offset }
+                return lhs.element.score > rhs.element.score
+            }
+            .map(\.element.surface)
+    }
+
+    private static func constrainedSelectionMaxSurfaces() -> Int {
+        let configured = GyaimSettings.integer(forKey: "aiRerankConstrainedSelectionMaxSurfaces")
+        return configured > 0 ? min(configured, 24) : 12
     }
 
     func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate] {

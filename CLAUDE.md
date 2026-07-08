@@ -92,7 +92,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（352テスト）
+# ユニットテスト（361テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -160,7 +160,8 @@ docs/adr/
 ├── 018-candidate-window-position-fallback.md
 ├── 019-gictionary-connection-dict-import.md
 ├── 020-context-conditioned-study.md
-└── 021-exact-homophone-direct-logprob.md
+├── 021-exact-homophone-direct-logprob.md
+└── 022-dictionary-constrained-generation.md
 ```
 
 ## Logging & Monitoring
