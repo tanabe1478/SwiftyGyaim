@@ -21,19 +21,24 @@ struct CandidateGenerator {
     var maxSegmentLength = 12
     var beamWidth = 16
     var segmentCandidateLimit = 5
+    /// Context-conditioned learning source for lattice segment scoring
+    /// (issue #59). Injectable for tests.
+    var contextDict: ContextDict = .shared
+    /// Weight for ContextDict affinity in segment scores. Matches the scale of
+    /// commonCompoundBonus (1.20–2.20) so a personal bigram can outrank a
+    /// hardcoded pair but not a much longer dictionary segment.
+    var contextAffinityWeight = 1.50
 
     func generate(inputPat: String,
                   context: String,
                   baseCandidates: [SearchCandidate],
                   wordSearch: WordSearch?,
                   surfacePrefixes: [String] = []) -> [SearchCandidate] {
-        // `context` is reserved for upcoming context-aware local generation.
-        _ = context
-
         var result = baseCandidates
         var seen = Set(baseCandidates.map(\.word))
 
         for candidate in generateLatticeCandidates(query: inputPat,
+                                                   context: context,
                                                    wordSearch: wordSearch,
                                                    limit: compoundLimit,
                                                    surfacePrefixes: surfacePrefixes) {
@@ -66,6 +71,7 @@ struct CandidateGenerator {
     }
 
     private func generateLatticeCandidates(query: String,
+                                           context: String,
                                            wordSearch: WordSearch?,
                                            limit: Int,
                                            surfacePrefixes: [String] = []) -> [SearchCandidate] {
@@ -91,7 +97,8 @@ struct CandidateGenerator {
                             + scoreSegment(candidate,
                                            reading: reading,
                                            previousWord: beam.lastWord,
-                                           segmentIndex: beam.segments)
+                                           segmentIndex: beam.segments,
+                                           leftContext: context + beam.word)
                         beams[end].append(LatticeBeam(word: word,
                                                       reading: beam.reading + reading,
                                                       segments: beam.segments + 1,
@@ -147,11 +154,22 @@ struct CandidateGenerator {
     private func scoreSegment(_ candidate: SearchCandidate,
                               reading: String,
                               previousWord: String?,
-                              segmentIndex: Int) -> Double {
+                              segmentIndex: Int,
+                              leftContext: String) -> Double {
         var score = Double(reading.count)
         score -= Double(segmentIndex) * 0.35
         score += sourceBias(candidate.source)
         score -= shortSegmentPenalty(word: candidate.word, reading: reading)
+        // Context-conditioned learning (ADR-020, issue #59): a segment the user
+        // previously committed after this left context (request context plus the
+        // surface built so far) gets the same affinity boost as fast-context
+        // rerank — the hardcoded commonCompoundBonus pairs generalized to the
+        // user's own history.
+        if !leftContext.isEmpty {
+            score += contextDict.affinity(context: leftContext,
+                                          reading: reading,
+                                          word: candidate.word) * contextAffinityWeight
+        }
         if let previousWord {
             score -= transitionPenalty(previous: previousWord, next: candidate.word)
             if previousWord.allSatisfy(isKanji) && candidate.word == "する" {
