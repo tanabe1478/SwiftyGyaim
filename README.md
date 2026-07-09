@@ -102,7 +102,8 @@ GyaimSwift/dist/dmg/SwiftyGyaim-<version>.dmg
 
 1. **接続辞書** (`GyaimSwift/resources/dict.txt`) — 形態素接続ルール付きの固定辞書
 2. **ユーザー辞書** (`~/.gyaim/localdict.txt`) — ユーザー登録語（最優先）
-3. **学習辞書** (`~/.gyaim/studydict.txt`) — 使用頻度に基づく学習（最大1000件）
+3. **学習辞書** (`~/.gyaim/studydict.txt`) — 使用頻度に基づく学習（最大10,000件、淘汰方式は設定可能）
+4. **文脈学習** (`~/.gyaim/contextdict.txt`) — 確定時の左文脈を学習し、同音異義語を文脈で選ぶ（設定でOFF/クリア可能）
 
 ## 設定ファイル
 

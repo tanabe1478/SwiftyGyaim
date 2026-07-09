@@ -34,10 +34,10 @@ final class ContextDictTests: XCTestCase {
     func testAffinityRequiresMinimumSuffixOverlap() {
         dict.record(context: "どちらの", reading: "muki", word: "向き")
 
-        XCTAssertEqual(dict.affinity(context: "どちらの", reading: "muki", word: "向き"), 1.0)
-        XCTAssertEqual(dict.affinity(context: "ではどちらの", reading: "muki", word: "向き"), 1.0)
+        XCTAssertEqual(dict.affinity(context: "どちらの", reading: "muki", word: "向き"), 1.0, accuracy: 1e-6)
+        XCTAssertEqual(dict.affinity(context: "ではどちらの", reading: "muki", word: "向き"), 1.0, accuracy: 1e-6)
         // Partial 3-char suffix overlap ("ちらの") scales down.
-        XCTAssertEqual(dict.affinity(context: "あちらの", reading: "muki", word: "向き"), 0.75)
+        XCTAssertEqual(dict.affinity(context: "あちらの", reading: "muki", word: "向き"), 0.75, accuracy: 1e-6)
         // 1-char overlap ("の") is noise.
         XCTAssertEqual(dict.affinity(context: "こちらとしての", reading: "muki", word: "向き"), 0.0)
         XCTAssertEqual(dict.affinity(context: "全く別の文脈だ", reading: "muki", word: "向き"), 0.0)
@@ -64,8 +64,8 @@ final class ContextDictTests: XCTestCase {
 
         let reloaded = ContextDict()
         reloaded.configure(file: file)
-        XCTAssertEqual(reloaded.affinity(context: "この素材は", reading: "muki", word: "無機"), 1.0)
-        XCTAssertEqual(reloaded.affinity(context: "どちらの", reading: "muki", word: "向き"), 1.0)
+        XCTAssertEqual(reloaded.affinity(context: "この素材は", reading: "muki", word: "無機", now: 2000), 1.0)
+        XCTAssertEqual(reloaded.affinity(context: "どちらの", reading: "muki", word: "向き", now: 3000), 1.0)
 
         let entries = ContextDict.load(file: file)
         XCTAssertEqual(entries.count, 2)
@@ -93,8 +93,48 @@ final class ContextDictTests: XCTestCase {
 
         XCTAssertEqual(dict.affinity(context: "どちらの", reading: "muki", word: "向き"), 0.0)
         XCTAssertEqual(dict.affinity(context: "テーブルの", reading: "muki", word: "向き"), 0.0)
-        XCTAssertEqual(dict.affinity(context: "この素材は", reading: "muki", word: "無機"), 1.0)
+        XCTAssertEqual(dict.affinity(context: "この素材は", reading: "muki", word: "無機"), 1.0, accuracy: 1e-6)
         XCTAssertFalse(dict.deleteEntries(word: "向き", reading: "muki"))
+    }
+
+    func testDisabledSettingBlocksRecordingAndAffinity() {
+        UserDefaults.standard.set(false, forKey: "contextLearningEnabled")
+        defer { UserDefaults.standard.removeObject(forKey: "contextLearningEnabled") }
+
+        dict.record(context: "どちらの", reading: "muki", word: "向き")
+        XCTAssertTrue(ContextDict.load(file: file).isEmpty)
+
+        UserDefaults.standard.removeObject(forKey: "contextLearningEnabled")
+        dict.record(context: "どちらの", reading: "muki", word: "向き")
+        UserDefaults.standard.set(false, forKey: "contextLearningEnabled")
+        XCTAssertEqual(dict.affinity(context: "どちらの", reading: "muki", word: "向き"), 0.0,
+                       "existing entries stay on disk but affinity is off")
+    }
+
+    func testClearRemovesAllEntries() {
+        dict.record(context: "どちらの", reading: "muki", word: "向き")
+        dict.record(context: "この素材は", reading: "muki", word: "無機")
+        XCTAssertEqual(dict.entryCount(), 2)
+
+        dict.clear()
+
+        XCTAssertEqual(dict.entryCount(), 0)
+        XCTAssertTrue(ContextDict.load(file: file).isEmpty)
+        XCTAssertEqual(dict.affinity(context: "どちらの", reading: "muki", word: "向き"), 0.0)
+    }
+
+    func testAffinityDecaysWithEntryAge() {
+        // Issue #58: half-life 30 days, floor 0.25 — an old one-off choice
+        // cannot keep overriding fresh behavior, but never fully vanishes.
+        let base: TimeInterval = 1_000_000
+        dict.record(context: "どちらの", reading: "muki", word: "向き", now: base)
+
+        let halfLife = ContextDict.decayHalfLifeSeconds
+        XCTAssertEqual(dict.affinity(context: "どちらの", reading: "muki", word: "向き", now: base), 1.0)
+        XCTAssertEqual(dict.affinity(context: "どちらの", reading: "muki", word: "向き", now: base + halfLife),
+                       0.5, accuracy: 1e-6)
+        XCTAssertEqual(dict.affinity(context: "どちらの", reading: "muki", word: "向き", now: base + halfLife * 12),
+                       ContextDict.decayFloor, accuracy: 1e-6)
     }
 
     func testEntriesAreCappedAtMaxEntries() throws {

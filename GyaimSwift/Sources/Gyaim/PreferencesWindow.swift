@@ -22,6 +22,10 @@ class PreferencesWindow: NSWindow {
     private var fastContextRerankToggle: NSButton?
     private var fastContextRerankModelToggle: NSButton?
     private var fastContextRerankLoggingToggle: NSButton?
+    private var bundledZenzToggle: NSButton?
+    private var zenzGenerationToggle: NSButton?
+    private var contextLearningToggle: NSButton?
+    private var contextDictCountLabel: NSTextField?
     private var connectionDictURLField: NSTextField?
     private var connectionDictStatusLabel: NSTextField?
     private var connectionDictImportButton: NSButton?
@@ -243,6 +247,7 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(erHint)
 
         addFastContextRerankControls(y: &y)
+        addAIModelControls(y: &y)
 
         // Google Transliterate section
         y -= 40
@@ -403,6 +408,62 @@ class PreferencesWindow: NSWindow {
         logToggle.state = GyaimController.isFastContextRerankLoggingEnabled ? .on : .off
         contentBox.addSubview(logToggle)
         fastContextRerankLoggingToggle = logToggle
+    }
+
+    private func addAIModelControls(y: inout CGFloat) {
+        y -= 40
+        let title = makeLabel("AI・文脈学習", bold: true)
+        title.frame = NSRect(x: 20, y: y, width: 440, height: 24)
+        contentBox.addSubview(title)
+
+        y -= 28
+        let zenzToggle = NSButton(checkboxWithTitle: "AIモデル（同梱Zenz）で候補を評価する",
+                                  target: self,
+                                  action: #selector(toggleBundledZenz(_:)))
+        zenzToggle.frame = NSRect(x: 20, y: y, width: 340, height: 20)
+        zenzToggle.state = GyaimController.isBundledZenzEnabled ? .on : .off
+        contentBox.addSubview(zenzToggle)
+        bundledZenzToggle = zenzToggle
+
+        y -= 20
+        let zenzHint = makeLabel("OFFにするとTab・同音異義語選択がヒューリスティックのみになります")
+        zenzHint.font = NSFont.systemFont(ofSize: 11)
+        zenzHint.textColor = .secondaryLabelColor
+        zenzHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
+        contentBox.addSubview(zenzHint)
+
+        y -= 24
+        let generationToggle = NSButton(checkboxWithTitle: "Tabで辞書から追加候補を選ぶ（辞書制約付き生成）",
+                                        target: self,
+                                        action: #selector(toggleZenzGeneration(_:)))
+        generationToggle.frame = NSRect(x: 20, y: y, width: 400, height: 20)
+        generationToggle.state = GyaimController.isZenzGenerationEnabled ? .on : .off
+        contentBox.addSubview(generationToggle)
+        zenzGenerationToggle = generationToggle
+
+        y -= 24
+        let learningToggle = NSButton(checkboxWithTitle: "文脈学習を使う（確定した文脈で同音異義語を選ぶ）",
+                                      target: self,
+                                      action: #selector(toggleContextLearning(_:)))
+        learningToggle.frame = NSRect(x: 20, y: y, width: 400, height: 20)
+        learningToggle.state = ContextDict.isEnabled ? .on : .off
+        contentBox.addSubview(learningToggle)
+        contextLearningToggle = learningToggle
+
+        y -= 24
+        let countLabel = makeLabel(contextDictCountString())
+        countLabel.frame = NSRect(x: 36, y: y, width: 220, height: 20)
+        contentBox.addSubview(countLabel)
+        contextDictCountLabel = countLabel
+
+        let clearButton = NSButton(title: "文脈学習をクリア", target: self, action: #selector(clearContextDict))
+        clearButton.frame = NSRect(x: 260, y: y - 2, width: 140, height: 24)
+        clearButton.bezelStyle = .rounded
+        contentBox.addSubview(clearButton)
+    }
+
+    private func contextDictCountString() -> String {
+        "学習済みの文脈: \(ContextDict.shared.entryCount())件"
     }
 
     private func loadBindings() {
@@ -578,6 +639,7 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(erHint)
 
         addFastContextRerankControls(y: &y)
+        addAIModelControls(y: &y)
 
         // Google Transliterate section in rebuildLayout
         y -= 40
@@ -810,6 +872,23 @@ class PreferencesWindow: NSWindow {
 
     @objc private func toggleFastContextRerankLogging(_ sender: NSButton) {
         GyaimController.setFastContextRerankLoggingEnabled(sender.state == .on)
+    }
+
+    @objc private func toggleBundledZenz(_ sender: NSButton) {
+        GyaimController.setBundledZenzEnabled(sender.state == .on)
+    }
+
+    @objc private func toggleZenzGeneration(_ sender: NSButton) {
+        GyaimController.setZenzGenerationEnabled(sender.state == .on)
+    }
+
+    @objc private func toggleContextLearning(_ sender: NSButton) {
+        ContextDict.setEnabled(sender.state == .on)
+    }
+
+    @objc private func clearContextDict() {
+        ContextDict.shared.clear()
+        contextDictCountLabel?.stringValue = contextDictCountString()
     }
 
     @objc private func toggleClipboardCandidate(_ sender: NSButton) {
