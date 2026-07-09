@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-07-08 (辞書制約付き生成でkind=zenz自由生成を置換 — ADR-022)
+> Last updated: 2026-07-10 (preference data抽出 — M6-1)
 
 ## 概要
 
@@ -305,6 +305,8 @@ dogfood中は確定のたびに `Fast context accepted: input=... word=... rank=
 CI品質ゲート（issue #57）として、`evaluate-fast-context-rerank.py --gate` を `run-unit-tests.sh` から実行する。`model-required` タグ以外のケースの top1 miss、任意ケースの unsafe top、`model-required` 以外の exact demotion があれば非ゼロ終了し、CIをfailさせる。`model-required` ケース（heuristicでは解けない文脈依存同音異義語）は意図的な伸びしろとしてtop1/demotionチェックから除外する。
 
 dogfoodの週次確認は `python3 Tools/ai-rerank/aggregate-fast-context-log.py --last-minutes 10080` で行い、acceptedRanks（acceptedTop1Rate / rank分布）と byOutcome（fix率・latency p95）を見る。
+
+preference data（M6-1）は `extract-preference-pairs.py` で抽出する。確定時の `Fast context accepted detail:` ログ（`GyaimController.acceptedDetailPayload` が出す単一行JSON。表示上位8件+確定候補の reading / source / kind / studyFrequency / contextAffinity を含む）から、**rank 2以上の確定**（=上に表示されていた候補を飛ばして選んだ強い選好シグナル）を eval fixture と同一スキーマの JSONL に変換する。deactivation確定はaccepted ログ自体が出ないため源流で除外され、rank 1 確定は位置バイアスの弱シグナルとして既定除外（`--min-rank 1` で含められる）。redaction（既定ON）は ASCII識別子・URL・数字列を含むケースを落とす。出力は private語彙を含むため、レビューなしで共有・fixture化しない。
 
 feature weight の学習には `train-fast-context-weights.py` を使う。eval fixture（または同スキーマのpreference JSONL）から `expectedTop` vs 他候補の pairwise logistic regression で feature multiplier を学習し（1.0初期値・1.0方向へL2正則化・非負クランプ）、`--feature-weight` 引数として出力する。`model-required` タグ（heuristic featureでは解けない文脈依存同音異義語）は既定で学習から除外する。
 
