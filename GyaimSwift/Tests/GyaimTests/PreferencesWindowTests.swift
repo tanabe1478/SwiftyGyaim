@@ -15,6 +15,9 @@ final class PreferencesWindowTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled")
         UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
         UserDefaults.standard.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
+        UserDefaults.standard.removeObject(forKey: "aiRerankUseBundledZenz")
+        UserDefaults.standard.removeObject(forKey: "aiRerankUseZenzGeneration")
+        UserDefaults.standard.removeObject(forKey: "contextLearningEnabled")
         window = PreferencesWindow()
     }
 
@@ -29,7 +32,41 @@ final class PreferencesWindowTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled")
         UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
         UserDefaults.standard.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
+        UserDefaults.standard.removeObject(forKey: "aiRerankUseBundledZenz")
+        UserDefaults.standard.removeObject(forKey: "aiRerankUseZenzGeneration")
+        UserDefaults.standard.removeObject(forKey: "contextLearningEnabled")
         super.tearDown()
+    }
+
+    // MARK: - AI section (issue #61)
+
+    func testAIModelTogglesExistWithDefaults() {
+        let zenz = findCheckbox(titled: "AIモデル（同梱Zenz）で候補を評価する")
+        let generation = findCheckbox(titled: "Tabで辞書から追加候補を選ぶ（辞書制約付き生成）")
+        let learning = findCheckbox(titled: "文脈学習を使う（確定した文脈で同音異義語を選ぶ）")
+
+        XCTAssertEqual(zenz?.state, .on, "bundled Zenz defaults to on")
+        XCTAssertEqual(generation?.state, .on, "constrained generation defaults to on")
+        XCTAssertEqual(learning?.state, .on, "context learning defaults to on")
+        XCTAssertNotNil(findLabel(containing: "学習済みの文脈"))
+    }
+
+    func testBundledZenzToggleRoundTrips() throws {
+        let toggle = try XCTUnwrap(findCheckbox(titled: "AIモデル（同梱Zenz）で候補を評価する"))
+
+        toggle.performClick(nil)
+        XCTAssertFalse(GyaimController.isBundledZenzEnabled)
+        toggle.performClick(nil)
+        XCTAssertTrue(GyaimController.isBundledZenzEnabled)
+    }
+
+    func testContextLearningToggleRoundTrips() throws {
+        let toggle = try XCTUnwrap(findCheckbox(titled: "文脈学習を使う（確定した文脈で同音異義語を選ぶ）"))
+
+        toggle.performClick(nil)
+        XCTAssertFalse(ContextDict.isEnabled)
+        toggle.performClick(nil)
+        XCTAssertTrue(ContextDict.isEnabled)
     }
 
     // MARK: - Helpers

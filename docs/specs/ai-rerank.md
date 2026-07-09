@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-07-10 (preference data抽出 — M6-1)
+> Last updated: 2026-07-10 (AI設定のUI露出 — issue #61)
 
 ## 概要
 
@@ -43,6 +43,9 @@ Google Input Tools は後追い補助として optional に使う。Google込み
 - 制約付き選択の候補数: `aiRerankZenzGenerationLimit`（未設定時 3、最大 6）
 - 制約付き選択のスコア対象上限: `aiRerankConstrainedSelectionMaxSurfaces`（未設定時 12、最大 24）
 - 自由生成のopt-in: `aiRerankUseZenzFreeGeneration`（未設定時 false）
+- 文脈学習のON/OFF: `contextLearningEnabled`（未設定時 true、設定画面から変更可能）
+
+`aiRerankUseBundledZenz` / `aiRerankUseZenzGeneration` / `contextLearningEnabled` は設定画面「AI・文脈学習」セクションに露出している（issue #61）。
 - legacy opt-in 設定キー: `aiRerankUseLegacyExternalReranker=true`
 - legacy HTTP 設定キー: `aiRerankServerURL`
 - legacy HTTP env: `GYAIM_AI_RERANK_SERVER`

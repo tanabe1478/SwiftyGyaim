@@ -21,6 +21,21 @@ final class ContextDict {
 
     static let shared = ContextDict()
 
+    // MARK: - Enable Setting (issue #58 / #61)
+
+    private static let enabledKey = "contextLearningEnabled"
+
+    /// Context-conditioned learning can be disabled from Preferences. When
+    /// off, nothing is recorded and affinity always returns 0 — existing
+    /// entries are kept so re-enabling restores the learned preferences.
+    static var isEnabled: Bool {
+        GyaimSettings.bool(forKey: enabledKey, default: true)
+    }
+
+    static func setEnabled(_ value: Bool) {
+        GyaimSettings.set(value, forKey: enabledKey)
+    }
+
     static let maxEntries = 5_000
     /// Stored context is limited to the trailing characters that carry the
     /// selectional preference (e.g. "どちらの", "この素材は").
@@ -54,6 +69,7 @@ final class ContextDict {
                 reading: String,
                 word: String,
                 now: TimeInterval = Date().timeIntervalSince1970) {
+        guard Self.isEnabled else { return }
         let key = Self.contextKey(from: context)
         guard !key.isEmpty, !reading.isEmpty, !word.isEmpty,
               !reading.contains("\t"), !word.contains("\t") else { return }
@@ -89,7 +105,7 @@ final class ContextDict {
     /// Returns 0.0...1.0 describing how strongly the user's history binds this
     /// (reading, word) pair to the current left context. 0 means no evidence.
     func affinity(context: String?, reading: String?, word: String) -> Double {
-        guard let reading, !reading.isEmpty else { return 0 }
+        guard Self.isEnabled, let reading, !reading.isEmpty else { return 0 }
         let currentKey = Self.contextKey(from: context ?? "")
         guard currentKey.count >= Self.minAffinityMatchLength else { return 0 }
 
@@ -125,6 +141,25 @@ final class ContextDict {
         save()
         Log.dict.info("Deleted from context dict: \"\(word)\" (reading: \"\(reading)\")")
         return true
+    }
+
+    /// Number of learned context entries (for the Preferences UI).
+    func entryCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        loadIfNeeded()
+        return entries.count
+    }
+
+    /// Remove all learned context entries (Preferences "clear" button).
+    func clear() {
+        lock.lock()
+        defer { lock.unlock() }
+        loadIfNeeded()
+        entries = []
+        rebuildIndex()
+        save()
+        Log.dict.info("ContextDict cleared")
     }
 
     // MARK: - Pure helpers (testable)
