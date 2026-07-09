@@ -1111,6 +1111,47 @@ class GyaimController: IMKInputController {
         return configured > 0 ? min(configured, 6) : 3
     }
 
+    /// Single-line JSON payload for preference-pair extraction (issue #57 /
+    /// M6-1): the committed candidate plus the displayed head of the list,
+    /// with the metadata the offline trainer needs (reading / source / kind /
+    /// studyFrequency / contextAffinity). Emitted only when fast-context
+    /// logging is enabled; parsed by extract-preference-pairs.py.
+    static func acceptedDetailPayload(candidates: [SearchCandidate],
+                                      chosenIndex: Int,
+                                      context: String,
+                                      headLimit: Int = 8,
+                                      affinityProvider: ((SearchCandidate) -> Double)? = nil) -> String? {
+        guard candidates.indices.contains(chosenIndex) else { return nil }
+
+        func encode(_ candidate: SearchCandidate, rank: Int) -> [String: Any] {
+            var item: [String: Any] = [
+                "rank": rank,
+                "word": candidate.word,
+                "source": String(describing: candidate.source),
+                "kind": candidate.kind.rawValue,
+            ]
+            if let reading = candidate.reading { item["reading"] = reading }
+            if let frequency = candidate.studyFrequency { item["studyFrequency"] = frequency }
+            let affinity = affinityProvider?(candidate)
+                ?? ContextDict.shared.affinity(context: context, reading: candidate.reading, word: candidate.word)
+            if affinity > 0 { item["contextAffinity"] = affinity }
+            return item
+        }
+
+        var top = candidates.prefix(headLimit).enumerated().map { encode($0.element, rank: $0.offset) }
+        if chosenIndex >= headLimit {
+            top.append(encode(candidates[chosenIndex], rank: chosenIndex))
+        }
+        let payload: [String: Any] = [
+            "chosenRank": chosenIndex,
+            "context": context,
+            "top": top,
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else { return nil }
+        return json
+    }
+
     private static func appendingZenzAlternativeCandidates(to snapshot: [SearchCandidate],
                                                            query: String,
                                                            hiragana: String,
@@ -1329,6 +1370,11 @@ class GyaimController: IMKInputController {
             Log.input.info("Fast context accepted: input=\"\(self.inputPat)\" word=\"\(word)\" "
                 + "rank=\(self.nthCand) candidates=\(self.candidates.count) "
                 + "source=\(String(describing: candidate.source)) kind=\(candidate.kind.rawValue)")
+            if let payload = Self.acceptedDetailPayload(candidates: candidates,
+                                                        chosenIndex: nthCand,
+                                                        context: Self.limitedFastContext(recentCommittedText)) {
+                Log.input.info("Fast context accepted detail: input=\"\(self.inputPat)\" payload=\(payload)")
+            }
         }
 
         let resolvedClient = (sender as? IMKTextInput) ?? (self.client() as? IMKTextInput)
