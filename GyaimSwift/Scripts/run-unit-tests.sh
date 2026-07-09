@@ -35,7 +35,8 @@ python3 -m py_compile \
   Tools/ai-rerank/train-fast-context-weights.py \
   Tools/zenz-tuning/compare-hf-gguf.py \
   Tools/dict/suggest-connection-entries.py \
-  Tools/ai-rerank/extract-preference-pairs.py
+  Tools/ai-rerank/extract-preference-pairs.py \
+  Tools/dict/find-suspect-study-entries.py
 python3 Tools/ai-rerank/validate-fast-context-eval-cases.py >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --json >/dev/null
 # Quality gate (issue #57): fail CI when a non-model-required case misses top1,
@@ -59,6 +60,12 @@ assert report["results"]
 assert "delta" in report["results"][0]
 PY
 rm -f "$sweep_json"
+suspect_dir="$(mktemp -d)"
+printf 'sitehosii\tしてほしい\t1783274307.0\t22\nsitehosiii\tしてほしいい\t1773975120.0\t1\n' > "$suspect_dir/study.txt"
+suspect_out="$(python3 Tools/dict/find-suspect-study-entries.py --study "$suspect_dir/study.txt" --format tsv)"
+echo "$suspect_out" | grep -q "してほしいい" || { echo "suspect smoke failed: missing garbage completion"; exit 1; }
+echo "$suspect_out" | grep -qv $'\tしてほしい\tgarbage-completion' || true
+rm -rf "$suspect_dir"
 pref_dir="$(mktemp -d)"
 printf '[2026-07-10 10:00:00] [input] [info] Fast context accepted detail: input="kousin" payload={"chosenRank":2,"context":"アプリを","top":[{"kind":"raw","rank":0,"word":"kousin"},{"kind":"exact","rank":1,"reading":"kousin","source":"study","studyFrequency":11,"word":"行進"},{"contextAffinity":0.75,"kind":"exact","rank":2,"reading":"kousinn","source":"study","studyFrequency":101,"word":"更新"}]}\n' > "$pref_dir/log.txt"
 python3 Tools/ai-rerank/extract-preference-pairs.py --log "$pref_dir/log.txt" > "$pref_dir/pref.jsonl" 2>/dev/null

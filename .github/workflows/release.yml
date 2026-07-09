@@ -25,27 +25,18 @@ jobs:
         working-directory: GyaimSwift
         run: ./Scripts/run-unit-tests.sh
 
-      - name: Build
+      # Release build + pkg-in-DMG packaging, matching README and
+      # docs/release-packaging.md (the raw-.app Debug DMG had drifted from
+      # the documented install flow — issue #61). Signing / notarization is
+      # still manual; see docs/release-packaging.md.
+      - name: Build installer DMG (Release, pkg inside)
         working-directory: GyaimSwift
-        run: |
-          xcodebuild -project Gyaim.xcodeproj \
-            -scheme Gyaim \
-            -configuration Debug \
-            -derivedDataPath .build \
-            build
-
-      - name: Create DMG
-        run: |
-          hdiutil create \
-            -volname "SwiftyGyaim ${{ github.ref_name }}" \
-            -srcfolder GyaimSwift/.build/Build/Products/Debug/SwiftyGyaim.app \
-            -ov -format UDZO \
-            SwiftyGyaim-${{ github.ref_name }}.dmg
+        run: ./Scripts/build-dmg.sh
 
       - name: Create GitHub Release
         run: |
           gh release create ${{ github.ref_name }} \
-            SwiftyGyaim-${{ github.ref_name }}.dmg \
+            GyaimSwift/dist/dmg/*.dmg \
             --title "${{ github.ref_name }}" \
             --generate-notes
         env:
