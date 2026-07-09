@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-06-19 (設定画面の設定ファイル化)
+> Last updated: 2026-07-10 (AI・文脈学習セクション追加 — issue #61)
 
 ## 概要
 
@@ -90,6 +90,16 @@ NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackV
 - **軽量rerankのレイテンシをログに出す**: チェックボックス（デフォルトOFF）
 - 設定キー: `aiRerankFastContextLoggingEnabled` (Bool, デフォルトfalse)
 - ログ出力は入力ごとに発生するため既定OFF。dogfoodや性能確認時だけONにする
+
+## PreferencesWindow: AI・文脈学習セクション（issue #61）
+
+学習辞書セクションの下に「AI・文脈学習」セクションを追加。
+
+- **AIモデル（同梱Zenz）で候補を評価する**: チェックボックス（デフォルトON）。設定キー `aiRerankUseBundledZenz`。OFFでTab・同音異義語レビューがheuristicのみになる
+- **Tabで辞書から追加候補を選ぶ（辞書制約付き生成）**: チェックボックス（デフォルトON）。設定キー `aiRerankUseZenzGeneration`（ADR-022）
+- **文脈学習を使う**: チェックボックス（デフォルトON）。設定キー `contextLearningEnabled`。OFFで ContextDict の記録・affinity参照を停止（既存エントリは保持され、再ONで復活）
+- **学習済みの文脈: N件** ラベル + **文脈学習をクリア** ボタン: `ContextDict.shared.clear()` で全エントリ削除
+- 実験的パラメータ（margin・閾値・候補数上限）は設定ファイルのみで、UIには露出しない
 
 ## PreferencesWindow: 標準Commandショートカット
 
