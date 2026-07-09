@@ -44,6 +44,13 @@ final class ContextDict {
     static let minAffinityMatchLength = 2
     /// Overlap length at which affinity saturates to 1.0.
     static let fullAffinityMatchLength = 4
+    /// Recency decay half-life (issue #58): a context preference not used for
+    /// 30 days counts half as much, so a one-off choice from months ago cannot
+    /// keep overriding fresher behavior.
+    static let decayHalfLifeSeconds: TimeInterval = 30 * 24 * 3600
+    /// Old entries never decay below this floor — a real preference the user
+    /// confirmed should stay slightly alive rather than vanish.
+    static let decayFloor = 0.25
 
     private let lock = NSLock()
     private var entries: [Entry] = []
@@ -104,7 +111,11 @@ final class ContextDict {
 
     /// Returns 0.0...1.0 describing how strongly the user's history binds this
     /// (reading, word) pair to the current left context. 0 means no evidence.
-    func affinity(context: String?, reading: String?, word: String) -> Double {
+    /// The score decays with entry age (half-life 30 days, floor 0.25).
+    func affinity(context: String?,
+                  reading: String?,
+                  word: String,
+                  now: TimeInterval = Date().timeIntervalSince1970) -> Double {
         guard Self.isEnabled, let reading, !reading.isEmpty else { return 0 }
         let currentKey = Self.contextKey(from: context ?? "")
         guard currentKey.count >= Self.minAffinityMatchLength else { return 0 }
@@ -119,9 +130,17 @@ final class ContextDict {
             let entry = entries[index]
             let matchLength = Self.commonSuffixLength(entry.contextKey, currentKey)
             guard matchLength >= Self.minAffinityMatchLength else { continue }
-            best = max(best, Self.affinityScore(matchLength: matchLength))
+            let score = Self.affinityScore(matchLength: matchLength)
+                * Self.recencyFactor(lastAccessTime: entry.lastAccessTime, now: now)
+            best = max(best, score)
         }
         return best
+    }
+
+    static func recencyFactor(lastAccessTime: TimeInterval, now: TimeInterval) -> Double {
+        let age = max(0, now - lastAccessTime)
+        guard age > 0 else { return 1.0 }
+        return max(decayFloor, pow(0.5, age / decayHalfLifeSeconds))
     }
 
     // MARK: - Deletion
