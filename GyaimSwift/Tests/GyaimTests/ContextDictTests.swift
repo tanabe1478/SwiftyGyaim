@@ -97,6 +97,32 @@ final class ContextDictTests: XCTestCase {
         XCTAssertFalse(dict.deleteEntries(word: "向き", reading: "muki"))
     }
 
+    func testDisabledSettingBlocksRecordingAndAffinity() {
+        UserDefaults.standard.set(false, forKey: "contextLearningEnabled")
+        defer { UserDefaults.standard.removeObject(forKey: "contextLearningEnabled") }
+
+        dict.record(context: "どちらの", reading: "muki", word: "向き")
+        XCTAssertTrue(ContextDict.load(file: file).isEmpty)
+
+        UserDefaults.standard.removeObject(forKey: "contextLearningEnabled")
+        dict.record(context: "どちらの", reading: "muki", word: "向き")
+        UserDefaults.standard.set(false, forKey: "contextLearningEnabled")
+        XCTAssertEqual(dict.affinity(context: "どちらの", reading: "muki", word: "向き"), 0.0,
+                       "existing entries stay on disk but affinity is off")
+    }
+
+    func testClearRemovesAllEntries() {
+        dict.record(context: "どちらの", reading: "muki", word: "向き")
+        dict.record(context: "この素材は", reading: "muki", word: "無機")
+        XCTAssertEqual(dict.entryCount(), 2)
+
+        dict.clear()
+
+        XCTAssertEqual(dict.entryCount(), 0)
+        XCTAssertTrue(ContextDict.load(file: file).isEmpty)
+        XCTAssertEqual(dict.affinity(context: "どちらの", reading: "muki", word: "向き"), 0.0)
+    }
+
     func testEntriesAreCappedAtMaxEntries() throws {
         // Pre-build an over-capacity file so the cap is exercised without
         // thousands of synchronous saves.

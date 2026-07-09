@@ -813,6 +813,22 @@ class GyaimController: IMKInputController {
         GyaimSettings.set(value, forKey: "aiRerankUseModelForFastContext")
     }
 
+    static var isBundledZenzEnabled: Bool {
+        GyaimSettings.bool(forKey: BundledZenzAIRerankBackend.enabledDefaultsKey, default: true)
+    }
+
+    static func setBundledZenzEnabled(_ value: Bool) {
+        GyaimSettings.set(value, forKey: BundledZenzAIRerankBackend.enabledDefaultsKey)
+    }
+
+    static var isZenzGenerationEnabled: Bool {
+        GyaimSettings.bool(forKey: "aiRerankUseZenzGeneration", default: true)
+    }
+
+    static func setZenzGenerationEnabled(_ value: Bool) {
+        GyaimSettings.set(value, forKey: "aiRerankUseZenzGeneration")
+    }
+
     static var isFastContextRerankLoggingEnabled: Bool {
         GyaimSettings.bool(forKey: "aiRerankFastContextLoggingEnabled")
     }
