@@ -131,7 +131,7 @@ def infer_outcome(model: str) -> str:
         return "review-passed"
     if "review" in model:
         return "review-applied"
-    if "swift-fast-context-heuristic" in model:
+    if "heuristic" in model:
         return "heuristic"
     return "fallback"
 
