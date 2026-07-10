@@ -856,6 +856,10 @@ class GyaimController: IMKInputController {
         if model.contains("review-passed") { return "review-passed" }
         if model.contains("review") { return "review-applied" }
         if model.contains("swift-fast-context-heuristic") { return "heuristic" }
+        // Model backend disabled or unavailable → plain heuristic result.
+        // Review-path model strings also contain this substring but are
+        // matched by the earlier patterns, so this must stay last.
+        if model.contains("swift-local-heuristic") { return "heuristic" }
         return "fallback"
     }
 
