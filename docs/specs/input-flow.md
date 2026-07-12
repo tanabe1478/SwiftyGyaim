@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-07-10 (確定詳細ログの追加 — M6-1)
+> Last updated: 2026-07-13 (ひらがな確定は学習しない)
 
 ## 概要
 
@@ -42,8 +42,8 @@ handle(_:client:) → routeEvent() → HandleResult
 | パス | メソッド | 学習 | 用途 |
 |------|---------|------|------|
 | Enter/数字キー | `fix(client:)` | あり | 通常確定（prefix mode の先頭候補が raw `inputPat` の場合のみ Enter は完全一致検索へ遷移）。study と同時に ContextDict へ `(文脈末尾, reading, word)` を記録。`aiRerankFastContextLoggingEnabled=true` かつ prefix mode の意図的確定では `Fast context accepted: ... rank=N` と、preference抽出用の `Fast context accepted detail: ... payload={...}`（表示上位8件+確定候補のメタデータJSON）を出力する |
-| F6/`;` | `fixAsKana(hiragana: true)` | あり | ひらがな確定 |
-| F7/`q` | `fixAsKana(hiragana: false)` | あり | カタカナ確定 |
+| F6/`;` | `fixAsKana(hiragana: true)` | **なし**（`kanaConfirmStudyEnabled=true` で従来どおり学習） | ひらがな確定。出力は常に再生成可能な素のかな表記のため、学習はランキングノイズとtypoの温床にしかならない |
+| F7/`q` | `fixAsKana(hiragana: false)` | あり | カタカナ確定。表記選択として価値がある（辞書提案workflowの源泉） |
 | IME切替 | `fix(client:sender, skipStudy: true)` | **なし** | deactivation確定 |
 | Shift+X | `deleteCurrentCandidate(client:)` | - | 候補削除（ADR-015） |
 
