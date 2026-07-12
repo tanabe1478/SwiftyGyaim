@@ -1364,10 +1364,24 @@ class GyaimController: IMKInputController {
                              selectionRange: NSRange(location: word.count, length: 0),
                              replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
         client.insertText(word, replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
-        ws?.study(word: word, reading: inputPat)
+        if Self.shouldStudyKanaConfirm(hiragana: hiragana) {
+            ws?.study(word: word, reading: inputPat)
+        } else {
+            Log.input.info("Study skipped (kana confirm): \"\(word)\" (reading: \"\(inputPat)\")")
+        }
         recordCommittedText(word)
         resetState()
         hideWindow()
+    }
+
+    /// Hiragana kana-confirm output is always the raw kana spelling of the
+    /// input — regenerable on every keystroke — so learning it only adds
+    /// ranking noise (and captures typos verbatim). Katakana confirms stay
+    /// studied: they are real orthography choices (コンテキスト etc.) and feed
+    /// the dictionary-suggestion workflow. `kanaConfirmStudyEnabled=true`
+    /// restores the historical learn-everything behavior.
+    static func shouldStudyKanaConfirm(hiragana: Bool) -> Bool {
+        !hiragana || GyaimSettings.bool(forKey: "kanaConfirmStudyEnabled")
     }
 
     // MARK: - Fix (commit selection)
