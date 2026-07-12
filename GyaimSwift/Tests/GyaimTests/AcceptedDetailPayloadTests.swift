@@ -57,6 +57,20 @@ final class AcceptedDetailPayloadTests: XCTestCase {
         XCTAssertTrue(top.contains { ($0["rank"] as? Int) == 12 })
     }
 
+    func testShouldStudyKanaConfirmSkipsHiraganaByDefault() {
+        UserDefaults.standard.removeObject(forKey: "kanaConfirmStudyEnabled")
+        defer { UserDefaults.standard.removeObject(forKey: "kanaConfirmStudyEnabled") }
+
+        // Hiragana confirms are regenerable raw spellings — no learning.
+        XCTAssertFalse(GyaimController.shouldStudyKanaConfirm(hiragana: true))
+        // Katakana confirms are orthography choices — keep learning.
+        XCTAssertTrue(GyaimController.shouldStudyKanaConfirm(hiragana: false))
+
+        // Historical behavior can be restored explicitly.
+        UserDefaults.standard.set(true, forKey: "kanaConfirmStudyEnabled")
+        XCTAssertTrue(GyaimController.shouldStudyKanaConfirm(hiragana: true))
+    }
+
     func testPayloadNilForInvalidIndex() {
         XCTAssertNil(GyaimController.acceptedDetailPayload(candidates: [],
                                                            chosenIndex: 0,
