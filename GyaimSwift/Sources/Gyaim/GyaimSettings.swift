@@ -175,24 +175,72 @@ enum GyaimSettings {
         saveDictionary(dictionary)
     }
 
+    // BUG-027: settings reads happen on the per-keystroke hot path (several
+    // per rerank, and once per candidate via ContextDict.isEnabled). Reading
+    // and JSON-parsing ~/.gyaim/settings.json from disk on every call pushed
+    // the fast-context heuristic p50 from ~2ms to ~8ms. Cache the parsed
+    // dictionary and invalidate on file modification date (same hot-reload
+    // semantics as localdict), so a read costs one stat() plus a lookup.
+    private static let cacheLock = NSLock()
+    private static var cachedDictionary: [String: Any] = [:]
+    private static var cachedPath: String?
+    private static var cachedModificationDate: Date?
+    private static var lastValidationTime: CFAbsoluteTime = 0
+    /// How long cached reads skip the modification-date check. Even stat()
+    /// (~0.4ms via attributesOfItem) is too slow at 24 calls per keystroke, so
+    /// external edits to settings.json are picked up within this interval
+    /// instead of immediately. Tests set 0 to revalidate on every read.
+    static var cacheRevalidationInterval: TimeInterval = 0.2
+
     private static func loadDictionary() -> [String: Any] {
-        let url = URL(fileURLWithPath: settingsFilePath)
-        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return [:] }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
-        return object
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        let path = settingsFilePath
+        let now = CFAbsoluteTimeGetCurrent()
+        if path == cachedPath, now - lastValidationTime < cacheRevalidationInterval {
+            return cachedDictionary
+        }
+
+        let modificationDate = fileModificationDate(path)
+        if path == cachedPath, modificationDate == cachedModificationDate {
+            lastValidationTime = now
+            return cachedDictionary
+        }
+
+        var dictionary: [String: Any] = [:]
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: path)), !data.isEmpty,
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            dictionary = object
+        }
+        cachedDictionary = dictionary
+        cachedPath = path
+        cachedModificationDate = modificationDate
+        lastValidationTime = now
+        return dictionary
     }
 
     private static func saveDictionary(_ dictionary: [String: Any]) {
-        let url = URL(fileURLWithPath: settingsFilePath)
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        let path = settingsFilePath
+        let url = URL(fileURLWithPath: path)
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
             let data = try JSONSerialization.data(withJSONObject: dictionary,
                                                   options: [.prettyPrinted, .sortedKeys])
             try data.write(to: url, options: .atomic)
+            cachedDictionary = dictionary
+            cachedPath = path
+            cachedModificationDate = fileModificationDate(path)
+            lastValidationTime = CFAbsoluteTimeGetCurrent()
         } catch {
             Log.config.error("Failed to save settings file: \(error.localizedDescription)")
         }
+    }
+
+    private static func fileModificationDate(_ path: String) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date
     }
 
     private static func jsonValue(from value: Any) -> Any? {
