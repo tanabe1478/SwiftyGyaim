@@ -440,7 +440,8 @@ final class BundledZenzRuntime: ZenzRuntime {
                 + "reason=too-few-scores scored=\(scores.count)/\(indices.count)")
         } else if let replacement = Self.selectExactHomophoneWinner(scores: scores,
                                                                     currentBest: best.index,
-                                                                    margin: Self.exactHomophoneScoreMargin()) {
+                                                                    margin: Self.exactHomophoneScoreMargin(),
+                                                                    affinities: Self.contextAffinities(of: request)) {
             outcome = "fixed"
             order.removeAll { $0 == replacement }
             order.insert(replacement, at: 0)
@@ -635,12 +636,22 @@ final class BundledZenzRuntime: ZenzRuntime {
         }
     }
 
+    /// A learned context preference raises the log-probability bar the model
+    /// must clear to override it: dogfood 2026-07-14 showed the model
+    /// demoting the user's own choices (使用 over learned 仕様) when the
+    /// context matched only partially (affinity below the 0.75 skip
+    /// threshold). One affinity point is worth this many mean-logprob units.
+    static let affinityMarginWeight = 2.0
+
     /// Picks the homophone to promote: the highest-scoring candidate wins only
     /// when it beats the current best by at least `margin` (mean log-probability
-    /// units), so model noise cannot flap the top candidate.
+    /// units) plus the current best's context-affinity advantage, so model
+    /// noise cannot flap the top candidate and cannot override what the user
+    /// already taught the IME in this context.
     static func selectExactHomophoneWinner(scores: [Int: Double],
                                            currentBest: Int,
-                                           margin: Double) -> Int? {
+                                           margin: Double,
+                                           affinities: [Int: Double] = [:]) -> Int? {
         guard let bestScore = scores[currentBest] else { return nil }
         var winnerIndex = currentBest
         var winnerScore = bestScore
@@ -648,8 +659,21 @@ final class BundledZenzRuntime: ZenzRuntime {
             winnerIndex = index
             winnerScore = score
         }
-        guard winnerIndex != currentBest, winnerScore - bestScore >= margin else { return nil }
+        guard winnerIndex != currentBest else { return nil }
+        let affinityAdvantage = max(0, (affinities[currentBest] ?? 0) - (affinities[winnerIndex] ?? 0))
+        let requiredMargin = margin + affinityAdvantage * affinityMarginWeight
+        guard winnerScore - bestScore >= requiredMargin else { return nil }
         return winnerIndex
+    }
+
+    static func contextAffinities(of request: AIRerankRequest) -> [Int: Double] {
+        var affinities: [Int: Double] = [:]
+        for candidate in request.candidates {
+            if let affinity = candidate.contextAffinity, affinity > 0 {
+                affinities[candidate.index] = affinity
+            }
+        }
+        return affinities
     }
 
     private static func maxScoreIndex(_ scores: [Int: Double]) -> Int? {

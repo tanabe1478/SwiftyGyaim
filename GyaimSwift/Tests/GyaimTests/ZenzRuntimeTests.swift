@@ -122,6 +122,34 @@ final class ZenzRuntimeTests: XCTestCase {
                                                                    margin: 0.10))
     }
 
+    func testSelectExactHomophoneWinnerRespectsAffinityAdvantage() {
+        // Dogfood 2026-07-14: the model demoted user-learned homophones
+        // (使用 over learned 仕様) when context matched only partially.
+        // An affinity advantage on the current best raises the required
+        // log-probability margin (affinity 0.5 → +1.0 at weight 2.0).
+        let scores: [Int: Double] = [0: -2.0, 1: -1.2]
+
+        // Without affinity, a 0.8 advantage clears the 0.10 margin.
+        XCTAssertEqual(BundledZenzRuntime.selectExactHomophoneWinner(scores: scores,
+                                                                     currentBest: 0,
+                                                                     margin: 0.10), 1)
+        // The user's partial-context history on the best blocks the override.
+        XCTAssertNil(BundledZenzRuntime.selectExactHomophoneWinner(scores: scores,
+                                                                   currentBest: 0,
+                                                                   margin: 0.10,
+                                                                   affinities: [0: 0.5]))
+        // A decisive model advantage can still win past the history.
+        XCTAssertEqual(BundledZenzRuntime.selectExactHomophoneWinner(scores: [0: -3.5, 1: -1.2],
+                                                                     currentBest: 0,
+                                                                     margin: 0.10,
+                                                                     affinities: [0: 0.5]), 1)
+        // Affinity on the winner itself does not raise the bar.
+        XCTAssertEqual(BundledZenzRuntime.selectExactHomophoneWinner(scores: scores,
+                                                                     currentBest: 0,
+                                                                     margin: 0.10,
+                                                                     affinities: [1: 0.5]), 1)
+    }
+
     func testSelectExactHomophoneWinnerPicksHighestScoreAmongMany() {
         let scores: [Int: Double] = [0: -3.0, 1: -1.5, 2: -0.5]
 
