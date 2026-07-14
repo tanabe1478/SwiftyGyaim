@@ -141,11 +141,17 @@ class ConnectionDict {
     /// `maxDepth` so long or ambiguous readings cannot explode the recursion.
     /// The result set is the "grammar" for dictionary-constrained generation:
     /// the model may only choose among these surfaces.
+    /// `excluding` surfaces are skipped during enumeration without consuming
+    /// result slots (BUG-028): capping first and filtering afterwards returned
+    /// an empty set, because the bounded enumeration walks the same dictionary
+    /// in the same order as normal search and its first N compositions are
+    /// exactly the candidates the caller already has.
     func constrainedCompositions(pat: String,
                                  maxResults: Int = 12,
-                                 maxDepth: Int = 8) -> [ConnectionComposition] {
+                                 maxDepth: Int = 8,
+                                 excluding: Set<String> = []) -> [ConnectionComposition] {
         guard maxResults > 0, maxDepth > 0 else { return [] }
-        var seen = Set<String>()
+        var seen = excluding
         var results: [ConnectionComposition] = []
         enumerateCompositions(connection: nil, pat: pat, foundWord: "", depth: 0,
                               maxResults: maxResults, maxDepth: maxDepth,
