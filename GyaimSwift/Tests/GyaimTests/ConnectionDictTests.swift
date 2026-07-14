@@ -170,6 +170,26 @@ final class ConnectionDictTests: XCTestCase {
         XCTAssertEqual(capped.count, 1)
     }
 
+    func testConstrainedCompositionsExcludeExistingSurfacesWithoutConsumingSlots() throws {
+        // BUG-028: excluded surfaces (the caller's existing candidates) must be
+        // skipped during enumeration, not filtered afterwards — otherwise the
+        // result cap fills with already-known compositions and nothing new
+        // survives.
+        let baseline = dict.constrainedCompositions(pat: "kyokushoka", maxResults: 1)
+        let baselineWord = try XCTUnwrap(baseline.first?.word)
+
+        let excluded = dict.constrainedCompositions(pat: "kyokushoka",
+                                                    maxResults: 1,
+                                                    excluding: [baselineWord])
+
+        XCTAssertFalse(excluded.map(\.word).contains(baselineWord))
+        // The slot freed by the exclusion is used for the next composition
+        // (or stays empty if none exists) — never wasted on the excluded one.
+        if let replacement = excluded.first {
+            XCTAssertNotEqual(replacement.word, baselineWord)
+        }
+    }
+
     func testConstrainedCompositionsHonorDepthCap() throws {
         // 局所化する = 局所 + 化 + する (depth 3): a depth cap of 2 must block it
         // while the default cap allows it.

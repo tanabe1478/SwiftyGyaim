@@ -1101,9 +1101,11 @@ class GyaimController: IMKInputController {
         // the most natural ones. Surfaces already in the candidate set are not
         // rescored — the model only surfaces compositions that drowned in the
         // normal enumeration order.
-        let surfaces = (wordSearch?.connectionCompositions(reading: query) ?? [])
+        let surfaces = (wordSearch?.connectionCompositions(reading: query, excluding: seen) ?? [])
             .map(\.word)
-            .filter { !seen.contains($0) }
+        if surfaces.isEmpty {
+            Log.input.info("Zenz constrained selection: input=\"\(query)\" no unseen compositions")
+        }
         let selected = InProcessAIReranker.shared.selectConstrainedCandidates(inputPat: query,
                                                                               hiragana: hiragana,
                                                                               context: requestContext,
