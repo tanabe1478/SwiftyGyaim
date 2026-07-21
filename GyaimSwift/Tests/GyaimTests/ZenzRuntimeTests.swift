@@ -268,6 +268,27 @@ final class ZenzRuntimeTests: XCTestCase {
                                                                     request: request))
     }
 
+    func testCombineScoresCentersZenzOnScoredMean() {
+        // BUG-029 (seisansei): raw negative logprobs penalized every scored
+        // candidate, letting unscored garbage past the budget win. With
+        // mean-centering, a better-than-average scored word gains, a
+        // worse-than-average one loses, and unscored candidates are untouched.
+        let heuristic: [Int: Double] = [2: 0.54, 8: 0.36]   // 生産性 vs 性三世
+        // Only 生産性 (index 2) is within the scoring budget.
+        let zenz: [Int: Double] = [2: -0.9, 0: -8.0]        // raw is deeply negative
+
+        let combined = BundledZenzRuntime.combineScores(heuristic: heuristic,
+                                                        zenz: zenz,
+                                                        weight: 0.30)
+
+        // 生産性 scored above the mean (-4.45) → gains, stays above garbage.
+        XCTAssertGreaterThan(combined[2] ?? 0, combined[8] ?? 0)
+        // Unscored candidate keeps its heuristic score untouched.
+        XCTAssertEqual(combined[8], 0.36)
+        // No zenz scores → heuristic passthrough.
+        XCTAssertEqual(BundledZenzRuntime.combineScores(heuristic: heuristic, zenz: [:], weight: 0.30), heuristic)
+    }
+
     func testRankConstrainedSurfacesOrdersByScoreWithStableTies() {
         // Issue #59 / ADR-022: highest conditional log probability first;
         // ties keep the dictionary enumeration order.
