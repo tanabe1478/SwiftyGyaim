@@ -55,18 +55,33 @@ def load_entries(path: Path) -> list[StudyEntry]:
 
 
 def find_suspects(entries: list[StudyEntry], *, stale_days: int, now: float,
-                  dominance: int = 3) -> list[Suspect]:
+                  dominance: int = 3, max_garbage_frequency: int = 2) -> list[Suspect]:
     suspects: list[Suspect] = []
     frequency_by_word: dict[str, int] = {}
+    readings_by_word: dict[str, set[str]] = {}
     for entry in entries:
         frequency_by_word[entry.word] = max(frequency_by_word.get(entry.word, 0), entry.frequency)
+        readings_by_word.setdefault(entry.word, set()).add(entry.reading)
 
     stale_cutoff = now - stale_days * 24 * 3600
     for entry in entries:
-        if len(entry.word) >= 2:
+        # Real typo commits (BUG-025's してほしいい) have low frequency; a word
+        # committed dozens of times (今日 freq 45 next to 今 freq 166) is a
+        # legitimate word that merely shares a prefix. Weekly run 2026-07-21
+        # flagged 今日/今後/中身/上記 without this bound — all false positives.
+        if len(entry.word) >= 2 and entry.frequency <= max_garbage_frequency:
             shorter = entry.word[:-1]
             shorter_frequency = frequency_by_word.get(shorter, 0)
-            if shorter_frequency >= max(entry.frequency * dominance, entry.frequency + 2):
+            # A typo commit extends the shorter word's reading by a keystroke
+            # or two (sitehosiii = sitehosii + i). A different word that merely
+            # shares a surface prefix has an unrelated reading (文法 bunpou vs
+            # 文 bun, +3 chars) and must not be flagged.
+            reading_extends_shorter = any(
+                entry.reading.startswith(r) and 1 <= len(entry.reading) - len(r) <= 2
+                for r in readings_by_word.get(shorter, ())
+            )
+            if reading_extends_shorter and \
+               shorter_frequency >= max(entry.frequency * dominance, entry.frequency + 2):
                 suspects.append(Suspect(
                     entry, "garbage-completion",
                     f"「{shorter}」(freq {shorter_frequency}) の末尾1文字付きで freq {entry.frequency}"))
@@ -83,12 +98,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="List suspicious study-dictionary entries for manual review.")
     parser.add_argument("--study", type=Path, default=Path.home() / ".gyaim/studydict.txt")
     parser.add_argument("--stale-days", type=int, default=90)
+    parser.add_argument("--max-garbage-frequency", type=int, default=2,
+                        help="garbage-completion only fires for entries used at most this often; "
+                             "frequently committed words sharing a prefix are legitimate.")
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--format", choices=["markdown", "tsv"], default="markdown")
     args = parser.parse_args()
 
     entries = load_entries(args.study)
-    suspects = find_suspects(entries, stale_days=args.stale_days, now=time.time())
+    suspects = find_suspects(entries, stale_days=args.stale_days, now=time.time(),
+                             max_garbage_frequency=args.max_garbage_frequency)
     shown = suspects[: args.limit]
 
     if args.format == "tsv":
