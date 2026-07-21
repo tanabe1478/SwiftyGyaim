@@ -37,3 +37,9 @@ docs/gyaim-weekly-tasklist-template.md
 # Python cache
 __pycache__/
 *.pyc
+
+# LLVM profile data from manual xcrun xctest runs
+*.profraw
+
+# diffai review state
+.diffai/

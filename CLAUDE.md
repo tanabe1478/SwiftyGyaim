@@ -92,7 +92,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（377テスト）
+# ユニットテスト（383テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -115,6 +115,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | StudyEntryTests | Tests/GyaimTests/ | 9 | StudyEntryスコア計算・EvictionMode・ファイルI/O |
 | CryptTests | Tests/GyaimTests/ | 6 | 暗号化/復号のラウンドトリップ |
 | ConnectionDictTests | Tests/GyaimTests/ | 3 | 連接辞書の検索 |
+| プロパティテスト（3スイート） | Tests/GyaimTests/ | 6 | PropertyTesting.swiftハーネスによる不変条件検査（validatedOrderの順列性・学習マージの頻度保存・combineScoresのzero-sum性）。seed再現可能 |
 | GyaimE2ETests | Tests/E2ETests/ | 8 | CGEventによるIME統合テスト（TextEdit上で実操作） |
 
 ### テストインフラ
