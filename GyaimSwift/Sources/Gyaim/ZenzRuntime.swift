@@ -112,20 +112,31 @@ final class BundledZenzRuntime: ZenzRuntime {
         var scores: [String: Double] = [:]
         var anyRuntimeScore = false
 
+        var zenzScores: [Int: Double] = [:]
         for candidate in request.candidates {
-            let heuristicScore = heuristic.scores?[String(candidate.index)] ?? 0
             if Self.shouldScoreWithZenz(candidate, maxScoredCandidates: maxScoredCandidates),
                let zenzScore = activeContext.score(prompt: prompt, continuation: candidate.text) {
                 anyRuntimeScore = true
-                let combinedScore = heuristicScore + zenzScore * zenzWeight
-                scores[String(candidate.index)] = combinedScore
-                let scoreSummary = "heuristic=\(String(format: "%.4f", heuristicScore)) "
-                    + "zenz=\(String(format: "%.4f", zenzScore)) "
-                    + "combined=\(String(format: "%.4f", combinedScore))"
+                zenzScores[candidate.index] = zenzScore
+            }
+        }
+        var heuristicScores: [Int: Double] = [:]
+        for candidate in request.candidates {
+            heuristicScores[candidate.index] = heuristic.scores?[String(candidate.index)] ?? 0
+        }
+        let combined = Self.combineScores(heuristic: heuristicScores,
+                                          zenz: zenzScores,
+                                          weight: zenzWeight)
+        for candidate in request.candidates {
+            let combinedScore = combined[candidate.index] ?? 0
+            scores[String(candidate.index)] = combinedScore
+            if let zenzScore = zenzScores[candidate.index] {
                 Log.input.info("Zenz candidate score: input=\"\(request.inputPat)\" "
-                    + "index=\(candidate.index) text=\"\(candidate.text)\" weight=\(String(format: "%.2f", zenzWeight)) \(scoreSummary)")
-            } else {
-                scores[String(candidate.index)] = heuristicScore
+                    + "index=\(candidate.index) text=\"\(candidate.text)\" "
+                    + "weight=\(String(format: "%.2f", zenzWeight)) "
+                    + "heuristic=\(String(format: "%.4f", heuristicScores[candidate.index] ?? 0)) "
+                    + "zenz=\(String(format: "%.4f", zenzScore)) "
+                    + "combined=\(String(format: "%.4f", combinedScore))")
             }
         }
         guard anyRuntimeScore else {
@@ -552,6 +563,25 @@ final class BundledZenzRuntime: ZenzRuntime {
     private static func generationBeamWidth() -> Int {
         let configured = GyaimSettings.integer(forKey: "aiRerankZenzGenerationBeamWidth")
         return configured > 0 ? min(configured, 6) : 1
+    }
+
+    /// Combine heuristic and Zenz scores with mean-centering (BUG-029).
+    /// Mean log probabilities are always negative, so adding them raw
+    /// penalized every scored candidate relative to unscored ones — garbage
+    /// compounds sitting past the scoring budget outranked good words the
+    /// model had scored (seisansei: 性三世 above 生産性). Centering on the
+    /// scored set's mean makes the model's opinion zero-sum: better-than-
+    /// average words gain, worse lose, unscored candidates stay untouched.
+    static func combineScores(heuristic: [Int: Double],
+                              zenz: [Int: Double],
+                              weight: Double) -> [Int: Double] {
+        guard !zenz.isEmpty else { return heuristic }
+        let meanZenz = zenz.values.reduce(0, +) / Double(zenz.count)
+        var combined = heuristic
+        for (index, score) in zenz {
+            combined[index] = (heuristic[index] ?? 0) + (score - meanZenz) * weight
+        }
+        return combined
     }
 
     private static func maxScoredCandidates() -> Int {
