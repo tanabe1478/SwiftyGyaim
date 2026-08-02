@@ -94,7 +94,8 @@ enum AIReranker {
         ]
         if isExactReadingMatch(candidate: candidate, request: request) {
             contributions["exactReadingMatchBonus"] = 0.20
-            if candidate.kind == CandidateKind.exact.rawValue {
+            if candidate.kind == CandidateKind.exact.rawValue,
+               !isLearnedRawHiraganaCandidate(candidate, request: request) {
                 contributions["exactReadingKindBonus"] = exactReadingBonus(candidate.text)
             }
         } else {
@@ -102,7 +103,8 @@ enum AIReranker {
                                                                                  inputPat: request.inputPat)
         }
         contributions["contextPredictionBonus"] = contextPredictionBonus(candidate: candidate, request: request)
-        if let affinity = candidate.contextAffinity, affinity > 0 {
+        if let affinity = candidate.contextAffinity, affinity > 0,
+           !isRawHiraganaCandidate(candidate, request: request) {
             contributions["contextAffinityBonus"] = min(affinity, 1.0) * 1.50
         }
         if candidate.source == "study", let frequency = candidate.studyFrequency, frequency > 1 {
@@ -149,6 +151,20 @@ enum AIReranker {
 
     private static func exactReadingBonus(_ text: String) -> Double {
         text.count >= 5 ? 2.00 : 0.50
+    }
+
+    /// The literal hiragana rendering is always reachable through kana commit.
+    /// A one-off ContextDict entry must not let it permanently override a
+    /// frequently selected kanji candidate for the same reading (BUG-030).
+    private static func isRawHiraganaCandidate(_ candidate: AIRerankCandidate,
+                                               request: AIRerankRequest) -> Bool {
+        candidate.text == request.hiragana && WordSearch.isAllHiragana(candidate.text)
+    }
+
+    private static func isLearnedRawHiraganaCandidate(_ candidate: AIRerankCandidate,
+                                                      request: AIRerankRequest) -> Bool {
+        (candidate.source == "study" || candidate.source == "local")
+            && isRawHiraganaCandidate(candidate, request: request)
     }
 
     private static func prefixPredictionPenalty(candidate: AIRerankCandidate, inputPat: String) -> Double {

@@ -199,13 +199,17 @@ class WordSearch {
 
         let exactPriority = searchMode == 0 && Self.isExactReadingMatchPriority
         // Romaji spelling variants of the same kana must count as exact reading
-        // matches: a study entry learned as "kousinn" (更新) is the same reading
-        // as typed "kousin", and must not degrade to a prefix prediction
-        // (BUG-026). Conversion runs only for regex-matched entries.
+        // matches in both directions: a study entry learned as "yondeite" is
+        // still an exact match when the user types "yonndeite", even though the
+        // stored spelling is not a string prefix of the query (BUG-030).
         let queryHiragana = rk.roma2hiragana(q)
         func isKanaEquivalentReading(_ reading: String) -> Bool {
             guard !queryHiragana.isEmpty, reading != q else { return false }
             return rk.roma2hiragana(reading) == queryHiragana
+        }
+        func matchesQuery(_ reading: String) -> Bool {
+            let range = NSRange(reading.startIndex..., in: reading)
+            return regex.firstMatch(in: reading, range: range) != nil || isKanaEquivalentReading(reading)
         }
         func matchKind(for reading: String) -> CandidateKind {
             searchMode > 0 || reading == q || isKanaEquivalentReading(reading) ? .exact : .prefix
@@ -225,9 +229,9 @@ class WordSearch {
             // 必ず先に列挙されることで .source = .connection で上書きされず、
             // Shift+X による削除（GyaimController.deleteCurrentCandidate）が機能する。
 
-            // Bucket 1: studyDict exact (reading == q)
+            // Bucket 1: studyDict exact (including kana-equivalent spelling variants)
             for entry in Self.studyDict {
-                if entry.reading == q, !candfound.contains(entry.word) {
+                if (entry.reading == q || isKanaEquivalentReading(entry.reading)), !candfound.contains(entry.word) {
                     candidates.append(SearchCandidate(word: entry.word,
                                                       reading: entry.reading,
                                                       source: .study,
@@ -243,7 +247,7 @@ class WordSearch {
                     guard entry.count >= 2 else { continue }
                     let yomi = entry[0]
                     let word = entry[1]
-                    if yomi == q, !candfound.contains(word) {
+                    if (yomi == q || isKanaEquivalentReading(yomi)), !candfound.contains(word) {
                         candidates.append(SearchCandidate(word: word,
                                                           reading: yomi,
                                                           source: .local,
@@ -256,9 +260,7 @@ class WordSearch {
             // Bucket 3: studyDict prefix
             if limit == 0 || candidates.count < limit {
                 for entry in Self.studyDict {
-                    let range = NSRange(entry.reading.startIndex..., in: entry.reading)
-                    if regex.firstMatch(in: entry.reading, range: range) != nil,
-                       !candfound.contains(entry.word) {
+                    if matchesQuery(entry.reading), !candfound.contains(entry.word) {
                         candidates.append(SearchCandidate(word: entry.word,
                                                           reading: entry.reading,
                                                           source: .study,
@@ -275,9 +277,7 @@ class WordSearch {
                     guard entry.count >= 2 else { continue }
                     let yomi = entry[0]
                     let word = entry[1]
-                    let range = NSRange(yomi.startIndex..., in: yomi)
-                    if regex.firstMatch(in: yomi, range: range) != nil,
-                       !candfound.contains(word) {
+                    if matchesQuery(yomi), !candfound.contains(word) {
                         candidates.append(SearchCandidate(word: word,
                                                           reading: yomi,
                                                           source: .local,
@@ -290,8 +290,7 @@ class WordSearch {
         } else {
             // OFF: single-pass per dict (現状挙動を維持)
             for entry in Self.studyDict {
-                let range = NSRange(entry.reading.startIndex..., in: entry.reading)
-                if regex.firstMatch(in: entry.reading, range: range) != nil {
+                if matchesQuery(entry.reading) {
                     if !candfound.contains(entry.word) {
                         candidates.append(SearchCandidate(word: entry.word,
                                                           reading: entry.reading,
@@ -308,8 +307,7 @@ class WordSearch {
                     guard entry.count >= 2 else { continue }
                     let yomi = entry[0]
                     let word = entry[1]
-                    let range = NSRange(yomi.startIndex..., in: yomi)
-                    if regex.firstMatch(in: yomi, range: range) != nil {
+                    if matchesQuery(yomi) {
                         if !candfound.contains(word) {
                             candidates.append(SearchCandidate(word: word,
                                                               reading: yomi,

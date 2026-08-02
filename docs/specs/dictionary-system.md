@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-07-13 (ひらがな確定は学習しない)
+> Last updated: 2026-08-03 (かな等価readingの双方向検索・生ひらがな文脈補正 — BUG-030)
 
 ## 概要
 
@@ -140,7 +140,7 @@ connection 候補については、`ConnectionDict` が内部接続ラベル風�
 
 ### かな等価readingのexact判定（BUG-026）
 
-前方一致検索の `kind` 判定（`matchKind` / exactPriorityバケット3・4）は、reading文字列の完全一致に加えて**かな等価**（`RomaKana.roma2hiragana(reading) == roma2hiragana(query)`）を exact として扱う。`ん` を `n` / `nn` のどちらで打つかは入力ごとに揺れるため、`kousinn` で学習した `更新` を `kousin` 入力時に prefix 扱いに落とさない。変換は正規表現マッチ済みエントリに対してのみ実行するため、検索コストへの影響は候補数に比例する程度。
+前方一致検索の取得条件と `kind` 判定（`matchKind` / exactPriorityバケット）は、reading文字列の完全一致に加えて**かな等価**（`RomaKana.roma2hiragana(reading) == roma2hiragana(query)`）を exact として扱う。`ん` を `n` / `nn` のどちらで打つかは入力ごとに揺れるため、`kousinn` で学習した `更新` を `kousin` 入力時に prefix 扱いに落とさない。さらに逆方向の `yondeite`（保存済み）に対する `yonndeite`（今回入力）のように、保存readingがqueryの文字列prefixにならない場合もかな等価なら検索対象に含める（BUG-030）。
 
 保存側も同じかな等価で統合する（issue #58、BUG-026の保存側での完結）:
 
