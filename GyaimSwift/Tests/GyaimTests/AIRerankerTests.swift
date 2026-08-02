@@ -390,6 +390,39 @@ final class AIRerankerTests: XCTestCase {
         XCTAssertEqual(breakdown.contributions["contextAffinityBonus"], 1.50)
     }
 
+    func testRawHiraganaContextAffinityDoesNotOverrideFrequentKanji() {
+        // BUG-030: repeatedly choosing 文章 must beat an old context-specific
+        // selection of the literal ぶんしょう rendering.
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "bunsyou",
+            hiragana: "ぶんしょう",
+            context: "この辺の",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "ぶんしょう",
+                                  reading: "bunsyou",
+                                  source: "study",
+                                  kind: "exact",
+                                  contextAffinity: 1.0,
+                                  studyFrequency: 6),
+                AIRerankCandidate(index: 1,
+                                  text: "文章",
+                                  reading: "bunsyou",
+                                  source: "study",
+                                  kind: "exact",
+                                  studyFrequency: 12)
+            ]
+        )
+
+        let response = AIReranker.localRerank(request)
+
+        XCTAssertEqual(response.order.first, 1)
+        let hiraganaBreakdown = AIReranker.localScoreBreakdown(candidate: request.candidates[0], request: request)
+        XCTAssertNil(hiraganaBreakdown.contributions["contextAffinityBonus"])
+    }
+
     func testLocalScoreBreakdownExposesStudyFrequencyBonus() {
         let frequent = AIRerankCandidate(index: 0,
                                          text: "機能",

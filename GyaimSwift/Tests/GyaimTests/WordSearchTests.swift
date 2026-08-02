@@ -64,6 +64,21 @@ final class WordSearchTests: XCTestCase {
         XCTAssertEqual(koushin?.reading, "kousinn")
     }
 
+    func testKanaEquivalentReadingIsFoundWhenStoredSpellingIsShorter() throws {
+        // BUG-030: unlike kousinn -> kousin, a stored "yondeite" is not a
+        // string prefix of typed "yonndeite". Kana equivalence must participate
+        // in retrieval itself, not only classify regex-matched results.
+        try XCTSkipIf(ws == nil)
+        ws.study(word: "読んでいて", reading: "yondeite")
+
+        let results = ws.search(query: "yonndeite", searchMode: 0)
+        let candidate = results.first { $0.word == "読んでいて" }
+
+        XCTAssertEqual(candidate?.kind, .exact)
+        XCTAssertEqual(candidate?.reading, "yondeite")
+        XCTAssertEqual(candidate?.source, .study)
+    }
+
     func testKanaVariantStudyEntriesMergeOnLoad() throws {
         // Issue #58: romaji spelling variants of the same kana reading merge
         // into one entry at load time (frequencies summed, canonical reading
