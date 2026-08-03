@@ -646,9 +646,20 @@ final class BundledZenzRuntime: ZenzRuntime {
             if index != localOrder.first,
                isHiraganaOnlyText(candidate.text),
                candidate.text == request.hiragana { continue }
+            // The character LM systematically underrates symbol candidates
+            // (〇 scored -8.6 vs 円 -2.9 for reading まる), so a user's
+            // repeatedly chosen symbol kept losing the comparison no matter
+            // how often it was re-confirmed (BUG-031). Symbols never take
+            // part: as current best this skips the override entirely, and as
+            // challenger the LM would never fairly promote them anyway.
+            if isSymbolOnlyText(candidate.text) { continue }
             result.append(index)
         }
         return result
+    }
+
+    private static func isSymbolOnlyText(_ text: String) -> Bool {
+        !text.isEmpty && !text.contains(where: isJapaneseLike)
     }
 
     private static func isHiraganaOnlyText(_ text: String) -> Bool {
