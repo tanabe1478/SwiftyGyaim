@@ -215,6 +215,75 @@ final class ZenzRuntimeTests: XCTestCase {
         XCTAssertEqual(indices, [0, 1])
     }
 
+    func testExactHomophoneCandidateIndicesExcludesSymbolOnlyCandidates() {
+        // BUG-031 (dogfood 2026-07-28): the user picked まる→〇 six times in a
+        // row and the exact-homophone review demoted it to 円 every time,
+        // because the character LM scores symbols systematically low
+        // (〇 -8.6 vs 円 -2.9). Symbol-only candidates never join the
+        // comparison; with the best excluded, the whole override is skipped.
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "maru",
+            hiragana: "まる",
+            context: "〇円",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "〇",
+                                  reading: "maru",
+                                  source: "study",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 1,
+                                  text: "円",
+                                  reading: "maru",
+                                  source: "study",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 2,
+                                  text: "丸",
+                                  reading: "maru",
+                                  source: "study",
+                                  kind: "exact")
+            ]
+        )
+
+        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
+                                                                        localOrder: [0, 1, 2])
+
+        // 〇 is excluded, so the caller's indices.contains(best) guard fails
+        // and the comparison is skipped — the kanji homophones alone must
+        // never be able to displace the user's protected symbol choice.
+        XCTAssertFalse(indices.contains(0))
+    }
+
+    func testExactHomophoneCandidateIndicesKeepsMixedSymbolKanjiCandidates() {
+        // Texts that merely contain a symbol alongside kana/kanji (〇円) are
+        // still fairly scorable and stay in the comparison.
+        let request = AIRerankRequest(
+            version: 1,
+            mode: "fast-context-rerank",
+            inputPat: "maruen",
+            hiragana: "まるえん",
+            context: "価格は",
+            candidates: [
+                AIRerankCandidate(index: 0,
+                                  text: "〇円",
+                                  reading: "maruen",
+                                  source: "study",
+                                  kind: "exact"),
+                AIRerankCandidate(index: 1,
+                                  text: "丸円",
+                                  reading: "maruen",
+                                  source: "study",
+                                  kind: "exact")
+            ]
+        )
+
+        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
+                                                                        localOrder: [0, 1])
+
+        XCTAssertEqual(indices, [0, 1])
+    }
+
     func testExactHomophoneCandidateIndicesKeepsHiraganaWordThatIsNotRawSpelling() {
         // "ください" (input kudasa → raw spelling くださ) is a legitimate
         // hiragana word and must stay comparable (BUG-022 regression intent).
