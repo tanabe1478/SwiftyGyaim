@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-08-03 (かな等価readingの双方向検索・生ひらがな文脈補正 — BUG-030)
+> Last updated: 2026-08-03 (接続辞書のプロセス内共有)
 
 ## 概要
 
@@ -305,6 +305,14 @@ OFF時は単一パス（study → local → connection）で従来どおり MRU 
 - init() は `studyDictFile` パスが変わった場合のみファイルから再読み込み
 - `resetStudyDict()` はテスト専用（テスト間のアイソレーション）
 - `localDict` はインスタンス変数のまま（mtime ホットリロードがあり、マルチインスタンスでの上書き問題は `register()` 頻度が低いため実害なし）
+
+## 接続辞書のプロセス内共有
+
+`sharedConnectionDict` / `sharedConnectionDictFile` も `WordSearch` の **static 変数**。IMKはアクティベーションごとにコントローラ（＝`WordSearch`）を生成するため、インスタンスごとにロードすると40,904行のパース（実測0.3〜2.1秒）が**アプリ/フィールド切替のたび**に走っていた（dogfoodで「使い込むと重い」報告の主因、ログ内で394回発生）。接続辞書はロード後不変なので1インスタンスを共有する。
+
+- init() は `connectionDictFile` パスが一致すればキャッシュを再利用し、変わった場合のみロード
+- **明示リロードは `resetConnectionDict()` を先に呼ぶこと**: Gictionaryインポートは同じパス（`~/.gyaim/connectiondict.txt`）へ新しい内容を書くため、パスキーのキャッシュ判定だけでは反映されない。`GyaimController.reloadConnectionDictionary()` がこれを行う
+- studyDict と同様、スレッドはIMKのメインスレッド前提（ロックなし）
 
 ## 既知の制約
 

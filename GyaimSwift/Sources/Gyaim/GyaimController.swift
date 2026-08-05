@@ -170,6 +170,9 @@ class GyaimController: IMKInputController {
             return
         }
         let dictPath = Config.activeConnectionDictFile(bundleDictPath: bundleDictPath)
+        // Explicit reload (e.g. after a Gictionary import) rewrites the same
+        // path, so the shared cache must be dropped or the old content stays.
+        WordSearch.resetConnectionDict()
         ws = WordSearch(connectionDictFile: dictPath,
                         localDictFile: Config.localDictFile,
                         studyDictFile: Config.studyDictFile)

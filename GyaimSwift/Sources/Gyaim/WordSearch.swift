@@ -114,10 +114,35 @@ class WordSearch {
         studyDictFile = ""
     }
 
+    // MARK: - Shared Connection Dict (process-wide singleton)
+    // IMKInputControllerはアクティベーションごとに生成されるため、接続辞書
+    // （40,904行）をインスタンスごとにロードするとアプリ/フィールド切替の
+    // たびに実測0.3〜2.1秒のパースが走る。辞書はロード後不変なので、
+    // studyDict と同じくプロセス全体で1インスタンスを共有する。
+    private(set) static var sharedConnectionDict: ConnectionDict?
+    private(set) static var sharedConnectionDictFile: String = ""
+
+    /// 共有接続辞書を破棄して次の init() で再読み込みさせる。
+    /// Gictionaryインポートは同じパスへ新しい内容を書き込むため、明示
+    /// リロード（GyaimController.reloadConnectionDictionary）は必ずこれを
+    /// 先に呼ぶこと。パス一致だけのキャッシュ判定では反映されない。
+    static func resetConnectionDict() {
+        sharedConnectionDict = nil
+        sharedConnectionDictFile = ""
+    }
+
     init(connectionDictFile: String, localDictFile: String, studyDictFile: String) {
         self.localDictFile = localDictFile
-        self.connectionDict = PerfLog.measure("ConnectionDict load", logger: Log.dict) {
-            ConnectionDict(dictFile: connectionDictFile)
+        if Self.sharedConnectionDictFile == connectionDictFile,
+           let cached = Self.sharedConnectionDict {
+            self.connectionDict = cached
+        } else {
+            let loaded = PerfLog.measure("ConnectionDict load", logger: Log.dict) {
+                ConnectionDict(dictFile: connectionDictFile)
+            }
+            self.connectionDict = loaded
+            Self.sharedConnectionDict = loaded
+            Self.sharedConnectionDictFile = connectionDictFile
         }
         self.localDict = Self.loadDict(dictFile: localDictFile)
         self.localDictTime = Self.fileModTime(localDictFile)
