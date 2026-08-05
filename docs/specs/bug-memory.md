@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-08-03 (BUG-030追加)
+> Last updated: 2026-08-03 (BUG-031追加)
 
 ## 概要
 
@@ -373,6 +373,16 @@
 - **修正**: 入力の生ひらがな表記には ContextDict affinity bonusと文字数由来のexact bonusを適用しない。WordSearchのstudy/local検索では、文字列prefix一致に加えてかな等価readingも取得条件にし、exactPriorityのexactバケットにも双方向で含める。
 - **検証**: `AIRerankerTests` に頻度12の「文章」がaffinity 1.0・頻度6の「ぶんしょう」に勝つテスト、`WordSearchTests` に保存 `yondeite` を入力 `yonndeite` で `.study/.exact` として取得するテストを追加。
 - **教訓**: かな等価は候補取得後の分類だけでなく取得条件そのものに使う。生かな表記は専用確定経路で到達可能なので、文脈学習による自動昇格を漢字同音異義語と同じ強さで扱わない。
+
+### BUG-031: 記号候補がexact同音異義語レビューで毎回漢字に上書きされ、学習しても直らない
+
+- **発見日**: 2026-07-29
+- **症状**: dogfoodログ分析（rank≥2確定の週次レビュー）で、`maru`→`〇` が2分間に6回連続で `円` に負けていたことを発見。ユーザーが `〇` を選ぶたびに学習頻度は増える（最終的に〇=8 vs 円=1）のに、次の変換でまた `円` が1位になる。
+- **影響**: 記号（〇△×→・等）を読みで入力するユーザーの学習が exact 同音異義語レビューに毎回上書きされる。「選んでも直らないIME」という最悪のUX。文脈に確定済みの `円` が入ることでモデルスコアがさらに `円` に寄る悪循環もある。
+- **原因**: 文字レベルLMは散文コーパスで学習しており、記号に系統的に低い確率を与える（〇=-8.60 vs 円=-2.91、差5.69 logprob）。この差は affinity margin 防御（最大~2.0）では絶対に届かず、margin をそこまで上げると 更新/行進 のような正当な文脈修正が全滅する。**BUG-024（生かな表記の系統的過大評価）と対称の系統バイアス**（こちらは過小評価）。
+- **修正**: BUG-024と同じ構造的解決。`exactHomophoneCandidateIndices` で記号のみ候補（かな・漢字を1文字も含まない）を比較集合から無条件に除外。bestが記号の場合は `indices.contains(best)` ガードにより比較自体がスキップされ、challengerとしても昇格不能になる。
+- **検証**: `ZenzRuntimeTests.testExactHomophoneCandidateIndicesExcludesSymbolOnlyCandidates`（maru実データ再現）、`testExactHomophoneCandidateIndicesKeepsMixedSymbolKanjiCandidates`（〇円のような混在テキストは比較に残る）。
+- **教訓**: 文字レベルLMのスコアが信頼できない候補クラス（かな列=過大、記号=過小）は、margin調整ではなく**比較集合から構造的に除外**する。また「ユーザーが同じ修正を短時間に繰り返している」パターンはログ上で最優先の改善シグナル——学習が効いていない箇所を直接指している。
 
 ## パターン集
 
