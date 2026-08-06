@@ -1,7 +1,7 @@
 # Spec: InputMethodKit制約集
 
 > Trigger: GyaimController.swift, AppDelegate.swift, main.swift, CandidateWindow.swift
-> Last updated: 2026-03-17
+> Last updated: 2026-08-06 (未入力deactivationではfixしない — BUG-032)
 
 ## 概要
 
@@ -33,6 +33,8 @@ IMEアプリは `LSBackgroundOnly = true` で動作する。
 // 正しいパターン（fixAsKana, fix共通）
 let resolvedClient = (sender as? IMKTextInput) ?? (self.client() as? IMKTextInput)
 ```
+
+未確定入力がある場合だけ `fix(client: sender, skipStudy: true)` を呼ぶ。`inputPat` が空のdeactivationでは `fix()` を呼ばず、空文字の `insertText("")` を避ける。
 
 ### 5. メニューバーアイコン
 

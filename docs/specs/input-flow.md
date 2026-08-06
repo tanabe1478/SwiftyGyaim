@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-08-03 (生ひらがな候補の文脈過学習抑制 — BUG-030)
+> Last updated: 2026-08-06 (未入力deactivationの空文字確定を抑止 — BUG-032)
 
 ## 概要
 
@@ -61,10 +61,10 @@ AIによる候補生成は通常入力・候補生成時には自動実行しな
 
 ```
 activateServer(_:) → 辞書start, クリップボード取得, showWindow
-deactivateServer(_:) → hideWindow, fix(skipStudy: true), 辞書finish
+deactivateServer(_:) → hideWindow, inputPatが空でなければfix(skipStudy: true), 辞書finish
 ```
 
-**重要**: deactivationではsenderをfix()に渡すこと。渡さないとクライアント取得に失敗しテキストが破棄される（Issue #13で修正済み）。
+**重要**: deactivationで未確定入力がある場合はsenderをfix()に渡すこと。渡さないとクライアント取得に失敗しテキストが破棄される（Issue #13で修正済み）。一方、`inputPat` が空（`converting == false`）なら `fix()` を呼ばず状態だけリセットする。アプリ・入力欄間のフォーカス移動で `insertText("")` を繰り返さないため（BUG-032）。
 
 ## showCands() のページ送り
 
