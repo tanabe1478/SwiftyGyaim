@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-08-03 (生ひらがな候補の文脈過学習抑制 — BUG-030)
+> Last updated: 2026-08-09 (非表示英数モードのパススルー — ADR-023)
 
 ## 概要
 
@@ -56,6 +56,14 @@ AIによる候補生成は通常入力・候補生成時には自動実行しな
 ## Google Transliterate
 
 `GoogleTransliterate.triggerSuffix`（デフォルト `` ` ``）を入力末尾に付けるか、設定画面で登録した Google Transliterate shortcut を押すと、現在の読みをひらがな化して Google Input Tools API に送る。API応答後は `searchMode = 2` として Google候補・ひらがな・カタカナを表示する。suffix入力時は `inputPat` からsuffixを取り除いてから検索し、API応答時に `pendingGoogleQuery` と現在の `inputPat` が一致しない古い結果は破棄する。
+
+## 入力モード（ADR-023）
+
+Info.plistには日本語モードのほか、Secure Event Input対策の非表示ASCII対応英数モード `com.apple.inputmethod.Roman` が登録されている。IMKは `setValue(_:forTag:client:)`（`kTextServiceInputModePropertyTag`）で現在のモードを通知してくる。
+
+- `inputMode == .roman` の間、`handle(_:client:)` は先頭で `false` を返し全キーをクライアントへパススルーする（変換なし）
+- Romanモードへの切替時、未確定入力があれば `fix(client:sender, skipStudy: true)` で確定し、候補ウィンドウを隠す
+- 未知のモードIDは `.japanese` にフォールバックする（`GyaimController.inputMode(forTISIdentifier:)`、InputModeTestsで検証）
 
 ## IMEライフサイクル
 
