@@ -1,3 +1,4 @@
+import Carbon
 import Cocoa
 import InputMethodKit
 
@@ -71,6 +72,19 @@ final class ClipboardMonitor {
 @objc(GyaimController)
 class GyaimController: IMKInputController {
     private static var shared: GyaimController?
+
+    /// Input modes declared in Info.plist ComponentInputModeDict.
+    /// `.roman` is an ASCII-capable passthrough mode that exists so macOS can
+    /// keep Gyaim selectable while Secure Event Input is active (issue #85).
+    /// It is hidden from the input menu (tsInputModeIsVisibleKey = false);
+    /// the system switches to it automatically and back, so users never
+    /// interact with it directly.
+    enum InputMode: String {
+        case japanese = "com.apple.inputmethod.Japanese"
+        case roman = "com.apple.inputmethod.Roman"
+    }
+
+    private var inputMode: InputMode = .japanese
 
     private var inputPat = ""
     private var candidates: [SearchCandidate] = []
@@ -151,6 +165,36 @@ class GyaimController: IMKInputController {
         hideWindow()
         fix(client: sender, skipStudy: true)
         ws?.finish()
+    }
+
+    /// IMK delivers the current input mode via kTextServiceInputModePropertyTag
+    /// on activation and whenever the user (or the system, e.g. Secure Event
+    /// Input fallback) switches modes.
+    override func setValue(_ value: Any!, forTag tag: Int, client sender: Any!) {
+        guard tag == kTextServiceInputModePropertyTag else {
+            super.setValue(value, forTag: tag, client: sender)
+            return
+        }
+        let identifier = value as? String
+        let newMode = Self.inputMode(forTISIdentifier: identifier)
+        guard newMode != inputMode else { return }
+        Log.input.info("Input mode changed: \(identifier ?? "nil") -> \(newMode.rawValue)")
+        if newMode == .roman {
+            // Entering ASCII passthrough: commit any pending preedit first so
+            // it is not lost, then hide the candidate window.
+            if converting {
+                fix(client: sender, skipStudy: true)
+            }
+            hideWindow()
+        }
+        inputMode = newMode
+    }
+
+    /// Pure mapping from the TIS mode identifier to InputMode (testable).
+    /// Unknown identifiers fall back to `.japanese` so a plist/OS mismatch
+    /// never leaves the IME stuck in passthrough.
+    static func inputMode(forTISIdentifier identifier: String?) -> InputMode {
+        identifier.flatMap(InputMode.init(rawValue:)) ?? .japanese
     }
 
     /// AppDelegate.applicationWillTerminate から呼ばれるセーフティネット。
@@ -238,6 +282,12 @@ class GyaimController: IMKInputController {
         let kVirtualJISKanaModeKey: UInt16 = 104
 
         guard event.type == .keyDown else { return false }
+
+        // Roman (英数) passthrough mode: hand every key back to the client so
+        // it is inserted per the active keyboard layout. No conversion here.
+        if inputMode == .roman {
+            return false
+        }
 
         let keyCode = event.keyCode
         let modifierFlags = event.modifierFlags
