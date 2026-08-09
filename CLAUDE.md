@@ -92,7 +92,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（390テスト）
+# ユニットテスト（395テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -104,6 +104,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | スイート | ファイル | テスト数 | 内容 |
 |---------|---------|---------|------|
 | HandleEventTests | Tests/GyaimTests/ | 45 | `routeEvent` 静的メソッドによるキー入力分岐の全網羅 |
+| InputModeTests | Tests/GyaimTests/ | 5 | TISモードID→InputModeマッピング（非表示英数モード、ADR-023） |
 | GoogleTransliterateTests | Tests/GyaimTests/ | 20 | フィルタ・候補ビルド・セグメント結合・トリガー設定・タイムアウト |
 | ExternalCandidateTests | Tests/GyaimTests/ | 22 | `isValidExternalCandidate` + `buildPrefixCandidates` |
 | PreferencesWindowTests | Tests/GyaimTests/ | 18 | 設定画面UIテスト（トグル存在・初期状態・クリック操作・表示モード切替・淘汰方式） |
@@ -162,7 +163,8 @@ docs/adr/
 ├── 019-gictionary-connection-dict-import.md
 ├── 020-context-conditioned-study.md
 ├── 021-exact-homophone-direct-logprob.md
-└── 022-dictionary-constrained-generation.md
+├── 022-dictionary-constrained-generation.md
+└── 023-hidden-ascii-roman-input-mode.md
 ```
 
 ## Logging & Monitoring
@@ -231,7 +233,7 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-022）
+- `docs/adr/` — 設計判断の経緯（000-023）
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 
