@@ -92,7 +92,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（395テスト）
+# ユニットテスト（404テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -105,6 +105,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 |---------|---------|---------|------|
 | HandleEventTests | Tests/GyaimTests/ | 45 | `routeEvent` 静的メソッドによるキー入力分岐の全網羅 |
 | InputModeTests | Tests/GyaimTests/ | 5 | TISモードID→InputModeマッピング（非表示英数モード、ADR-023） |
+| SecureInputDiagnosticsTests | Tests/GyaimTests/ | 9 | Secure Input残留診断（メッセージ組立・再ログ判定・プロセス名解決） |
 | GoogleTransliterateTests | Tests/GyaimTests/ | 20 | フィルタ・候補ビルド・セグメント結合・トリガー設定・タイムアウト |
 | ExternalCandidateTests | Tests/GyaimTests/ | 22 | `isValidExternalCandidate` + `buildPrefixCandidates` |
 | PreferencesWindowTests | Tests/GyaimTests/ | 18 | 設定画面UIテスト（トグル存在・初期状態・クリック操作・表示モード切替・淘汰方式） |
@@ -169,7 +170,7 @@ docs/adr/
 
 ## Logging & Monitoring
 
-`GyaimLogger.swift` に os.Logger ベースのロギング基盤を実装。デフォルト無効（UserDefaults `loggingEnabled`）。
+`GyaimLogger.swift` に os.Logger ベースのロギング基盤を実装。デフォルト無効（UserDefaults `loggingEnabled`）。例外として `notice` レベル（Secure Event Input残留診断など、稀で診断価値の高いイベント専用）は `loggingEnabled` に関係なく常時 `gyaim.log` へ記録される。
 
 ### カテゴリ
 
