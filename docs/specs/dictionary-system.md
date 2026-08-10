@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-08-03 (接続辞書のプロセス内共有)
+> Last updated: 2026-08-10 (共有キャッシュのreset誤用を修正 — BUG-033)
 
 ## 概要
 
@@ -312,6 +312,7 @@ OFF時は単一パス（study → local → connection）で従来どおり MRU 
 
 - init() は `connectionDictFile` パスが一致すればキャッシュを再利用し、変わった場合のみロード
 - **明示リロードは `resetConnectionDict()` を先に呼ぶこと**: Gictionaryインポートは同じパス（`~/.gyaim/connectiondict.txt`）へ新しい内容を書くため、パスキーのキャッシュ判定だけでは反映されない。`GyaimController.reloadConnectionDictionary()` がこれを行う
+- **`resetConnectionDict()` を通常パス（コントローラinit等）から呼ばないこと**: initから毎回呼ぶと共有が無効化され、コントローラ再生成のたびに再ロードが走る（BUG-033で実際に発生。`GyaimController` はinit用 `setupWordSearch()` と明示リロード用 `static reloadConnectionDictionary()` を分離している）
 - studyDict と同様、スレッドはIMKのメインスレッド前提（ロックなし）
 
 ## 既知の制約

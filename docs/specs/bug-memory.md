@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-08-03 (BUG-031追加)
+> Last updated: 2026-08-10 (BUG-033追加)
 
 ## 概要
 
@@ -383,6 +383,16 @@
 - **修正**: BUG-024と同じ構造的解決。`exactHomophoneCandidateIndices` で記号のみ候補（かな・漢字を1文字も含まない）を比較集合から無条件に除外。bestが記号の場合は `indices.contains(best)` ガードにより比較自体がスキップされ、challengerとしても昇格不能になる。
 - **検証**: `ZenzRuntimeTests.testExactHomophoneCandidateIndicesExcludesSymbolOnlyCandidates`（maru実データ再現）、`testExactHomophoneCandidateIndicesKeepsMixedSymbolKanjiCandidates`（〇円のような混在テキストは比較に残る）。
 - **教訓**: 文字レベルLMのスコアが信頼できない候補クラス（かな列=過大、記号=過小）は、margin調整ではなく**比較集合から構造的に除外**する。また「ユーザーが同じ修正を短時間に繰り返している」パターンはログ上で最優先の改善シグナル——学習が効いていない箇所を直接指している。
+
+### BUG-033: コントローラinitの無条件resetで接続辞書の共有が無効化
+
+- **発見日**: 2026-08-10
+- **症状**: 「変換が遅くなった」調査中に、`ConnectionDict loaded: 40904 entries`（Release約90ms/Debug約190ms）がアプリ切替のたびに記録されていることを発見。30秒間に3回再ロードすることもあった。PR #83で接続辞書をプロセス共有にしたはずなのに効いていない。
+- **影響**: アプリ/入力フィールド切替直後の初回変換が辞書再パース分（約90〜190ms）遅延。共有前と同じ状態。
+- **原因**: `GyaimController.init` → `reloadConnectionDictionary()` が**無条件に** `WordSearch.resetConnectionDict()` を呼んでいた。resetはGictionaryインポート（同一パスへの上書き）用なのに、IMKがクライアントごとに再生成するコントローラのinitパスに置かれていたため、生成のたびに共有キャッシュが破棄→再ロード。
+- **修正**: init用の `setupWordSearch()`（resetなし、パス一致なら共有再利用）と、明示リロード用の `static reloadConnectionDictionary()`（reset+setup、PreferencesWindowのインポート後にのみ呼ぶ）に分離。
+- **検証**: `WordSearchTests.testInitReusesSharedConnectionDictForSamePath`（同一パス再initで共有インスタンスの同一性を確認）
+- **教訓**: 「キャッシュ+明示invalidate」を導入するときは、invalidateが**通常パス（init等）から呼ばれていないか**を必ず確認する。ログの `loaded` 行の頻度が共有の実効性を直接示す——共有導入時はログ頻度の before/after を検証に含めること。また、性能退行の調査はまずログの実測値（PerfLog）を新旧期間で比較するのが最短。
 
 ## パターン集
 
