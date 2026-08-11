@@ -1,7 +1,7 @@
 # Spec: InputMethodKit制約集
 
 > Trigger: GyaimController.swift, AppDelegate.swift, main.swift, CandidateWindow.swift
-> Last updated: 2026-08-09 (Secure Event Input対策の非表示英数モード — ADR-023)
+> Last updated: 2026-08-10 (Secure Input残留の診断ログ — issue #85)
 
 ## 概要
 
@@ -61,3 +61,4 @@ Secure Event Input（パスワード保護）が有効な間、macOSはASCII対�
 - Romanモード切替時に未確定入力があれば `fix(skipStudy: true)` で確定してから移行
 - 他プロセスが所有するSecure Inputは `DisableSecureEventInput()` で解除できない（自プロセスのカウンタにのみ作用）
 - 残留診断: `ioreg -l -w 0 | grep -o 'kCGSSessionSecureInputPID"=[0-9]*'`、復旧は所有アプリの完全終了→ダメなら `Ctrl+Cmd+Q` 画面ロック・解除
+- **重要**: 英数モードがあってもSecure Input中はキーイベント自体がIMEをバイパスするため、日本語変換不能は防げない（loginwindow残留の実機で確認）。IMEにできるのは検出とログのみ。`SecureInputDiagnostics.checkAndLog()`（activateServerで呼出）が所有PID・プロセス名を `notice` で常時ログする。他IME（Mozc/macSKK）はSecure Input対応コードを持たず黙って入力不能になる

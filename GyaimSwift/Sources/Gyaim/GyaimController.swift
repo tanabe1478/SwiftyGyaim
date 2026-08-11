@@ -150,6 +150,7 @@ class GyaimController: IMKInputController {
             + "pasteboardCC=\(NSPasteboard.general.changeCount) "
             + "lastConsumedCC=\(GyaimController.lastConsumedCC)")
         CopyText.set(NSPasteboard.general.string(forType: .string))
+        SecureInputDiagnostics.checkAndLog()
         ws?.start()
         showWindow()
     }
