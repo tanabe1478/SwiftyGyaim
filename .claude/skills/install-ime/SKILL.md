@@ -13,7 +13,7 @@ SwiftyGyaimをビルド → インストール → MD5検証する手順。
 ### Step 1: Build
 
 ```bash
-xcodebuild -project /PATH/GyaimSwift/Gyaim.xcodeproj -scheme Gyaim -configuration Debug -derivedDataPath /PATH/GyaimSwift/.build build 2>&1 | tail -3
+xcodebuild -project /PATH/GyaimSwift/Gyaim.xcodeproj -scheme Gyaim -configuration Release -derivedDataPath /PATH/GyaimSwift/.build build 2>&1 | tail -3
 ```
 
 ビルド失敗時はここで止める。
@@ -29,13 +29,13 @@ echo "done"
 
 ```bash
 rm -rf ~/Library/Input\ Methods/SwiftyGyaim.app
-cp -r /PATH/GyaimSwift/.build/Build/Products/Debug/SwiftyGyaim.app ~/Library/Input\ Methods/
+cp -r /PATH/GyaimSwift/.build/Build/Products/Release/SwiftyGyaim.app ~/Library/Input\ Methods/
 ```
 
 ### Step 4: Verify with MD5
 
 ```bash
-md5 ~/Library/Input\ Methods/SwiftyGyaim.app/Contents/MacOS/SwiftyGyaim /PATH/GyaimSwift/.build/Build/Products/Debug/SwiftyGyaim.app/Contents/MacOS/SwiftyGyaim
+md5 ~/Library/Input\ Methods/SwiftyGyaim.app/Contents/MacOS/SwiftyGyaim /PATH/GyaimSwift/.build/Build/Products/Release/SwiftyGyaim.app/Contents/MacOS/SwiftyGyaim
 ```
 
 MD5が一致することを確認。
@@ -49,6 +49,9 @@ ps aux | grep -i SwiftyGyaim | grep -v grep
 新しいプロセスが起動していることを確認（タイムスタンプがビルド時刻以降）。
 
 ## Notes
+
+- **必ずRelease構成でインストールすること**。Debugビルド（-Onone）は辞書検索が3〜4倍遅く（prefix検索 実測33ms→127ms）、「変換が遅い」体感退行になる（2026-08-10に発生）。Debugは開発時のユニットテスト用
+
 
 - `/PATH/` はリポジトリルート（`/Users/tanabe.nobuyuki/Documents/repositories/SwiftyGyaim`）に置換
 - IMEはmacOSが自動的に再起動するので手動起動不要
