@@ -166,8 +166,18 @@ class GyaimController: IMKInputController {
             + "candidates=\(candidates.count) sender=\(senderDescription) "
             + "currentClient=\(clientDescription)")
         hideWindow()
-        fix(client: sender, skipStudy: true)
+        if Self.shouldCommitOnDeactivation(inputPat: inputPat) {
+            fix(client: sender, skipStudy: true)
+        } else {
+            // Deactivation is frequent when focus moves between apps/fields.
+            // Do not call insertText("") when there is no active composition.
+            resetState()
+        }
         ws?.finish()
+    }
+
+    static func shouldCommitOnDeactivation(inputPat: String) -> Bool {
+        !inputPat.isEmpty
     }
 
     /// IMK delivers the current input mode via kTextServiceInputModePropertyTag

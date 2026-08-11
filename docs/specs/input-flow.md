@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift
-> Last updated: 2026-08-11 (Tab AI生成パイプライン削除、Tab=Google変換 — ADR-024)
+> Last updated: 2026-08-11 (未入力deactivationの空文字確定を抑止 — BUG-032)
 
 ## 概要
 
@@ -69,12 +69,12 @@ Info.plistには日本語モードのほか、Secure Event Input対策の非表�
 
 ```
 activateServer(_:) → クリップボード取得, Secure Input診断, 辞書start, showWindow
-deactivateServer(_:) → hideWindow, fix(skipStudy: true), 辞書finish
+deactivateServer(_:) → hideWindow, inputPatが空でなければfix(skipStudy: true), 辞書finish
 ```
 
 `SecureInputDiagnostics.checkAndLog()` はSecure Event Inputが有効なとき、所有PID・プロセス名（終了済みなら stale と明記）・復旧手順を `notice` レベルで記録する。`notice` は `loggingEnabled` に関係なく常時 `gyaim.log` へ書かれる（再発が稀で予期できないため）。同一所有者は10分間隔でしか再出力しない。
 
-**重要**: deactivationではsenderをfix()に渡すこと。渡さないとクライアント取得に失敗しテキストが破棄される（Issue #13で修正済み）。
+**重要**: deactivationで未確定入力がある場合はsenderをfix()に渡すこと。渡さないとクライアント取得に失敗しテキストが破棄される（Issue #13で修正済み）。一方、`inputPat` が空（`converting == false`）なら `fix()` を呼ばず状態だけリセットする。アプリ・入力欄間のフォーカス移動で `insertText("")` を繰り返さないため（BUG-032）。
 
 ## showCands() のページ送り
 
