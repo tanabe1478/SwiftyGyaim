@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-08-10 (BUG-033追加)
+> Last updated: 2026-08-11 (BUG-032追加)
 
 ## 概要
 
@@ -383,6 +383,16 @@
 - **修正**: BUG-024と同じ構造的解決。`exactHomophoneCandidateIndices` で記号のみ候補（かな・漢字を1文字も含まない）を比較集合から無条件に除外。bestが記号の場合は `indices.contains(best)` ガードにより比較自体がスキップされ、challengerとしても昇格不能になる。
 - **検証**: `ZenzRuntimeTests.testExactHomophoneCandidateIndicesExcludesSymbolOnlyCandidates`（maru実データ再現）、`testExactHomophoneCandidateIndicesKeepsMixedSymbolKanjiCandidates`（〇円のような混在テキストは比較に残る）。
 - **教訓**: 文字レベルLMのスコアが信頼できない候補クラス（かな列=過大、記号=過小）は、margin調整ではなく**比較集合から構造的に除外**する。また「ユーザーが同じ修正を短時間に繰り返している」パターンはログ上で最優先の改善シグナル——学習が効いていない箇所を直接指している。
+
+### BUG-032: 未入力のdeactivationで空文字を毎回確定する
+
+- **発見日**: 2026-08-06
+- **症状**: 1日分のdogfoodログで `converting=false` のIME切替・フォーカス移動時に `Fixed: "" (reading: "")` が24回記録され、各回で `insertText("")` が呼ばれていた。
+- **影響**: 表示上の文字化けはないが、入力先アプリへ不要な空文字確定イベントを送り、確定ログ・分析件数にもノイズを混ぜる。
+- **原因**: `deactivateServer(_:)` が `inputPat` の有無を確認せず常に `fix(client:skipStudy:)` を呼んでいた。空状態でも `candidates` に空候補が1件残る経路があり、`fix()` のindex guardを通過した。
+- **修正**: `shouldCommitOnDeactivation(inputPat:)` を追加し、未確定入力がある場合だけ `fix(skipStudy: true)` を呼ぶ。空なら `resetState()` のみ実行する。未確定入力の自動確定とsender/clientフォールバックは維持する。
+- **検証**: `AcceptedDetailPayloadTests.testDeactivationCommitsOnlyActiveComposition` で空入力を拒否し、非空入力を確定対象にすることを確認。
+- **教訓**: deactivationの「未確定入力を失わない」と「常にfixする」は同義ではない。ライフサイクルイベントでは副作用の前に実際のcomposition有無を確認する。
 
 ### BUG-033: コントローラinitの無条件resetで接続辞書の共有が無効化
 

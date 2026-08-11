@@ -71,6 +71,11 @@ final class AcceptedDetailPayloadTests: XCTestCase {
         XCTAssertTrue(GyaimController.shouldStudyKanaConfirm(hiragana: true))
     }
 
+    func testDeactivationCommitsOnlyActiveComposition() {
+        XCTAssertFalse(GyaimController.shouldCommitOnDeactivation(inputPat: ""))
+        XCTAssertTrue(GyaimController.shouldCommitOnDeactivation(inputPat: "bunsyou"))
+    }
+
     func testPayloadNilForInvalidIndex() {
         XCTAssertNil(GyaimController.acceptedDetailPayload(candidates: [],
                                                            chosenIndex: 0,
