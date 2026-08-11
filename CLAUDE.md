@@ -31,13 +31,13 @@ Gyaim is a Japanese Input Method Editor (IME) for macOS. Originally created by T
 # Generate Xcode project
 xcodegen generate
 
-# Build
-xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Debug -derivedDataPath .build build
+# Build（インストール用は必ずRelease。Debugは辞書検索が3〜4倍遅く体感退行する）
+xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Release -derivedDataPath .build build
 
 # Install
 killall SwiftyGyaim
 rm -rf ~/Library/Input\ Methods/SwiftyGyaim.app
-cp -r .build/Build/Products/Debug/SwiftyGyaim.app ~/Library/Input\ Methods/
+cp -r .build/Build/Products/Release/SwiftyGyaim.app ~/Library/Input\ Methods/
 ```
 
 Working directory for build commands: `GyaimSwift/`
@@ -92,7 +92,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（404テスト）
+# ユニットテスト（405テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -112,7 +112,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | CandidateWindowTests | Tests/GyaimTests/ | 26 | 表示モード（リスト/クラシック）の切替・描画・最大候補数・位置計算 |
 | CopyTextTests | Tests/GyaimTests/ | 7 | CopyText ファイルI/O + NSPasteboard.changeCount |
 | RomaKanaTests | Tests/GyaimTests/ | 18 | ローマ字⇔かな変換の双方向テスト |
-| WordSearchTests | Tests/GyaimTests/ | 48 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
+| WordSearchTests | Tests/GyaimTests/ | 49 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
 | ContextDictTests | Tests/GyaimTests/ | 8 | 文脈条件付き学習（contextKey・suffix一致・affinity・永続化・削除・上限） |
 | StudyEntryTests | Tests/GyaimTests/ | 9 | StudyEntryスコア計算・EvictionMode・ファイルI/O |
 | CryptTests | Tests/GyaimTests/ | 6 | 暗号化/復号のラウンドトリップ |
