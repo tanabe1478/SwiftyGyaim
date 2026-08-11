@@ -54,6 +54,16 @@ struct GLogger {
         FileLogger.shared.write(category: category, level: "info", message: msg)
     }
 
+    /// Logs regardless of Log.isEnabled (os_log notice + file).
+    /// Reserved for rare, high-diagnostic-value events (e.g. Secure Event
+    /// Input residue, issue #85) that must leave a trace even when the user
+    /// has logging turned off. Keep the call volume near zero.
+    func notice(_ message: @autoclosure () -> String) {
+        let msg = message()
+        logger.notice("\(msg)")
+        FileLogger.shared.write(category: category, level: "notice", message: msg)
+    }
+
     func warning(_ message: @autoclosure () -> String) {
         guard Log.isEnabled else { return }
         let msg = message()
