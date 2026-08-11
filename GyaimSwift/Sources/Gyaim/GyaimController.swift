@@ -102,8 +102,6 @@ class GyaimController: IMKInputController {
     private static var lastConsumedCC: Int = NSPasteboard.general.changeCount
 
     private var ws: WordSearch?
-    private var pendingAIRerankQuery: String?
-    private var pendingAIRerankRevision = 0
     private var recentCommittedText = ""
     private let maxAIContextCharacters = 80
     private var rk = RomaKana()
@@ -231,7 +229,6 @@ class GyaimController: IMKInputController {
         clipboardCandidate = nil
         selectedCandidate = nil
         pendingGoogleQuery = nil
-        pendingAIRerankQuery = nil
     }
 
     private var converting: Bool {
@@ -313,13 +310,13 @@ class GyaimController: IMKInputController {
             return true
         }
 
-        // Manual AI shortcut while converting:
-        // - Tab: candidate generation + rerank
-        // Shift+Tab no longer reranks current candidates because normal input already
-        // applies fast-context rerank continuously.
+        // Tab while converting triggers Google Transliterate (ADR-024).
+        // The local AI generation pipeline was removed: it could only compose
+        // dictionary parts, so unknown words produced garbage candidates.
+        // Shift+Tab stays a consumed no-op.
         if converting, event.keyCode == 48 {
             if modifierFlags.contains(.shift) { return true }
-            requestAIRerankIfAvailable(client: sender)
+            triggerGoogleTransliterate(client: sender)
             return true
         }
 
@@ -470,7 +467,6 @@ class GyaimController: IMKInputController {
             case undoAndSpace
             case undoThenInsertChar
             case googleTransliterate
-            case aiRerank
             case deleteCandidate
         }
     }
@@ -519,14 +515,14 @@ class GyaimController: IMKInputController {
             return HandleResult(handled: true, action: .googleTransliterate)
         }
 
-        // Manual AI shortcut: Tab reranks with candidate generation.
-        // Shift+Tab is consumed as a no-op; backtick is handled as a printable
-        // Google Transliterate suffix below.
+        // Tab triggers Google Transliterate (ADR-024). Shift+Tab is consumed
+        // as a no-op; backtick is handled as a printable Google Transliterate
+        // suffix below.
         if converting, keyCode == 48 {
             if modifierFlags.contains(.shift) {
                 return HandleResult(handled: true, action: .none)
             }
-            return HandleResult(handled: true, action: .aiRerank)
+            return HandleResult(handled: true, action: .googleTransliterate)
         }
         // Delete candidate shortcut (modifier-key based, e.g. Ctrl+X)
         if converting, matchesDeleteCandidateShortcut, nthCand > 0 || searchMode > 0 {
@@ -1055,137 +1051,6 @@ class GyaimController: IMKInputController {
         candWindow?.updateCandidates(candList, selectedIndex: -1, hasMore: hasMore, hasPrev: hasPrev)
     }
 
-    private func requestAIRerankIfAvailable(client sender: Any?) {
-        guard searchMode == 0,
-              !inputPat.isEmpty else { return }
-
-        let query = inputPat
-        pendingAIRerankQuery = query
-        pendingAIRerankRevision += 1
-        let localRevision = pendingAIRerankRevision
-
-        // Stage 1: local generation + rerank immediately. This keeps Tab responsive even
-        // when Google Input Tools takes a few hundred milliseconds.
-        let pipelineStart = CFAbsoluteTimeGetCurrent()
-        let baseStart = CFAbsoluteTimeGetCurrent()
-        let generatedSnapshot = CandidateGenerator().generate(inputPat: query,
-                                                              context: recentCommittedText,
-                                                              baseCandidates: candidates,
-                                                              wordSearch: ws)
-        let baseMs = Self.elapsedMilliseconds(since: baseStart)
-
-        let zenzGenerationStart = CFAbsoluteTimeGetCurrent()
-        let zenzGeneratedSnapshot = Self.appendingZenzGeneratedCandidates(to: generatedSnapshot,
-                                                                         query: query,
-                                                                         hiragana: rk.roma2hiragana(query),
-                                                                         context: recentCommittedText,
-                                                                         wordSearch: ws)
-        let zenzGenerationMs = Self.elapsedMilliseconds(since: zenzGenerationStart)
-
-        let reviewStart = CFAbsoluteTimeGetCurrent()
-        let localSnapshot = Self.appendingZenzAlternativeCandidates(to: zenzGeneratedSnapshot,
-                                                                   query: query,
-                                                                   hiragana: rk.roma2hiragana(query),
-                                                                   context: recentCommittedText,
-                                                                   wordSearch: ws)
-        let reviewMs = Self.elapsedMilliseconds(since: reviewStart)
-        let totalMs = Self.elapsedMilliseconds(since: pipelineStart)
-        Log.input.info("AI candidate pipeline finished: input=\"\(query)\" "
-            + "baseCandidates=\(generatedSnapshot.count) zenzGenerated=\(zenzGeneratedSnapshot.count - generatedSnapshot.count) "
-            + "reviewAdded=\(localSnapshot.count - zenzGeneratedSnapshot.count) finalCandidates=\(localSnapshot.count) "
-            + "baseMs=\(Self.formatMilliseconds(baseMs)) zenzGenerationMs=\(Self.formatMilliseconds(zenzGenerationMs)) "
-            + "reviewMs=\(Self.formatMilliseconds(reviewMs)) totalMs=\(Self.formatMilliseconds(totalMs))")
-        sendAIRerankRequest(query: query,
-                            snapshot: localSnapshot,
-                            revision: localRevision,
-                            modeLabel: "generated-local",
-                            client: sender)
-
-        let googleEnabled = GyaimSettings.bool(forKey: "aiRerankUseGoogle")
-        guard googleEnabled else { return }
-
-        // Stage 2: optional Google live update. Disabled by default because a second
-        // candidate-window update is visually disruptive during conversion.
-        Log.input.info("AI rerank Google request: input=\"\(query)\"")
-        let googleStart = CFAbsoluteTimeGetCurrent()
-        GoogleTransliterate.searchCands(query) { [weak self] googleWords in
-            guard let self else { return }
-            guard self.pendingAIRerankQuery == query,
-                  self.inputPat == query,
-                  self.searchMode == 0 else {
-                Log.input.debug("AI rerank Google result discarded for stale query \"\(query)\"")
-                return
-            }
-
-            let googleElapsed = (CFAbsoluteTimeGetCurrent() - googleStart) * 1000
-            Log.input.info("AI rerank Google response: input=\"\(query)\" count=\(googleWords.count) latency=\(String(format: "%.1f", googleElapsed))ms")
-
-            var seed = self.candidates
-            var seen = Set(seed.map(\.word))
-            for word in googleWords where seen.insert(word).inserted {
-                seed.append(SearchCandidate(word: word, reading: query, source: .google, kind: .google))
-            }
-            self.pendingAIRerankRevision += 1
-            let googleRevision = self.pendingAIRerankRevision
-            let snapshot = CandidateGenerator().generate(inputPat: query,
-                                                         context: self.recentCommittedText,
-                                                         baseCandidates: seed,
-                                                         wordSearch: self.ws)
-            self.sendAIRerankRequest(query: query,
-                                     snapshot: snapshot,
-                                     revision: googleRevision,
-                                     modeLabel: "generated-google",
-                                     client: sender)
-        }
-    }
-
-    private static func appendingZenzGeneratedCandidates(to snapshot: [SearchCandidate],
-                                                         query: String,
-                                                         hiragana: String,
-                                                         context: String,
-                                                         wordSearch: WordSearch?) -> [SearchCandidate] {
-        var result = snapshot
-        var seen = Set(snapshot.map(\.word))
-        let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
-        let requestContext = trimmedContext.isEmpty ? nil : trimmedContext
-
-        // Dictionary-constrained selection (issue #59, ADR-022): enumerate
-        // connection-grammatical compositions of the reading and let Zenz pick
-        // the most natural ones. Surfaces already in the candidate set are not
-        // rescored — the model only surfaces compositions that drowned in the
-        // normal enumeration order.
-        let surfaces = (wordSearch?.connectionCompositions(reading: query, excluding: seen) ?? [])
-            .map(\.word)
-        if surfaces.isEmpty {
-            Log.input.info("Zenz constrained selection: input=\"\(query)\" no unseen compositions")
-        }
-        let selected = InProcessAIReranker.shared.selectConstrainedCandidates(inputPat: query,
-                                                                              hiragana: hiragana,
-                                                                              context: requestContext,
-                                                                              surfaces: surfaces,
-                                                                              limit: Self.zenzGenerationLimit())
-        for candidate in selected where seen.insert(candidate.word).inserted {
-            result.append(candidate)
-        }
-
-        // Free-form generation can hallucinate words the dictionary cannot
-        // form, so it is opt-in now that constrained selection is the default.
-        guard GyaimSettings.bool(forKey: "aiRerankUseZenzFreeGeneration") else { return result }
-        let generated = InProcessAIReranker.shared.generateCandidates(inputPat: query,
-                                                                      hiragana: hiragana,
-                                                                      context: requestContext,
-                                                                      limit: 1)
-        for candidate in generated where seen.insert(candidate.word).inserted {
-            result.append(candidate)
-        }
-        return result
-    }
-
-    private static func zenzGenerationLimit() -> Int {
-        let configured = GyaimSettings.integer(forKey: "aiRerankZenzGenerationLimit")
-        return configured > 0 ? min(configured, 6) : 3
-    }
-
     /// Single-line JSON payload for preference-pair extraction (issue #57 /
     /// M6-1): the committed candidate plus the displayed head of the list,
     /// with the metadata the offline trainer needs (reading / source / kind /
@@ -1227,61 +1092,6 @@ class GyaimController: IMKInputController {
         return json
     }
 
-    private static func appendingZenzAlternativeCandidates(to snapshot: [SearchCandidate],
-                                                           query: String,
-                                                           hiragana: String,
-                                                           context: String,
-                                                           wordSearch: WordSearch?) -> [SearchCandidate] {
-        var result = snapshot
-        var seen = Set(snapshot.map(\.word))
-        let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
-        let maxReviewRounds = Self.zenzReviewRounds()
-        let alternativeLimit = Self.zenzAlternativeLimit()
-
-        for round in 0..<maxReviewRounds {
-            let request = AIRerankRequest(version: 1,
-                                          mode: "alternative-review-\(round + 1)",
-                                          inputPat: query,
-                                          hiragana: hiragana,
-                                          context: trimmedContext.isEmpty ? nil : trimmedContext,
-                                          candidates: result.enumerated().map { index, candidate in
-                                              AIRerankCandidate(index: index,
-                                                                text: candidate.word,
-                                                                reading: candidate.reading,
-                                                                source: String(describing: candidate.source),
-                                                                kind: candidate.kind.rawValue)
-                                          })
-            let alternatives = InProcessAIReranker.shared.alternativeCandidates(for: request, limit: alternativeLimit)
-            guard !alternatives.isEmpty else { break }
-
-            var appended = 0
-            for prefix in alternatives {
-                let constrained = CandidateGenerator(compoundLimit: 4, completionLimit: 0)
-                    .generate(inputPat: query,
-                              context: context,
-                              baseCandidates: [],
-                              wordSearch: wordSearch,
-                              surfacePrefixes: [prefix.word])
-                for candidate in constrained where seen.insert(candidate.word).inserted {
-                    result.append(candidate)
-                    appended += 1
-                }
-            }
-            guard appended > 0 else { break }
-        }
-        return result
-    }
-
-    private static func zenzReviewRounds() -> Int {
-        let configured = GyaimSettings.integer(forKey: "aiRerankZenzReviewRounds")
-        return configured > 0 ? min(configured, 3) : 2
-    }
-
-    private static func zenzAlternativeLimit() -> Int {
-        let configured = GyaimSettings.integer(forKey: "aiRerankZenzAlternativeLimit")
-        return configured > 0 ? min(configured, 4) : 2
-    }
-
     private static func elapsedMilliseconds(since start: CFAbsoluteTime) -> Double {
         (CFAbsoluteTimeGetCurrent() - start) * 1000
     }
@@ -1290,106 +1100,6 @@ class GyaimController: IMKInputController {
         String(format: "%.1f", value)
     }
 
-    private func sendAIRerankRequest(query: String,
-                                     snapshot: [SearchCandidate],
-                                     revision: Int,
-                                     modeLabel: String,
-                                     client sender: Any?) {
-        let snapshot = limitedAISnapshot(snapshot, query: query)
-        guard snapshot.count >= 2 else { return }
-        let context = recentCommittedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let request = AIRerankRequest(
-            version: 1,
-            mode: "rerank",
-            inputPat: query,
-            hiragana: rk.roma2hiragana(query),
-            context: context.isEmpty ? nil : context,
-            candidates: snapshot.enumerated().map { index, candidate in
-                AIRerankCandidate(index: index,
-                                  text: candidate.word,
-                                  reading: candidate.reading,
-                                  source: String(describing: candidate.source),
-                                  kind: candidate.kind.rawValue,
-                                  contextAffinity: ContextDict.shared.affinity(context: context,
-                                                                               reading: candidate.reading,
-                                                                               word: candidate.word),
-                                  studyFrequency: candidate.studyFrequency)
-            }
-        )
-
-        let requestStart = CFAbsoluteTimeGetCurrent()
-        let handleResult: (Result<AIRerankResponse, Error>) -> Void = { [weak self] result in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                guard self.pendingAIRerankQuery == query,
-                      self.pendingAIRerankRevision == revision,
-                      self.inputPat == query,
-                      self.searchMode == 0 else {
-                    Log.input.debug("AI rerank stale result discarded for \"\(query)\"")
-                    return
-                }
-
-                switch result {
-                case .success(let response):
-                    let order = AIReranker.validatedOrder(response.order, candidateCount: snapshot.count)
-                    let reranked = order.map { snapshot[$0] }
-                    let rawCandidate = snapshot.first { $0.word == query } ?? SearchCandidate(word: query, kind: .raw)
-                    self.candidates = [rawCandidate] + reranked.filter { $0.word != query }
-                    self.nthCand = 0
-                    let elapsed = (CFAbsoluteTimeGetCurrent() - requestStart) * 1000
-                    Log.input.info("AI rerank applied: mode=\(modeLabel) input=\"\(query)\" model=\(response.model ?? "unknown") order=\(order) latency=\(String(format: "%.1f", elapsed))ms")
-                    self.showCands(client: sender)
-                    self.showWindow()
-                case .failure(let error):
-                    Log.input.warning("AI rerank failed for \"\(query)\": \(error.localizedDescription)")
-                }
-            }
-        }
-
-        // Fast in-process rerank: avoids Swift/Python HTTP or process boundary and
-        // Legacy GPT/command rerankers run only when explicitly enabled for comparison.
-        Log.input.info("AI rerank provider start: mode=\(modeLabel) provider=in-process input=\"\(query)\" candidates=\(request.candidates.count)")
-        handleResult(.success(InProcessAIReranker.shared.rerank(request)))
-
-        guard Self.shouldRunLegacyExternalAIReranker() else {
-            Log.input.info("AI rerank legacy external provider skipped: mode=\(modeLabel) input=\"\(query)\"")
-            return
-        }
-
-        if let httpReranker = HTTPAIReranker.configured() {
-            Log.input.info("AI rerank provider start: mode=\(modeLabel) provider=http input=\"\(query)\"")
-            httpReranker.rerank(request, completion: handleResult)
-        } else if let commandReranker = ExternalCommandAIReranker.configured() {
-            Log.input.info("AI rerank provider start: mode=\(modeLabel) provider=external-command input=\"\(query)\"")
-            commandReranker.rerank(request, completion: handleResult)
-        }
-    }
-
-    private static func shouldRunLegacyExternalAIReranker() -> Bool {
-        GyaimSettings.bool(forKey: "aiRerankUseLegacyExternalReranker")
-    }
-
-    private func limitedAISnapshot(_ snapshot: [SearchCandidate], query: String) -> [SearchCandidate] {
-        let maxAIRerankCandidates = 48
-        guard snapshot.count > maxAIRerankCandidates else { return snapshot }
-
-        var result: [SearchCandidate] = []
-        var seen = Set<String>()
-        func append(_ candidate: SearchCandidate) {
-            if result.count < maxAIRerankCandidates, seen.insert(candidate.word).inserted {
-                result.append(candidate)
-            }
-        }
-
-        if let raw = snapshot.first(where: { $0.word == query }) {
-            append(raw)
-        } else {
-            append(SearchCandidate(word: query, kind: .raw))
-        }
-        snapshot.filter { $0.source == .google }.forEach(append)
-        snapshot.filter { $0.source != .google && $0.word != query }.forEach(append)
-        return result
-    }
     private func recordCommittedText(_ text: String) {
         guard !text.isEmpty else { return }
         recentCommittedText += text
