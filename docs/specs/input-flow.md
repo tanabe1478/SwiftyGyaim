@@ -68,9 +68,11 @@ Info.plistには日本語モードのほか、Secure Event Input対策の非表�
 ## IMEライフサイクル
 
 ```
-activateServer(_:) → 辞書start, クリップボード取得, showWindow
+activateServer(_:) → クリップボード取得, Secure Input診断, 辞書start, showWindow
 deactivateServer(_:) → hideWindow, fix(skipStudy: true), 辞書finish
 ```
+
+`SecureInputDiagnostics.checkAndLog()` はSecure Event Inputが有効なとき、所有PID・プロセス名（終了済みなら stale と明記）・復旧手順を `notice` レベルで記録する。`notice` は `loggingEnabled` に関係なく常時 `gyaim.log` へ書かれる（再発が稀で予期できないため）。同一所有者は10分間隔でしか再出力しない。
 
 **重要**: deactivationではsenderをfix()に渡すこと。渡さないとクライアント取得に失敗しテキストが破棄される（Issue #13で修正済み）。
 
