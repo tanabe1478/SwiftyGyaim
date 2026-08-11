@@ -92,7 +92,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（405テスト）
+# ユニットテスト（393テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -164,8 +164,9 @@ docs/adr/
 ├── 019-gictionary-connection-dict-import.md
 ├── 020-context-conditioned-study.md
 ├── 021-exact-homophone-direct-logprob.md
-├── 022-dictionary-constrained-generation.md
-└── 023-hidden-ascii-roman-input-mode.md
+├── 022-dictionary-constrained-generation.md (Superseded by ADR-024)
+├── 023-hidden-ascii-roman-input-mode.md
+└── 024-remove-tab-ai-pipeline.md
 ```
 
 ## Logging & Monitoring
@@ -234,7 +235,7 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-023）
+- `docs/adr/` — 設計判断の経緯（000-024）
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 
