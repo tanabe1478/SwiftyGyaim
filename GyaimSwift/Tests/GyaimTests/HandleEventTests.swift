@@ -475,14 +475,14 @@ final class HandleEventTests: XCTestCase {
 
     // MARK: - AI rerank shortcuts
 
-    func testTabWhenConverting_returnsAIRerank() {
+    func testTabWhenConverting_returnsGoogleTransliterate() {
         let result = route(
             character: 0x09,
             keyCode: 48,
             converting: true,
             hasEventString: true
         )
-        XCTAssertEqual(result, Result(handled: true, action: .aiRerank))
+        XCTAssertEqual(result, Result(handled: true, action: .googleTransliterate))
     }
 
     func testShiftTabWhenConverting_isConsumedWithoutRerank() {
@@ -524,7 +524,7 @@ final class HandleEventTests: XCTestCase {
             converting: false,
             hasEventString: true
         )
-        XCTAssertNotEqual(result.action, .aiRerank)
+        XCTAssertNotEqual(result.action, .googleTransliterate)
     }
 
     // MARK: - Edge: 0x08 (backspace alt) treated same as 0x7F

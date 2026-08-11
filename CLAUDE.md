@@ -31,13 +31,13 @@ Gyaim is a Japanese Input Method Editor (IME) for macOS. Originally created by T
 # Generate Xcode project
 xcodegen generate
 
-# Build
-xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Debug -derivedDataPath .build build
+# Build（インストール用は必ずRelease。Debugは辞書検索が3〜4倍遅く体感退行する）
+xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Release -derivedDataPath .build build
 
 # Install
 killall SwiftyGyaim
 rm -rf ~/Library/Input\ Methods/SwiftyGyaim.app
-cp -r .build/Build/Products/Debug/SwiftyGyaim.app ~/Library/Input\ Methods/
+cp -r .build/Build/Products/Release/SwiftyGyaim.app ~/Library/Input\ Methods/
 ```
 
 Working directory for build commands: `GyaimSwift/`
@@ -92,7 +92,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（391テスト）
+# ユニットテスト（394テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -104,13 +104,15 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | スイート | ファイル | テスト数 | 内容 |
 |---------|---------|---------|------|
 | HandleEventTests | Tests/GyaimTests/ | 45 | `routeEvent` 静的メソッドによるキー入力分岐の全網羅 |
+| InputModeTests | Tests/GyaimTests/ | 5 | TISモードID→InputModeマッピング（非表示英数モード、ADR-023） |
+| SecureInputDiagnosticsTests | Tests/GyaimTests/ | 9 | Secure Input残留診断（メッセージ組立・再ログ判定・プロセス名解決） |
 | GoogleTransliterateTests | Tests/GyaimTests/ | 20 | フィルタ・候補ビルド・セグメント結合・トリガー設定・タイムアウト |
 | ExternalCandidateTests | Tests/GyaimTests/ | 22 | `isValidExternalCandidate` + `buildPrefixCandidates` |
 | PreferencesWindowTests | Tests/GyaimTests/ | 18 | 設定画面UIテスト（トグル存在・初期状態・クリック操作・表示モード切替・淘汰方式） |
 | CandidateWindowTests | Tests/GyaimTests/ | 26 | 表示モード（リスト/クラシック）の切替・描画・最大候補数・位置計算 |
 | CopyTextTests | Tests/GyaimTests/ | 7 | CopyText ファイルI/O + NSPasteboard.changeCount |
 | RomaKanaTests | Tests/GyaimTests/ | 18 | ローマ字⇔かな変換の双方向テスト |
-| WordSearchTests | Tests/GyaimTests/ | 48 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
+| WordSearchTests | Tests/GyaimTests/ | 49 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
 | ContextDictTests | Tests/GyaimTests/ | 8 | 文脈条件付き学習（contextKey・suffix一致・affinity・永続化・削除・上限） |
 | StudyEntryTests | Tests/GyaimTests/ | 9 | StudyEntryスコア計算・EvictionMode・ファイルI/O |
 | CryptTests | Tests/GyaimTests/ | 6 | 暗号化/復号のラウンドトリップ |
@@ -162,12 +164,14 @@ docs/adr/
 ├── 019-gictionary-connection-dict-import.md
 ├── 020-context-conditioned-study.md
 ├── 021-exact-homophone-direct-logprob.md
-└── 022-dictionary-constrained-generation.md
+├── 022-dictionary-constrained-generation.md (Superseded by ADR-024)
+├── 023-hidden-ascii-roman-input-mode.md
+└── 024-remove-tab-ai-pipeline.md
 ```
 
 ## Logging & Monitoring
 
-`GyaimLogger.swift` に os.Logger ベースのロギング基盤を実装。デフォルト無効（UserDefaults `loggingEnabled`）。
+`GyaimLogger.swift` に os.Logger ベースのロギング基盤を実装。デフォルト無効（UserDefaults `loggingEnabled`）。例外として `notice` レベル（Secure Event Input残留診断など、稀で診断価値の高いイベント専用）は `loggingEnabled` に関係なく常時 `gyaim.log` へ記録される。
 
 ### カテゴリ
 
@@ -231,7 +235,7 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-022）
+- `docs/adr/` — 設計判断の経緯（000-024）
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 
