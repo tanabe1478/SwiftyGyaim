@@ -124,7 +124,11 @@ class GyaimController: IMKInputController {
         }
 
         if ws == nil {
-            reloadConnectionDictionary()
+            // 新規コントローラは共有キャッシュを再利用するだけ。ここで
+            // resetConnectionDict() を呼ぶとIMKのコントローラ再生成（アプリ
+            // 切替のたび）ごとに40K行の再パースが走り、PR #83の共有が
+            // 無効化される（BUG-033）。
+            setupWordSearch()
         }
         Log.input.info("GyaimController initialized")
 
@@ -204,19 +208,22 @@ class GyaimController: IMKInputController {
         shared?.ws?.finish()
     }
 
+    /// 明示リロード（Gictionaryインポート後など）。同じパスへ新しい内容が
+    /// 書き込まれるため、共有キャッシュを破棄してから作り直す。
+    /// コントローラinitからは呼ばないこと（BUG-033）。
     static func reloadConnectionDictionary() {
-        shared?.reloadConnectionDictionary()
+        WordSearch.resetConnectionDict()
+        shared?.setupWordSearch()
     }
 
-    private func reloadConnectionDictionary() {
+    /// WordSearchを構築する。共有ConnectionDictはパスが同じ限り再利用され、
+    /// プロセス内の初回だけロードが走る。
+    private func setupWordSearch() {
         guard let bundleDictPath = Bundle.main.path(forResource: "dict", ofType: "txt") else {
             Log.input.error("dict.txt not found in bundle")
             return
         }
         let dictPath = Config.activeConnectionDictFile(bundleDictPath: bundleDictPath)
-        // Explicit reload (e.g. after a Gictionary import) rewrites the same
-        // path, so the shared cache must be dropped or the old content stays.
-        WordSearch.resetConnectionDict()
         ws = WordSearch(connectionDictFile: dictPath,
                         localDictFile: Config.localDictFile,
                         studyDictFile: Config.studyDictFile)

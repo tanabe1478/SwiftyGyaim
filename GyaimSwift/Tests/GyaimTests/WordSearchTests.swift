@@ -37,6 +37,22 @@ final class WordSearchTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
+    /// BUG-033: コントローラ再生成のたびに共有ConnectionDictが破棄され、
+    /// アプリ切替ごとに40K行の再パースが走っていた回帰の防止。
+    /// 同じパスでWordSearchを作り直しても共有インスタンスが再利用されること。
+    func testInitReusesSharedConnectionDictForSamePath() throws {
+        try XCTSkipIf(ws == nil)
+        let first = try XCTUnwrap(WordSearch.sharedConnectionDict)
+        let second = WordSearch(
+            connectionDictFile: WordSearch.sharedConnectionDictFile,
+            localDictFile: tempDir.appendingPathComponent("localdict.txt").path,
+            studyDictFile: tempDir.appendingPathComponent("studydict.txt").path)
+        _ = second
+        let after = try XCTUnwrap(WordSearch.sharedConnectionDict)
+        XCTAssertTrue(first === after,
+                      "同一パスの再initで共有ConnectionDictが再ロードされている")
+    }
+
     func testSearchPrefix() throws {
         try XCTSkipIf(ws == nil)
         let results = ws.search(query: "man", searchMode: 0)
