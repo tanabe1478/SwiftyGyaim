@@ -491,6 +491,18 @@ Definition of done:
 
 **プライバシー制約**: ドメインデータ（dogfoodログ由来）を外部GPUに送る場合は事前にユーザー確認。回避策として「公開データのフル学習はクラウド → ドメイン混合の仕上げ継続学習はローカル」の分離が可能。
 
+### M7-5. 1.9億件フル学習の停止・再開対応
+
+- [x] 巨大JSONLを全件RAMへ載せない`--streaming`モードを追加
+- [x] checkpointへJSONL byte位置、shuffle buffer、shuffle乱数状態を保存
+- [x] `STOP_REQUESTED`または`Ctrl+C`をoptimizer step境界の安全停止へ変換
+- [x] `--resume`でmodel / optimizer / scheduler / RNG / データ位置を復元
+- [x] 停止step 1 → 再開 → step 4完走のWindows ROCm実機テスト
+- [x] 再開後の次の学習例が非停止runと20/20一致することをテスト
+- [ ] zenz-v2.5公開フルJSONLをdownloadし、正確な総行数と`--max-steps`を確定
+- [ ] フル学習を開始し、最初のcheckpointから停止・再開を再検証
+- [ ] 中間評価を記録し、最終モデルへドメイン仕上げ学習を行う
+
 ### 引き継ぎメモ
 
 - 環境: `Tools/model-training/.venv`（gitignore）。壊れたら `mise exec python@3.12 -- python3 -m venv .venv && ./.venv/bin/pip install torch transformers accelerate datasets llama-cpp-python`

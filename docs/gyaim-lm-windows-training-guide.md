@@ -303,7 +303,42 @@ Get-ChildItem runs\mixed-v1\checkpoint-*
 `checkpoint-28000` と `checkpoint-31679` だけが残る。学習完了後は
 `runs/mixed-v1/final/` が配布用のHFモデルである。
 
-中断後は同じ引数に `--resume` を追加する。最新の`checkpoint-*`から再開する。
+### 8.1 Windowsを別用途で使うときの安全な停止・再開
+
+停止・再開は可能である。学習中のモデルは単なる1ファイルではなく、次の状態をまとめて
+`checkpoint-*`へ保存する必要がある。
+
+| 保存するもの | 保存する理由 |
+|---|---|
+| model weights | その時点までにモデルが覚えた内容 |
+| optimizer | 次の重み更新を同じ条件で続けるため |
+| learning-rate scheduler | learning rateの途中経過を保つため |
+| 乱数状態 | データ順や計算を再現するため |
+| JSONLのbyte位置・shuffle buffer | 1.9億件の先頭から読み直さず、次の学習例から続けるため |
+
+#### 推奨: 停止要求ファイルを作る
+
+バックグラウンド学習を止めたい場合、別のPowerShellで次を実行する。
+
+```powershell
+New-Item runs\zenz-v2.5-full\STOP_REQUESTED -ItemType File -Force
+```
+
+スクリプトは現在のoptimizer stepを最後まで処理し、checkpointを保存してから正常終了する。
+ログに次が出るまで待つ。
+
+```text
+stop requested; saving a resumable checkpoint after step ...
+graceful stop complete; resume checkpoint=...\checkpoint-...
+```
+
+PowerShellの前面で動かしている場合は `Ctrl+C` でも同じ安全な停止処理になる。
+モデル保存はこの実測機で数秒程度かかるため、キーを押してすぐプロセスを強制終了しない。
+
+#### 再開
+
+開始時と**同じ引数**に `--resume` だけを追加する。最新の`checkpoint-*`を自動選択し、
+モデル・optimizer・scheduler・データ位置を復元する。
 
 ```powershell
 .\.venv\Scripts\python.exe train_zenz.py `
@@ -311,6 +346,49 @@ Get-ChildItem runs\mixed-v1\checkpoint-*
   --output runs\mixed-v1 --epochs 1 --batch-size 32 --max-length 192 `
   --lr 1e-4 --save-steps 4000 --fp16 --resume
 ```
+
+1.9億件のstreaming学習では、`--max-steps`、`--shuffle-buffer`、入力ファイルの順番も
+開始時と同一にする。スクリプトは入力ファイルやshuffle buffer設定がcheckpointと違う場合、
+誤った位置から再開せずエラーで止まる。
+
+#### 強制終了しかできない場合
+
+タスクマネージャーの「タスクの終了」、`Stop-Process -Force`、Windowsの再起動や電源断では、
+その瞬間の状態は保存できない。それでも `--save-steps` ごとの定期checkpointから再開できる。
+たとえば実測7.38 step/sで `--save-steps 4000`なら、最悪でも約9分ぶんをやり直す。
+
+Windowsをゲーム、動画処理、GPUを使う開発などへ確実に空けたい場合は、まず上記の安全な停止を
+行う。Web閲覧や文書作成程度なら学習を動かしたままでもよいが、画面が重ければ停止して構わない。
+停止と再開を行っても、それまでの数日分が失われることはない。
+
+### 8.2 1.9億件を扱うstreamingモード
+
+100万件版は全行をRAMへ読み込めたが、約1.9億件を同じ方法で扱うと32GB RAMを大きく超える。
+`--streaming`はJSONLを少しずつ読み、最大`--shuffle-buffer`件だけをメモリに置く。
+
+まず公開データ2ファイル（合計約36.5GB）を取得する。Hugging Face CLIは`.venv`内にある。
+同じコマンドを再実行すると、完了済み部分を利用してdownloadを続けられる。
+
+```powershell
+.\.venv\Scripts\hf.exe download Miwa-Keita/zenz-v2.5-dataset `
+  train_wikipedia.jsonl train_llm-jp-corpus-v3.jsonl `
+  --repo-type dataset --local-dir data-full
+```
+
+```powershell
+.\.venv\Scripts\python.exe train_zenz.py `
+  --train data-full\train_wikipedia.jsonl data-full\train_llm-jp-corpus-v3.jsonl `
+  --valid data\valid.jsonl `
+  --output runs\zenz-v2.5-full `
+  --streaming --max-steps <総行数を32で割って切り上げた値> `
+  --batch-size 32 --max-length 192 --lr 1e-4 `
+  --shuffle-buffer 10000 --save-steps 4000 --fp16
+```
+
+`max_steps = ceil(総行数 / (batch-size × grad-accum))` である。ファイルの正確な行数を数えてから
+値を確定する。checkpointは約1.1GBで、`save_total_limit=2`により通常は最新2個だけを保持する。
+shuffle bufferそのものと乱数状態も保存するので、安全停止後の次の学習例は停止しなかった場合と
+一致する。小規模テストでは、停止後に比較した次の20件が20/20で一致した。
 
 ## 9. 学習後の評価
 
