@@ -47,7 +47,7 @@ struct HeuristicAIRerankBackend: AIRerankBackend {
 final class BundledZenzAIRerankBackend: AIRerankBackend, AICandidateGenerationBackend {
     static let enabledDefaultsKey = "aiRerankUseBundledZenz"
 
-    let identifier = "swift-local-heuristic+bundled-zenz-v3.1-xsmall-mapped"
+    let identifier = "swift-local-heuristic+bundled-zenz-v3.1-small-mapped"
 
     private let runtime: ZenzRuntime
 

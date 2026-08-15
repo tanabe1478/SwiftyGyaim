@@ -9,7 +9,7 @@ import Foundation
 final class BundledAIRerankModel {
     static let shared = BundledAIRerankModel()
 
-    static let modelDirectory = "Models/zenz-v3.1-xsmall-gguf"
+    static let modelDirectory = "Models/zenz-v3.1-small-gguf"
     static let modelFilename = "ggml-model-Q5_K_M"
     static let modelExtension = "gguf"
 

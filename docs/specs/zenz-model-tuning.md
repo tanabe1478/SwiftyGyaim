@@ -6,7 +6,7 @@
 
 ## 目的
 
-SwiftyGyaim に同梱している `zenz-v3.1-xsmall-gguf` を、SwiftyGyaim の候補生成・候補順位付けに合う形で評価・チューニングするための仕様を定義する。
+SwiftyGyaim に同梱している `zenz-v3.1-small-gguf`（2026-08-15にxsmallから切替、M4-2の実測に基づく）を、SwiftyGyaim の候補生成・候補順位付けに合う形で評価・チューニングするための仕様を定義する。
 
 この仕様の主目的は「すぐ fine-tuning すること」ではなく、以下を順番に固定することである。
 
@@ -22,8 +22,8 @@ SwiftyGyaim に同梱している `zenz-v3.1-xsmall-gguf` を、SwiftyGyaim の�
 | --- | --- |
 | Zenzai | AzooKeyKanaKanjiConverter 周辺で提供されるニューラルかな漢字変換システム全体 |
 | zenz | Zenzai で使われる GPT-2 architecture のかな漢字変換モデル系列 |
-| `zenz-v3.1-xsmall` | SwiftyGyaim が現在同梱している Zenz 系小型モデルの元 HF model |
-| `zenz-v3.1-xsmall-gguf` | SwiftyGyaim が app bundle に入れて llama.cpp で読む GGUF 版 |
+| `zenz-v3.1-small` | SwiftyGyaim が現在同梱している Zenz 系モデルの元 HF model（2026-08-15まではxsmall） |
+| `zenz-v3.1-small-gguf` | SwiftyGyaim が app bundle に入れて llama.cpp で読む GGUF 版（Q5_K_M 70MB） |
 | fast-context-rerank | 通常入力中、辞書候補上位だけを同期的に軽量 rerank する PR #52 の経路 |
 | review path | 候補全件 scoring ではなく、Swift heuristic 最上位候補を Zenz で1回だけ検査する経路 |
 | SFT | Supervised Fine-Tuning。正解出力を教師としてモデルを追加学習する |
