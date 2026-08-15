@@ -449,6 +449,8 @@ Definition of done:
   - Transformers 5の`n_positions`と旧converterの`n_ctx`の互換差を`train_zenz.py`で吸収
   - F16 183.04 MiB、Q5_K_M 70.26 MiBを生成。metadataのpre-tokenizerとWindows CLI loadを確認
 - [x] Q5_K_M量子化
+- [x] HFモデル・tokenizer・model card・Q5_K_Mを`tanabe1478/gyaim-lm-small`へprivate保存
+  - Hub APIで`private: true`と、データ・checkpointが含まれないファイル一覧を確認
 - [ ] Macのテストバンドル差し替えで量子化後順位・レイテンシ・実機動作確認（手順はM4-2と同一）
 
 ### M7-4. 学習インフラの判断ガイド

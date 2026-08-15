@@ -375,9 +375,9 @@ exact matchは、生成文字列が期待値と1文字単位で完全一致し�
 
 ## 10. Hugging Faceへprivate保存する
 
-学習済みHF形式は、`tanabe1478/gyaim-lm-small` のようなprivateモデルリポジトリへ置く。
-このWindows環境は2026-08-16時点でHugging Faceへ未ログインなので、最初の1回だけ
-write権限を持つUser Access Tokenで認証する必要がある。tokenをコマンド履歴、ログ、Gitへ書かない。
+学習済みHF形式は、`tanabe1478/gyaim-lm-small` のprivateモデルリポジトリへ置く。
+このWindows環境は作業開始時にHugging Faceへ未ログインだったため、OAuth device flowで
+認証した。tokenをコマンド履歴、ログ、Gitへ書かない。
 
 ```powershell
 .\.venv\Scripts\hf.exe auth login
@@ -403,6 +403,15 @@ $env:HF_XET_HIGH_PERFORMANCE = '1'
 アップロード対象は原則として `final/` のモデル、tokenizer、model cardと配布用Q5_K_Mだけにする。
 F16 GGUFはQ5_K_Mの再生成用ローカル成果物で、HF形式の元重みと内容が重複するため通常は省く。
 `data/` やdogfoodログ、途中checkpointを同じリポジトリへ誤って含めない。
+
+2026-08-16の実行結果:
+
+- private repository: [tanabe1478/gyaim-lm-small](https://huggingface.co/tanabe1478/gyaim-lm-small)
+- `private: true` をHub APIで再確認
+- HF model、tokenizer、model card、Q5_K_Mの計8ファイルを保存
+- HubがHF重み90,450,432 parameters、GGUF 73,871,776 bytesとして認識
+- 使用ストレージ435,693,681 bytes
+- `data/`、domain原本、checkpoint、F16 GGUFはアップロードしていない
 
 ## 11. GGUF化とアプリ実測
 
@@ -548,6 +557,6 @@ FP16の数値範囲を超えた可能性がある。直前checkpointからFP32�
 - fixture 122件で84/122を確認（現行small基準80/122）
 - Transformers 5とconverterの`n_positions` / `n_ctx`互換差を学習スクリプトで吸収
 - F16 GGUFとQ5_K_M GGUFを生成し、フォークのWindows CLIでロードを確認
+- HFモデル・tokenizer・model card・Q5_K_MをHugging Faceへprivateアップロード
 
-残作業は、Hugging Face認証後のprivateアップロードと、Mac上でのアプリbundle差し替え・
-量子化後の候補順位比較・レイテンシ計測である。
+残作業は、Mac上でのアプリbundle差し替え・量子化後の候補順位比較・レイテンシ計測である。
