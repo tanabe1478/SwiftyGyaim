@@ -1,0 +1,136 @@
+# model-training: gyaim-lm の学習
+
+SwiftyGyaim専用のかな漢字変換モデル **gyaim-lm** を学習するためのツール群。
+
+- gyaim-lm は zenz ではない: 元モデル `ku-nlp/gpt2-small-japanese-char` から学習する自前モデル
+- ただし**プロンプト形式は zenz-v3 互換**（文脈前置タグ・output-onlyロス）。SwiftyGyaimの
+  ZenzPrompt / LlamaZenzContext ランタイムをそのまま使うため
+- 命名規則: `gyaim-lm-<size>-v<N>`（例: gyaim-lm-small-v1）。学習runは `runs/<データ構成>-v<N>`
+- zenz比較用ツール（compare-hf-gguf.py）も本ディレクトリに同居する
+
+背景と経緯は `docs/specs/zenz-model-tuning.md` と `docs/zenz-model-tuning-tasklist.md`（M7）を参照。
+
+## 全体像
+
+```
+build_sft_dataset.py   ~/.gyaim/gyaim.log → ドメインJSONL（ユーザーの実変換ペア）
+prepare_dataset.py     zenz-v2.5-dataset(公開1.9億ペア)をストリーミングサンプル + ドメイン混合
+train_zenz.py          HF Trainerで学習（MPS/CUDA(ROCm含む)/CPU自動選択、--resume対応）
+compare-hf-gguf.py     eval fixture 122件でスコアリング品質を比較
+```
+
+データとcheckpointは `data/` と `runs/`（どちらもgitignore、リポジトリに入れない）。
+
+## リポジトリ方針
+
+学習コードは**本リポジトリ内**（このディレクトリ）で管理する。理由:
+
+- `build_sft_dataset.py` が `Sources/Gyaim/RomaKana.swift` のルール表を直接パースする（IMEと変換規則を同期）
+- 評価が `Tests/GyaimTests/Fixtures/fast-context-eval-cases.jsonl` を共有する
+- 学習マシン側は本リポジトリをcloneするだけで全部動く
+
+将来モデル・レシピを一般公開する場合に、公開用リポジトリへ切り出しを検討する。
+
+## モデルの置き場所
+
+- **学習成果物（HF重み・checkpoint・GGUF）は Hugging Face の private リポジトリ（例: `tanabe1478/gyaim-lm-small`）に置く**
+  （無料・LFS込み・`huggingface_hub`で機械アクセス可能）。
+  ドメインデータ（ユーザーのログ）を学習に使ったモデルは**ユーザーの語彙を含むため必ずprivate**にする
+- アプリ同梱GGUFは従来どおりapp bundle（`Resources/Models/`）。ただしモデル更新のたびに
+  70MB級バイナリをgit履歴に積むとリポジトリが肥大するため、更新頻度が上がったら
+  「ビルド時にHF/GitHub Releaseから取得」方式への切替を検討する
+- ライセンス: 元モデルとzenz-v2.5-datasetはCC-BY-SA 4.0（一部ODC-BY）。
+  **モデルを公開配布する場合は継承義務が発生**する。private運用なら問題なし
+
+## 環境構築
+
+### macOS (Apple Silicon)
+
+```bash
+mise use -g python@3.12
+cd GyaimSwift/Tools/model-training
+mise exec python@3.12 -- python3 -m venv .venv
+./.venv/bin/pip install torch transformers accelerate datasets llama-cpp-python
+```
+
+### Windows + Radeon RX 9070 XT（WSL2 + ROCm）
+
+ROCm 7.2（2026-01）以降でRX 9070 XT（gfx1201）が公式サポート。経路はWSL2が実績豊富。
+
+1. **Windows側**: AMD Software Adrenalin **26.1.1以降**へ更新。
+   WSL2を有効化し、Ubuntu 24.04をインストール（`wsl --install -d Ubuntu-24.04`）
+2. **WSL2 (Ubuntu)側**: AMD公式のamdgpu-installでROCmを導入
+   ```bash
+   # インストーラのURLはAMD ROCmドキュメント(rocm.docs.amd.com)の
+   # "Install Radeon software for WSL" の最新版を参照すること
+   sudo amdgpu-install --usecase=wsl,rocm --no-dkms
+   ```
+3. **動作確認**: `rocminfo | grep gfx` に `gfx1201` が出ること
+4. **Python環境**:
+   ```bash
+   sudo apt install -y python3.12-venv
+   git clone https://github.com/tanabe1478/SwiftyGyaim.git && cd SwiftyGyaim/GyaimSwift/Tools/model-training
+   python3.12 -m venv .venv
+   # ROCm版PyTorch（indexのバージョンはPyTorch公式のROCm対応表に合わせる）
+   ./.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/rocm7.0
+   ./.venv/bin/pip install transformers accelerate datasets
+   ./.venv/bin/python3 -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+   # → True / Radeon RX 9070 XT ならOK（ROCmはcudaデバイスとして見える）
+   ```
+5. **データ転送**: Macから `data/` をコピー（同一LAN内・自分のマシン間なのでドメインデータ可）
+   ```bash
+   rsync -av mac-host:~/Documents/repositories/SwiftyGyaim/GyaimSwift/Tools/model-training/data/ data/
+   ```
+   または公開部分だけ再生成して `data/domain.jsonl` のみコピーでも同じ（`prepare_dataset.py` はseed固定で再現的）
+
+## ベンチマーク（採用判断は必ず実測で）
+
+新しい学習マシンでは500ステップの実測をしてから採用を決める。
+
+```bash
+./.venv/bin/python3 prepare_dataset.py --wikipedia 20000 --llm-jp 10000 --valid 100 --output data-bench
+./.venv/bin/python3 train_zenz.py --train data-bench/train.jsonl --output runs/bench \
+  --epochs 1 --batch-size 32 --max-length 192
+# 進捗バーの it/s × batch-size = examples/s。500ステップ見たらCtrl+Cで打ち切ってよい
+```
+
+判断の目安（1.9億ペア1epochの所要 = 190,000,000 ÷ examples/s ÷ 86,400 日）:
+
+| examples/s | 100万ペア | 1.9億フル | 位置づけ |
+|---|---|---|---|
+| ~15（M5 MPS実測） | 18〜20h | 約140日 | 中規模実験・週次再学習 |
+| ~50 | 5.5h | 約44日 | 中規模は快適、フルは要相談 |
+| ~150（9070 XT見込み） | 2h | 約15日 | フルもローカル圏内 |
+| H100 1GPU（参考） | 分単位 | 数時間（本家実績、約1,008円/h） | 確定レシピの本番1回用 |
+
+## 学習の実行と引き継ぎ
+
+```bash
+# 本番（100万ペア例）
+nohup ./.venv/bin/python3 train_zenz.py --train data/train.jsonl --valid data/valid.jsonl \
+  --output runs/mixed-v1 --epochs 1 --batch-size 32 --max-length 192 --lr 1e-4 \
+  --save-steps 4000 > runs/train.log 2>&1 &
+
+# 中断からの再開（checkpointは4,000ステップごと、同一--outputを指定）
+./.venv/bin/python3 train_zenz.py --train data/train.jsonl --valid data/valid.jsonl \
+  --output runs/mixed-v1 --resume ...
+```
+
+- loss推移はcheckpoint内の `trainer_state.json`（`log_history`）で確認できる
+- **マシンを乗り換える場合**: 途中checkpointの移送より、速いマシンでゼロからやり直す方が
+  速くて確実（デバイス間のRNG状態互換を踏まない）。checkpoint自体は可搬なので、
+  どうしても続きからやる場合は `runs/<name>/checkpoint-*` を丸ごとコピーして `--resume`
+- スリープ抑止: macOSは `caffeinate -s`、WSL2はWindows側の電源設定で
+
+## 評価（学習後）
+
+```bash
+# fixture 122件でのスコアリング品質（現行 zenz-v3.1-small は 80/122）
+./.venv/bin/python3 compare-hf-gguf.py --backend hf --hf-model runs/mixed-v1/final --json
+
+# ドメイン検証（ユーザー語彙60件のexact match）
+# TODO(M7-3): domain-valid.jsonl のgreedy decode評価スクリプト
+```
+
+GGUF化: 素のllama.cppは pre-tokenizer `gpt2-small-japanese-char` を知らないため
+（M4-2の知見）、変換時に `tokenizer.ggml.pre` の扱いを検証すること。同梱llama.cppフォークは対応済み。

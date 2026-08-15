@@ -298,7 +298,7 @@ Definition of done:
 ### M4-1. 現行 GGUF と HF non-quantized の差を比較する
 
 - [x] `Miwa-Keita/zenz-v3.1-xsmall` を Transformers で読む script を作る
-  - `GyaimSwift/Tools/zenz-tuning/compare-hf-gguf.py`（torch/transformers・llama-cpp-python は backend別 opt-in）
+  - `GyaimSwift/Tools/model-training/compare-hf-gguf.py`（torch/transformers・llama-cpp-python は backend別 opt-in）
 - [x] 同じ eval cases で score を再現する（LlamaZenzContext.score と同じ条件付き平均logprob）
 - [ ] GGUF Q5_K_M と順位差を比較する（モデルdownload込みの実行が未実施。top1一致率・Kendall tau距離をscriptが出力する）
 
@@ -338,12 +338,12 @@ Definition of done:
 元モデル `ku-nlp/gpt2-small-japanese-char` から zenz-v3 形式で学習する。
 サイズは small（同梱モデルも #91 で small へ切替済み）。
 
-- [x] `Tools/zenz-tuning/train_zenz.py` を作る（HF Trainer + MPS/CUDA/CPU自動選択）
+- [x] `Tools/model-training/train_zenz.py` を作る（HF Trainer + MPS/CUDA/CPU自動選択）
 - [x] base model: `ku-nlp/gpt2-small-japanese-char`（デフォルト、--base-modelで変更可）
 - [x] tokenizer を base と同一に固定する（vocab 6000、zenzと同系）
 - [x] lr / epochs / batch / max-length を CLI 引数化
 - [x] validation loss と exact-match generation（--smoke）を出す
-- 環境: `Tools/zenz-tuning/.venv`（mise python 3.12 + torch/transformers/accelerate/llama-cpp-python、gitignore済み）
+- 環境: `Tools/model-training/.venv`（mise python 3.12 + torch/transformers/accelerate/llama-cpp-python、gitignore済み）
 
 Definition of done:
 
@@ -401,9 +401,11 @@ Definition of done:
 
 - [ ] RL を始める前に SFT / DPO / reranker の結果が揃っている
 
-## Milestone 7: 特化モデルの学習実行と学習インフラ判断
+## Milestone 7: gyaim-lm（特化モデル）の学習実行と学習インフラ判断
 
 > 2026-08-15 開始。作業ブランチ: `feature/zenz-specialized-training`（1本のPRにまとめる）
+> 自前モデルの名称は **gyaim-lm**（zenzではない。元モデルから学習、プロンプト形式のみzenz-v3互換）。
+> ツールは `Tools/model-training/`（旧 zenz-tuning から改名）
 
 ### M7-1. データセット構築（完了）
 
@@ -412,7 +414,7 @@ Definition of done:
   - ローマ字→カタカナは `RomaKana.swift` の rklist をパースしてIMEと同一ルール
   - redaction（URL/ASCII識別子/数字列）・重複マージ込み。実績: accepted 730件 → 610 unique
 - [x] 混合: ドメイン550件を30倍oversample（train全体の約1.6%）、domain-valid 60件を取り分け
-- 生成物（gitignore、ローカルのみ）: `Tools/zenz-tuning/data/{train,valid,domain-valid,domain}.jsonl`（train 1,011,500行）
+- 生成物（gitignore、ローカルのみ）: `Tools/model-training/data/{train,valid,domain-valid,domain}.jsonl`（train 1,011,500行）
 
 ### M7-2. ベースライン学習 mixed-v1（実行中）
 
@@ -454,7 +456,7 @@ Definition of done:
 **余りMacを学習マシンにする場合の評価手順**:
 
 1. 対象Macのチップ・メモリを確認（学習スループットはGPUコア数とメモリ帯域で決まる）
-2. リポジトリをclone、`mise use -g python@3.12`、`Tools/zenz-tuning` で venv 作成 + `pip install torch transformers accelerate datasets`
+2. リポジトリをclone、`mise use -g python@3.12`、`Tools/model-training` で venv 作成 + `pip install torch transformers accelerate datasets`
 3. ベンチ実行（500ステップの実測）:
    ```
    ./.venv/bin/python3 prepare_dataset.py --wikipedia 20000 --llm-jp 10000 --valid 100 --output data-bench
@@ -470,8 +472,8 @@ Definition of done:
 
 ### 引き継ぎメモ
 
-- 環境: `Tools/zenz-tuning/.venv`（gitignore）。壊れたら `mise exec python@3.12 -- python3 -m venv .venv && ./.venv/bin/pip install torch transformers accelerate datasets llama-cpp-python`
-- 学習ログ: `Tools/zenz-tuning/runs/*.log`（gitignore）
+- 環境: `Tools/model-training/.venv`（gitignore）。壊れたら `mise exec python@3.12 -- python3 -m venv .venv && ./.venv/bin/pip install torch transformers accelerate datasets llama-cpp-python`
+- 学習ログ: `Tools/model-training/runs/*.log`（gitignore）
 - ドメインデータの更新: `./.venv/bin/python3 build_sft_dataset.py --output data/domain.jsonl` を再実行（ログが増えるほど件数が増える）
 
 ## 直近で切るIssue候補

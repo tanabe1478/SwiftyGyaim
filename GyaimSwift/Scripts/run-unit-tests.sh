@@ -33,7 +33,7 @@ python3 -m py_compile \
   Tools/ai-rerank/sweep-fast-context-weights.py \
   Tools/ai-rerank/aggregate-fast-context-log.py \
   Tools/ai-rerank/train-fast-context-weights.py \
-  Tools/zenz-tuning/compare-hf-gguf.py \
+  Tools/model-training/compare-hf-gguf.py \
   Tools/dict/suggest-connection-entries.py \
   Tools/ai-rerank/extract-preference-pairs.py \
   Tools/dict/find-suspect-study-entries.py

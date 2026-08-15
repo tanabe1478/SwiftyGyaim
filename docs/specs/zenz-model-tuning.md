@@ -265,9 +265,9 @@ GyaimSwift/Tools/ai-rerank/evaluate-fast-context-rerank.py
 将来的に training data は以下に分ける。
 
 ```text
-data/zenz-tuning/eval.jsonl
-data/zenz-tuning/train.jsonl
-data/zenz-tuning/preference.jsonl
+data/model-training/eval.jsonl
+data/model-training/train.jsonl
+data/model-training/preference.jsonl
 ```
 
 `data/` は大きくなる可能性があるため、リポジトリに含めるのは小さい fixture / schema / synthetic sample に限定する。
