@@ -61,6 +61,26 @@ Hugging Face API / model files から確認できる事実:
   - architecture: `GPT2LMHeadModel`
   - `n_layer=12`, `n_embd=768`, `n_head=12`, `vocab_size=6000`
 
+### zenz の学習方法（2026-08-15 一次情報調査: NLP2025論文 P1-19 / さくらナレッジ / HF dataset card）
+
+- **アーキテクチャ**: GPT-2（Transformer Decoder）。medium 310M / small 91M / xsmall 26M の3サイズ。small は `ku-nlp/gpt2-small-japanese-char` の重みを初期値に、**xsmall は対応する事前学習モデルがなくランダム初期化**（= xsmall は「かな漢字変換データだけで育った」モデル）
+- **トークナイザ**: BPE + Byte-Fallback、語彙6,000（文字レベル）。ku-nlp系と共通
+- **学習データ**: 約1.9億 (input, output, left_context) ペア。日本語Wikipedia(2024-02) + llm-jp-corpus-v3(Common Crawl) に MeCab + ipadic-NEologd で読みを付与。読み揺れ処理あり（日本→ニホン/ニッポン等）
+- **データは公開されている**: `Miwa-Keita/zenz-v2.5-dataset`（JSONL: input=カタカナ, output=漢字かな交じり, left_context=null許容。36.5GB。Wikipedia部分CC-BY-SA 4.0 / CC部分ODC-BY）
+- **学習形式**: `[<boc>, c…, <boi>, i…, <boo>, o…, <eoo>]`（PinyinGPT-Concat方式の文脈前置。タグの実体は \uEE02/\uEE00/\uEE01）。**lossはoutput部分のみ**
+- **学習基盤**: karpathy/llm.c の調整フォーク、NVIDIA H100 80GB×1、1回の学習は数時間（さくら高火力DOK）。GUIからハイパーパラメータ指定→学習・評価・checkpoint保存を自動化
+- **推論**: llama.cpp（調整フォーク）で Q5_K_M 量子化。xsmall 19.9MB / small 72.3MB / medium 237.2MB
+- **Zenzai本体の方式**: 古典エンジン（AzooKeyKanaKanjiConverter）をドラフトとする投機的デコーディング。**xsmallでは投機的デコーディングはむしろ遅くなる**（1推論約1.3msに対しオーバーヘッドが勝る）
+- **評価**: Wikipedia誤り訂正データセット由来200件で Acc@1 / CER。Zenzai単体: xsmall 66.5 / small 80.0 / medium 86.5（Google日本語入力 54.0、GPT-4o 56.0）
+- **個人最適化（Tuner）**: 取得した資料には仕組みの詳細記載なし（未確認のまま）
+
+**SwiftyGyaim特化学習への含意**:
+
+1. ベースデータが公開されているので、「zenz-v2.5-datasetのサブセット（忘却防止のリプレイ）+ SwiftyGyaimドメインデータ（dogfood由来ペア・eval fixtures）」を混合したcontinued SFTが最短経路
+2. xsmall(26M)はローカルApple Silicon（MPS）でLoRA/全パラメータFTが現実的な規模。本家はllm.cだが、この規模の追加SFTならHF transformers + peftで十分
+3. 学習形式はZenzPromptと同一タグ・output-only lossを厳守（本specのSFT data仕様どおり）
+4. 評価は既存のfast-context eval fixture 107件 + `compare-hf-gguf.py` の条件付き平均logprob再現がそのまま使える
+
 ### 事実としてまだ断言しないこと
 
 - `zenz-v3.1-xsmall` が `ku-nlp/gpt2-small-japanese-char` を直接 fine-tune したものかは、現時点の model card からは断言しない。

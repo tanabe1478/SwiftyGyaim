@@ -1,7 +1,7 @@
 # Zenz / Zenzai model tuning tasklist
 
 > Status: Draft
-> Last updated: 2026-07-04
+> Last updated: 2026-08-15 (zenz学習方法の一次情報調査を追記、次はM5環境構築)
 > Parent spec: `docs/specs/zenz-model-tuning.md`
 > Related PR: <https://github.com/tanabe1478/SwiftyGyaim/pull/52>
 
@@ -308,14 +308,16 @@ Definition of done:
 
 ### M4-2. small / medium 系の比較
 
-- [ ] `zenz-v3-small-gguf` を別 resource path で試す
-- [ ] memory footprint を測る
-- [ ] p50 / p95 latency を測る
-- [ ] top1 / top3 improvement を測る
+- [x] `zenz-v3.1-small-gguf` をテストバンドル差し替えで試す（2026-08-15）
+- [x] memory footprint: GGUF Q5_K_M で xsmall 19.9MB → small 70MB
+- [x] latency: モデルレビュー1回平均 xsmall 2.90ms → small 4.05ms（M5、アプリ同梱llama.cppフォーク経由、iterations=30）。体感影響なし
+- [x] 品質（HF重み・生モデルtop1・fixture 122件）: 全体 xsmall 80/122 vs small 77/122 で**smallが全面的に上ではない**。ただし本番でモデルが決定権を持つ領域では small が上（homophone 5/6→6/6、model-required 3/6→4/6）。低下した領域（exact-protection、verb-conjugation、prefix-promotion）は本番ではヒューリスティック+保護ルールが支配するため影響は限定的の見込み
+- 参考: 本家 azooKey-Desktop は zenz-v3.1-small (Q5_K_M) を本番採用。より重い用途（生成+投機的デコーディング）で実用済み
+- 補足: zenz GGUF は pre-tokenizer `gpt2-small-japanese-char` を持ち、素の llama.cpp / llama-cpp-python では読めない（`unknown pre-tokenizer type`）。オフライン評価はHF重み、オンデバイス計測はアプリ同梱フォーク経由で行うこと
 
 Definition of done:
 
-- [ ] xsmall を鍛えるべきか、small を使うべきかの判断材料がある
+- [x] xsmall を鍛えるべきか、small を使うべきかの判断材料がある
 
 ## Milestone 5: Zenz SFT smoke
 
