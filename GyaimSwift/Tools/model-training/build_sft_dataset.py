@@ -115,10 +115,13 @@ def main() -> int:
     parser.add_argument("--romakana", type=Path, default=ROMAKANA_SWIFT)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--no-redact", action="store_true")
+    parser.add_argument("--exclude-regex", default=None,
+                        help="このパターンに一致する行（文脈・表記）を除外する（人名等の手動除外用）")
     parser.add_argument("--max-context", type=int, default=40)
     args = parser.parse_args()
 
     converter = RomaToKata(load_roma_to_kata(args.romakana))
+    exclude_re = re.compile(args.exclude_regex) if args.exclude_regex else None
     stats = Counter()
     rows = []
     seen = Counter()
@@ -135,6 +138,13 @@ def main() -> int:
         katakana = converter.convert(input_pat)
         if katakana is None:
             stats["skip-unconvertible-reading"] += 1
+            continue
+        # 選択テキスト/クリップボード候補由来のノイズ: 読みに対して表記が長すぎるペアは学習に有害
+        if len(word) > len(katakana) * 3 + 5:
+            stats["skip-reading-output-mismatch"] += 1
+            continue
+        if exclude_re and (exclude_re.search(word) or (context and exclude_re.search(context))):
+            stats["skip-excluded-pattern"] += 1
             continue
         if context and len(context) > args.max_context:
             context = context[-args.max_context :]

@@ -1,4 +1,5 @@
-data/
+data/*
+!data/domain.jsonl
 runs/
 data-bench/
 .venv/
