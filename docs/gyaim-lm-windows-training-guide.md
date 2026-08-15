@@ -440,6 +440,23 @@ shuffle bufferそのものと乱数状態も保存するので、安全停止後
 RNG、JSONL読取位置、10,000件のshuffle bufferがすべて存在することを読み戻して確認した。
 checkpoint保存後も学習プロセスは正常に継続している。
 
+### 8.3 Windows再起動からの実復旧記録
+
+2026-08-16 06:34ごろ、Windowsの再起動によって学習プロセスが強制終了した。ログ上は
+step 72,857まで進んでおり、最新の完全な定期保存は`checkpoint-72000`だった。
+
+07:48に次を確認してから`--resume`で再開した。
+
+- `trainer_state.json`のglobal stepが72,000
+- model、optimizer、scheduler、FP16 scaler、RNGがすべて存在
+- Wikipedia 214,203行、llm-jp 2,099,829行までの読取位置を保存
+- 10,000件のshuffle bufferを保存
+- checkpoint全体は約1.09GB
+
+再開ログに`restored streaming data position from ...checkpoint-72000`が出た後、step 72,001以降を
+処理し、約7.7 step/sへ復帰した。再開後500件のlossは0.1418で、再起動前の0.14台と連続している。
+失われたのは72,001〜72,857の857 step、約1分45秒ぶんだけであり、それ以前の学習は失われなかった。
+
 進捗確認:
 
 ```powershell

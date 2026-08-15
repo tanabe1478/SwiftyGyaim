@@ -509,6 +509,9 @@ Definition of done:
 - [x] 最初の定期checkpoint（step 4,000）を確認
   - model / optimizer / scheduler / FP16 scaler / RNG / streaming data stateを読戻し検証
   - 保存後も学習はstep 4,001以降へ正常継続
+- [x] Windows再起動後に`checkpoint-72000`から実復旧
+  - 強制停止時72,857 step、再実行は72,000 stepから（再処理857 step、約1分45秒）
+  - データ位置とshuffle bufferを復元し、約7.7 step/s・loss 0.1418へ正常復帰
 - [ ] 中間評価を記録し、最終モデルへドメイン仕上げ学習を行う
 
 ### 引き継ぎメモ
