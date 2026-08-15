@@ -33,6 +33,7 @@ import json
 import math
 import random
 import signal
+import sys
 import threading
 from pathlib import Path
 from typing import BinaryIO
@@ -46,6 +47,7 @@ from transformers import (
     TrainerCallback,
     TrainingArguments,
 )
+from transformers import __version__ as transformers_version
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 
 CONTEXT_TAG = "\uEE02"
@@ -97,6 +99,7 @@ class StreamingZenzSFTDataset(IterableDataset):
         max_length: int,
         seed: int,
         shuffle_buffer: int,
+        row_counts: list[int] | None = None,
     ) -> None:
         super().__init__()
         self.paths = [path.resolve() for path in paths]
@@ -104,34 +107,67 @@ class StreamingZenzSFTDataset(IterableDataset):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.shuffle_buffer_size = max(0, shuffle_buffer)
-        self.file_index = 0
-        self.byte_offset = 0
+        self.row_counts = row_counts
+        self.rows_read = [0] * len(self.paths)
+        self.file_offsets = [0] * len(self.paths)
+        self.sequential_file_index = 0
         self.buffer: list[dict] = []
         self.random = random.Random(seed)
-        self._file: BinaryIO | None = None
+        self._files: list[BinaryIO | None] = [None] * len(self.paths)
 
-    def _close_file(self) -> None:
-        if self._file is not None:
-            self._file.close()
-            self._file = None
+    def _close_files(self) -> None:
+        for index, file in enumerate(self._files):
+            if file is not None:
+                file.close()
+                self._files[index] = None
 
     def close(self) -> None:
-        self._close_file()
+        self._close_files()
+
+    def _choose_file_index(self) -> int | None:
+        if self.row_counts is None:
+            if self.sequential_file_index >= len(self.paths):
+                return None
+            return self.sequential_file_index
+
+        available = [
+            index
+            for index, count in enumerate(self.row_counts)
+            if self.rows_read[index] < count
+        ]
+        if not available:
+            return None
+        # Keep every source at nearly the same completion percentage. This
+        # distributes a small source throughout a large source without
+        # duplicating or dropping rows.
+        return min(
+            available,
+            key=lambda index: self.rows_read[index] / self.row_counts[index],
+        )
 
     def _read_next_row(self) -> dict | None:
-        while self.file_index < len(self.paths):
-            if self._file is None:
-                self._file = open(self.paths[self.file_index], "rb")
-                self._file.seek(self.byte_offset)
-            line = self._file.readline()
+        while (file_index := self._choose_file_index()) is not None:
+            if self._files[file_index] is None:
+                file = open(self.paths[file_index], "rb")
+                file.seek(self.file_offsets[file_index])
+                self._files[file_index] = file
+            file = self._files[file_index]
+            assert file is not None
+            line = file.readline()
             if line:
-                self.byte_offset = self._file.tell()
+                self.file_offsets[file_index] = file.tell()
                 if line.strip():
+                    self.rows_read[file_index] += 1
                     return json.loads(line)
                 continue
-            self._close_file()
-            self.file_index += 1
-            self.byte_offset = 0
+            file.close()
+            self._files[file_index] = None
+            if self.row_counts is not None:
+                raise ValueError(
+                    f"{self.paths[file_index]} ended at {self.rows_read[file_index]:,} "
+                    f"rows; expected {self.row_counts[file_index]:,}"
+                )
+            self.sequential_file_index += 1
         return None
 
     def __iter__(self):
@@ -154,11 +190,13 @@ class StreamingZenzSFTDataset(IterableDataset):
 
     def state_dict(self) -> dict:
         return {
-            "version": 1,
+            "version": 2,
             "paths": [str(path) for path in self.paths],
             "file_sizes": self.file_sizes,
-            "file_index": self.file_index,
-            "byte_offset": self.byte_offset,
+            "row_counts": self.row_counts,
+            "rows_read": list(self.rows_read),
+            "file_offsets": list(self.file_offsets),
+            "sequential_file_index": self.sequential_file_index,
             "buffer": copy.deepcopy(self.buffer),
             "random_state": self.random.getstate(),
             "shuffle_buffer_size": self.shuffle_buffer_size,
@@ -166,17 +204,20 @@ class StreamingZenzSFTDataset(IterableDataset):
 
     def load_state_dict(self, state_dict: dict) -> None:
         expected_paths = [str(path) for path in self.paths]
-        if state_dict.get("version") != 1:
+        if state_dict.get("version") != 2:
             raise ValueError("unsupported streaming dataset checkpoint version")
         if state_dict.get("paths") != expected_paths:
             raise ValueError("training JSONL paths differ from the checkpoint")
         if state_dict.get("file_sizes") != self.file_sizes:
             raise ValueError("training JSONL file sizes differ from the checkpoint")
+        if state_dict.get("row_counts") != self.row_counts:
+            raise ValueError("--train-counts differs from the checkpoint")
         if state_dict.get("shuffle_buffer_size") != self.shuffle_buffer_size:
             raise ValueError("--shuffle-buffer differs from the checkpoint")
-        self._close_file()
-        self.file_index = state_dict["file_index"]
-        self.byte_offset = state_dict["byte_offset"]
+        self._close_files()
+        self.rows_read = state_dict["rows_read"]
+        self.file_offsets = state_dict["file_offsets"]
+        self.sequential_file_index = state_dict["sequential_file_index"]
         self.buffer = state_dict["buffer"]
         self.random.setstate(state_dict["random_state"])
 
@@ -195,6 +236,7 @@ def encode_row(row: dict, tokenizer, max_length: int) -> dict:
 
 
 DATASET_STATE_NAME = "dataset_state.pt"
+RUN_MANIFEST_NAME = "run_manifest.json"
 
 
 class ResumableDatasetTrainer(Trainer):
@@ -241,6 +283,62 @@ class GracefulStopCallback(TrainerCallback):
         control.should_save = True
         control.should_training_stop = True
         return control
+
+
+def streaming_run_manifest(args) -> dict:
+    valid_path = args.valid.resolve() if args.valid else None
+    return {
+        "version": 1,
+        "base_model": args.base_model,
+        "train_paths": [str(path.resolve()) for path in args.train],
+        "train_file_sizes": [path.stat().st_size for path in args.train],
+        "train_counts": args.train_counts,
+        "valid_path": str(valid_path) if valid_path else None,
+        "valid_file_size": valid_path.stat().st_size if valid_path else None,
+        "max_steps": args.max_steps,
+        "batch_size": args.batch_size,
+        "grad_accum": args.grad_accum,
+        "max_length": args.max_length,
+        "learning_rate": args.lr,
+        "seed": args.seed,
+        "shuffle_buffer": args.shuffle_buffer,
+        "logging_steps": args.logging_steps,
+        "save_steps": args.save_steps,
+        "eval_steps": args.eval_steps,
+        "fp16": args.fp16,
+        "python": sys.version,
+        "torch": torch.__version__,
+        "transformers": transformers_version,
+    }
+
+
+def prepare_streaming_run_manifest(args, parser) -> None:
+    if not args.streaming:
+        return
+    args.output.mkdir(parents=True, exist_ok=True)
+    manifest_path = args.output / RUN_MANIFEST_NAME
+    current = streaming_run_manifest(args)
+    if args.resume:
+        if not manifest_path.is_file():
+            parser.error(f"streaming run has no {RUN_MANIFEST_NAME}: {manifest_path}")
+        saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if saved != current:
+            differing_keys = sorted(
+                key for key in set(saved) | set(current) if saved.get(key) != current.get(key)
+            )
+            parser.error(
+                "resume arguments or input files differ from run manifest: "
+                + ", ".join(differing_keys)
+            )
+        return
+    if manifest_path.exists() or get_last_checkpoint(str(args.output)) is not None:
+        parser.error(
+            f"streaming output already contains a run: {args.output}; use --resume or a new output"
+        )
+    manifest_path.write_text(
+        json.dumps(current, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def collate(batch, pad_token_id: int):
@@ -313,11 +411,27 @@ def main() -> int:
     parser.add_argument("--grad-accum", type=int, default=1)
     parser.add_argument("--max-length", type=int, default=256)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--logging-steps", type=int, default=50)
     parser.add_argument("--save-steps", type=int, default=2000)
+    parser.add_argument(
+        "--eval-steps",
+        type=int,
+        default=0,
+        help="Evaluate validation data every N steps. 0 means once per epoch.",
+    )
     parser.add_argument(
         "--streaming",
         action="store_true",
         help="Stream very large JSONL files instead of loading them into RAM.",
+    )
+    parser.add_argument(
+        "--train-counts",
+        type=int,
+        nargs="+",
+        help=(
+            "Row count for each --train file. When supplied, sources are "
+            "interleaved in proportion to their sizes."
+        ),
     )
     parser.add_argument(
         "--max-steps",
@@ -343,13 +457,23 @@ def main() -> int:
         parser.error("--streaming requires a positive --max-steps")
     if not args.streaming and len(args.train) != 1:
         parser.error("multiple --train files require --streaming")
+    if args.train_counts is not None:
+        if not args.streaming:
+            parser.error("--train-counts requires --streaming")
+        if len(args.train_counts) != len(args.train):
+            parser.error("--train-counts must have one value per --train file")
+        if any(count <= 0 for count in args.train_counts):
+            parser.error("--train-counts values must be positive")
     if args.smoke and args.streaming:
         parser.error("--smoke is only supported for an in-memory dataset")
+    if args.logging_steps <= 0 or args.save_steps <= 0 or args.eval_steps < 0:
+        parser.error("logging/save steps must be positive and eval steps non-negative")
     missing_paths = [path for path in args.train if not path.is_file()]
     if args.valid and not args.valid.is_file():
         missing_paths.append(args.valid)
     if missing_paths:
         parser.error("input file not found: " + ", ".join(map(str, missing_paths)))
+    prepare_streaming_run_manifest(args, parser)
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -366,6 +490,7 @@ def main() -> int:
             args.max_length,
             args.seed,
             args.shuffle_buffer,
+            args.train_counts,
         )
     else:
         train_ds = ZenzSFTDataset(args.train[0], tokenizer, args.max_length)
@@ -397,10 +522,13 @@ def main() -> int:
         learning_rate=args.lr,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
-        logging_steps=50,
+        logging_steps=args.logging_steps,
         save_steps=args.save_steps,
         save_total_limit=2,
-        eval_strategy="epoch" if valid_ds else "no",
+        eval_strategy=(
+            "steps" if valid_ds and args.eval_steps else "epoch" if valid_ds else "no"
+        ),
+        eval_steps=args.eval_steps if args.eval_steps else None,
         report_to=[],
         seed=args.seed,
         fp16=args.fp16,

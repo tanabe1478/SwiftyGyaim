@@ -33,26 +33,64 @@ class StreamingZenzSFTDatasetTests(unittest.TestCase):
             original = StreamingZenzSFTDataset(
                 [path], FakeTokenizer(), max_length=192, seed=42, shuffle_buffer=16
             )
-            original_iterator = iter(original)
-            for _ in range(7):
-                next(original_iterator)
-            saved_state = original.state_dict()
-            expected = [
-                next(original_iterator)["input_ids"].tolist() for _ in range(20)
-            ]
+            resumed = None
+            try:
+                original_iterator = iter(original)
+                for _ in range(7):
+                    next(original_iterator)
+                saved_state = original.state_dict()
+                expected = [
+                    next(original_iterator)["input_ids"].tolist() for _ in range(20)
+                ]
 
-            resumed = StreamingZenzSFTDataset(
-                [path], FakeTokenizer(), max_length=192, seed=42, shuffle_buffer=16
+                resumed = StreamingZenzSFTDataset(
+                    [path], FakeTokenizer(), max_length=192, seed=42, shuffle_buffer=16
+                )
+                resumed.load_state_dict(saved_state)
+                resumed_iterator = iter(resumed)
+                actual = [
+                    next(resumed_iterator)["input_ids"].tolist() for _ in range(20)
+                ]
+
+                self.assertEqual(expected, actual)
+            finally:
+                original.close()
+                if resumed is not None:
+                    resumed.close()
+
+    def test_multiple_sources_are_interleaved_in_proportion_to_row_counts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [Path(directory) / "small.jsonl", Path(directory) / "large.jsonl"]
+            for path, prefix, count in zip(paths, ("S", "L"), (4, 12)):
+                path.write_text(
+                    "".join(
+                        json.dumps(
+                            {"input": f"{prefix}{index}", "output": prefix},
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                        for index in range(count)
+                    ),
+                    encoding="utf-8",
+                )
+
+            dataset = StreamingZenzSFTDataset(
+                paths,
+                FakeTokenizer(),
+                max_length=192,
+                seed=42,
+                shuffle_buffer=0,
+                row_counts=[4, 12],
             )
-            resumed.load_state_dict(saved_state)
-            resumed_iterator = iter(resumed)
-            actual = [
-                next(resumed_iterator)["input_ids"].tolist() for _ in range(20)
-            ]
+            try:
+                iterator = iter(dataset)
+                yielded = [next(iterator)["input_ids"].tolist() for _ in range(8)]
+                small_examples = sum(ord("S") in input_ids for input_ids in yielded)
+                large_examples = sum(ord("L") in input_ids for input_ids in yielded)
 
-            self.assertEqual(expected, actual)
-            original.close()
-            resumed.close()
+                self.assertEqual((2, 6), (small_examples, large_examples))
+            finally:
+                dataset.close()
 
 
 if __name__ == "__main__":

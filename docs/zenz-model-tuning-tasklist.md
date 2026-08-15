@@ -499,8 +499,16 @@ Definition of done:
 - [x] `--resume`でmodel / optimizer / scheduler / RNG / データ位置を復元
 - [x] 停止step 1 → 再開 → step 4完走のWindows ROCm実機テスト
 - [x] 再開後の次の学習例が非停止runと20/20一致することをテスト
-- [ ] zenz-v2.5公開フルJSONLをdownloadし、正確な総行数と`--max-steps`を確定
-- [ ] フル学習を開始し、最初のcheckpointから停止・再開を再検証
+- [x] zenz-v2.5公開フルJSONLをdownloadし、正確な総行数と`--max-steps`を確定
+  - Wikipedia 17,493,369件 + llm-jp 171,487,973件 = **188,981,342件**
+  - batch 32、1巡 = **5,905,667 step**
+- [x] 実データ500-stepベンチ（238.9 examples/s、7.467 step/s、約9.15日換算）
+- [x] 実データでstep 1安全停止 → データ位置復元 → step 4完走を再検証
+- [x] run manifestで入力・ハイパーパラメータ不一致の誤resumeを拒否
+- [x] フル学習を開始（2026-08-16 04:03 JST、`runs/zenz-v2.5-full`）
+- [x] 最初の定期checkpoint（step 4,000）を確認
+  - model / optimizer / scheduler / FP16 scaler / RNG / streaming data stateを読戻し検証
+  - 保存後も学習はstep 4,001以降へ正常継続
 - [ ] 中間評価を記録し、最終モデルへドメイン仕上げ学習を行う
 
 ### 引き継ぎメモ

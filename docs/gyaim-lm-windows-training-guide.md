@@ -378,17 +378,75 @@ Windowsをゲーム、動画処理、GPUを使う開発などへ確実に空け�
 ```powershell
 .\.venv\Scripts\python.exe train_zenz.py `
   --train data-full\train_wikipedia.jsonl data-full\train_llm-jp-corpus-v3.jsonl `
+  --train-counts 17493369 171487973 `
   --valid data\valid.jsonl `
   --output runs\zenz-v2.5-full `
-  --streaming --max-steps <総行数を32で割って切り上げた値> `
+  --streaming --max-steps 5905667 `
   --batch-size 32 --max-length 192 --lr 1e-4 `
-  --shuffle-buffer 10000 --save-steps 4000 --fp16
+  --shuffle-buffer 10000 --logging-steps 500 `
+  --save-steps 4000 --eval-steps 100000 --fp16
 ```
 
+`--train-counts`を渡すと、両ファイルがそれぞれ同じ割合で進むように交互に読み取る。
+たとえばWikipediaが全体の約2割なら、おおむね5件に1件がWikipediaになる。これにより、
+最初にWikipediaだけ、後半にCommon Crawlだけを学ぶデータ源の偏りを避ける。各ファイルの
+読取位置と残り件数もcheckpointに入る。
+
 `max_steps = ceil(総行数 / (batch-size × grad-accum))` である。ファイルの正確な行数を数えてから
-値を確定する。checkpointは約1.1GBで、`save_total_limit=2`により通常は最新2個だけを保持する。
+値を確定する。全行をRAMへ載せずに行数と`max_steps`を計算するコマンドは次のとおり。
+
+```powershell
+.\.venv\Scripts\python.exe count_jsonl.py `
+  data-full\train_wikipedia.jsonl data-full\train_llm-jp-corpus-v3.jsonl `
+  --batch-size 32
+```
+
+2026-08-16にdownloadした実ファイルの結果:
+
+| ファイル | 行数 |
+|---|---:|
+| `train_wikipedia.jsonl` | 17,493,369 |
+| `train_llm-jp-corpus-v3.jsonl` | 171,487,973 |
+| 合計 | **188,981,342** |
+| batch 32で1巡するstep | **5,905,667** |
+
+開始時に`runs/zenz-v2.5-full/run_manifest.json`を自動保存する。再開時に入力ファイル、
+行数、batch size、learning rate、`max_steps`などが変わっていれば、誤学習を避けるため
+`--resume`はエラーで停止する。
+
+checkpointは約1.1GBで、`save_total_limit=2`により通常は最新2個だけを保持する。
 shuffle bufferそのものと乱数状態も保存するので、安全停止後の次の学習例は停止しなかった場合と
 一致する。小規模テストでは、停止後に比較した次の20件が20/20で一致した。
+
+- `--logging-steps 500`: 約1分ごとにtrain lossを記録する
+- `--eval-steps 100000`: 約3時間45分ごとにvalid lossを測る（実測速度からの推定）
+- `--save-steps 4000`: 約9分ごとに再開用checkpointを保存する
+
+実データ500-stepベンチは66.96秒、238.9 examples/s、7.467 step/sだった。この速度を
+188,981,342件へ単純換算すると約9.15日である。実際には定期評価とcheckpoint保存が加わるため、
+完了見込みは約9〜10日とする。
+
+本番は2026-08-16 04:03（JST）にバックグラウンドで開始した。
+
+| 項目 | パス / 値 |
+|---|---|
+| output | `runs/zenz-v2.5-full` |
+| 標準出力 | `runs/zenz-v2.5-full.stdout.log` |
+| 進捗・警告 | `runs/zenz-v2.5-full.stderr.log` |
+| 停止要求 | `runs/zenz-v2.5-full/STOP_REQUESTED` |
+| 単純ETA | 2026-08-25朝〜昼ごろ（定期評価を含むと前後する） |
+
+04:12に最初の`checkpoint-4000`が完成した。model、optimizer、scheduler、FP16 scaler、
+RNG、JSONL読取位置、10,000件のshuffle bufferがすべて存在することを読み戻して確認した。
+checkpoint保存後も学習プロセスは正常に継続している。
+
+進捗確認:
+
+```powershell
+Get-Content runs\zenz-v2.5-full.stdout.log -Tail 20
+Get-Content runs\zenz-v2.5-full.stderr.log -Tail 5
+Get-ChildItem runs\zenz-v2.5-full\checkpoint-*
+```
 
 ## 9. 学習後の評価
 
