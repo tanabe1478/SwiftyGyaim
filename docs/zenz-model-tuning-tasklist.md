@@ -332,17 +332,23 @@ Definition of done:
 
 - [ ] 10件の synthetic data で overfit smoke test ができる
 
-### M5-2. PEFT / LoRA training script
+### M5-2. training script（方針変更: zenz重みではなく元モデルからのfull SFT）
 
-- [ ] `Tools/zenz-tuning/train_lora.py` を作る
-- [ ] base model: `Miwa-Keita/zenz-v3.1-xsmall`
-- [ ] tokenizer を base と同一に固定する
-- [ ] LoRA rank / lr / epochs を config 化する
-- [ ] validation loss と exact-match generation を出す
+ユーザー方針（2026-08-15）: 特化学習は zenz の重みを継続学習するのではなく、
+元モデル `ku-nlp/gpt2-small-japanese-char` から zenz-v3 形式で学習する。
+サイズは small（同梱モデルも #91 で small へ切替済み）。
+
+- [x] `Tools/zenz-tuning/train_zenz.py` を作る（HF Trainer + MPS/CUDA/CPU自動選択）
+- [x] base model: `ku-nlp/gpt2-small-japanese-char`（デフォルト、--base-modelで変更可）
+- [x] tokenizer を base と同一に固定する（vocab 6000、zenzと同系）
+- [x] lr / epochs / batch / max-length を CLI 引数化
+- [x] validation loss と exact-match generation（--smoke）を出す
+- 環境: `Tools/zenz-tuning/.venv`（mise python 3.12 + torch/transformers/accelerate/llama-cpp-python、gitignore済み）
 
 Definition of done:
 
-- [ ] 10件 overfit で expected output を greedy decode できる
+- [x] 10件 overfit で expected output を greedy decode できる
+  - 2026-08-15 実測: MPS(M5)で60epoch 16秒、exact match 10/10（シタガウ→従うな 等、文脈付き含む）
 
 ### M5-3. GGUF conversion path
 
