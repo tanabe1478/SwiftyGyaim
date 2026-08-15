@@ -151,9 +151,9 @@ final class FastContextRerankEmulationTests: XCTestCase {
 
         XCTAssertEqual(order.count, request.candidates.count)
         if ProcessInfo.processInfo.environment["GYAIM_REQUIRE_BUNDLED_ZENZ_FAST_CONTEXT"] == "1" {
-            XCTAssertTrue(response.model?.contains("bundled-zenz-v3.1-xsmall") == true,
+            XCTAssertTrue(response.model?.contains("bundled-zenz-v3.1-small") == true,
                           "expected bundled Zenz backend, got \(response.model ?? "nil")")
-            XCTAssertNotEqual(response.model, "bundled-zenz-v3.1-xsmall+swift-local-heuristic",
+            XCTAssertNotEqual(response.model, "bundled-zenz-v3.1-small+swift-local-heuristic",
                               "fast-context must not use all-candidate Zenz scoring")
         }
     }
