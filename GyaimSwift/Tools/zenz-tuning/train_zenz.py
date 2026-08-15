@@ -134,6 +134,8 @@ def main() -> int:
     parser.add_argument("--max-length", type=int, default=256)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--save-steps", type=int, default=2000)
+    parser.add_argument("--resume", action="store_true",
+                        help="output配下の最新checkpointから学習を再開する")
     parser.add_argument("--smoke", action="store_true",
                         help="After training, greedy-decode every train row and report exact match.")
     args = parser.parse_args()
@@ -171,7 +173,7 @@ def main() -> int:
         eval_dataset=valid_ds,
         data_collator=lambda batch: collate(batch, tokenizer.eos_token_id),
     )
-    trainer.train()
+    trainer.train(resume_from_checkpoint=True if args.resume else None)
     trainer.save_model(str(args.output / "final"))
     tokenizer.save_pretrained(str(args.output / "final"))
 

@@ -1,7 +1,7 @@
 # Zenz / Zenzai model tuning tasklist
 
 > Status: Draft
-> Last updated: 2026-08-15 (zenz学習方法の一次情報調査を追記、次はM5環境構築)
+> Last updated: 2026-08-15 (M7: 特化学習の実行と学習インフラ判断ガイドを追加)
 > Parent spec: `docs/specs/zenz-model-tuning.md`
 > Related PR: <https://github.com/tanabe1478/SwiftyGyaim/pull/52>
 
@@ -400,6 +400,71 @@ Definition of done:
 Definition of done:
 
 - [ ] RL を始める前に SFT / DPO / reranker の結果が揃っている
+
+## Milestone 7: 特化モデルの学習実行と学習インフラ判断
+
+> 2026-08-15 開始。作業ブランチ: `feature/zenz-specialized-training`（1本のPRにまとめる）
+
+### M7-1. データセット構築（完了）
+
+- [x] `prepare_dataset.py`: zenz-v2.5-dataset をHFストリーミングでサンプル（wikipedia 70万 + llm-jp 30万）
+- [x] `build_sft_dataset.py`: dogfoodログから (left_context, input_katakana, output) を抽出
+  - ローマ字→カタカナは `RomaKana.swift` の rklist をパースしてIMEと同一ルール
+  - redaction（URL/ASCII識別子/数字列）・重複マージ込み。実績: accepted 730件 → 610 unique
+- [x] 混合: ドメイン550件を30倍oversample（train全体の約1.6%）、domain-valid 60件を取り分け
+- 生成物（gitignore、ローカルのみ）: `Tools/zenz-tuning/data/{train,valid,domain-valid,domain}.jsonl`（train 1,011,500行）
+
+### M7-2. ベースライン学習 mixed-v1（実行中）
+
+- 実行コマンド（再現用）:
+  ```
+  ./.venv/bin/python3 train_zenz.py --train data/train.jsonl --valid data/valid.jsonl \
+    --output runs/mixed-v1 --epochs 1 --batch-size 32 --max-length 192 --lr 1e-4 --save-steps 4000
+  ```
+- 実測スループット: M5 MPS で約0.49 step/s（batch 32）≒ **15.7 examples/s**。100万行1epoch ≒ 約18〜20時間
+- 中断時は `--resume` で `runs/mixed-v1` の最新checkpointから再開できる（4,000ステップごとに保存）
+- 既知の問題: Trainerのloss logがログファイルに出ていない。checkpoint内 `trainer_state.json` の `log_history` で確認する
+
+### M7-3. 評価とGGUF化（未着手）
+
+- [ ] domain-valid 60件のexact match（特化の効果測定）と valid loss
+- [ ] eval fixture 122件で `compare-hf-gguf.py --backend hf --hf-model runs/mixed-v1/final` を実行し、現行 zenz-v3.1-small（80/122）・xsmall（77/122）と比較
+- [ ] GGUF化: llama.cpp convert は pre-tokenizer 名の対応が必要（M4-2の知見: 素のllama.cppは `gpt2-small-japanese-char` を知らない。変換時に `tokenizer.ggml.pre` の指定 or 同梱フォークのconvert利用を検証）
+- [ ] Q5_K_M量子化 → テストバンドル差し替えでレイテンシ・実機動作確認（手順はM4-2と同一）
+
+### M7-4. 学習インフラの判断ガイド
+
+実測とカタログ値に基づく選択肢。**まずM7-2/M7-3の結果を見てから投資判断する**こと。
+
+| 規模 | 場所 | 時間 | 費用 | 備考 |
+|---|---|---|---|---|
+| 100万ペア（今回） | 常用Mac (M5, MPS) | 18〜20h | 0円 | 実測15.7 examples/s。常用機を占有 |
+| 500万〜1000万ペア | ローカルMac | 3〜7日 | 電気代のみ | レシピ探索・週次のドメイン再学習向き |
+| 1.9億ペア（フル） | ローカルMac | 実測換算で約140日（最適化10倍でも約2週間） | 電気代のみ | 非推奨 |
+| 1.9億ペア（フル） | さくら高火力DOK H100 1GPU | 数時間（本家実績） | **約1,008円/時 → 1回3,000〜6,000円** | 試行錯誤込みでも1〜3万円。train_zenz.pyはCUDA自動対応 |
+
+**余りMacを学習マシンにする場合の評価手順**:
+
+1. 対象Macのチップ・メモリを確認（学習スループットはGPUコア数とメモリ帯域で決まる）
+2. リポジトリをclone、`mise use -g python@3.12`、`Tools/zenz-tuning` で venv 作成 + `pip install torch transformers accelerate datasets`
+3. ベンチ実行（500ステップの実測）:
+   ```
+   ./.venv/bin/python3 prepare_dataset.py --wikipedia 20000 --llm-jp 10000 --valid 100 --output data-bench
+   ./.venv/bin/python3 train_zenz.py --train data-bench/train.jsonl --output runs/bench --epochs 1 --batch-size 32 --max-length 192
+   # 進捗バーの it/s × 32 = examples/s を読む。500ステップ経過時点でCtrl+Cで打ち切ってよい
+   ```
+4. 判断基準: examples/s から所要日数を換算（1.9億 ÷ examples/s ÷ 86400 = 日数）。
+   - 15 examples/s級（M5相当）→ フルは非現実的、中規模実験・週次再学習用
+   - 50 examples/s超（Ultra級+最適化）→ フルも数週間で視野
+5. 採用する場合: SSH有効化 + 電源接続 + `caffeinate -s` でスリープ抑止。学習はnohupで投げ、checkpointは `--resume` で再開可能
+
+**プライバシー制約**: ドメインデータ（dogfoodログ由来）を外部GPUに送る場合は事前にユーザー確認。回避策として「公開データのフル学習はクラウド → ドメイン混合の仕上げ継続学習はローカル」の分離が可能。
+
+### 引き継ぎメモ
+
+- 環境: `Tools/zenz-tuning/.venv`（gitignore）。壊れたら `mise exec python@3.12 -- python3 -m venv .venv && ./.venv/bin/pip install torch transformers accelerate datasets llama-cpp-python`
+- 学習ログ: `Tools/zenz-tuning/runs/*.log`（gitignore）
+- ドメインデータの更新: `./.venv/bin/python3 build_sft_dataset.py --output data/domain.jsonl` を再実行（ログが増えるほど件数が増える）
 
 ## 直近で切るIssue候補
 
