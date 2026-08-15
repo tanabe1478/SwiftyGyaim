@@ -352,10 +352,10 @@ Definition of done:
 
 ### M5-3. GGUF conversion path
 
-- [ ] LoRA merge 手順を確認する
-- [ ] HF merged model を保存する
-- [ ] llama.cpp converter で GGUF 化する
-- [ ] Q5_K_M quantize する
+- [x] LoRA mergeは不要と確認する（今回はLoRAではなく元モデルからのfull SFT）
+- [x] HF full model を `runs/mixed-v1/final` に保存する
+- [x] azooKey/llama.cpp converter で GGUF 化する
+- [x] Q5_K_M quantize する（70.26 MiB）
 - [ ] SwiftyGyaim app bundle に差し替える
 - [ ] `run-fast-context-rerank-emulation.sh` で smoke test する
 
@@ -412,11 +412,13 @@ Definition of done:
 - [x] `prepare_dataset.py`: zenz-v2.5-dataset をHFストリーミングでサンプル（wikipedia 70万 + llm-jp 30万）
 - [x] `build_sft_dataset.py`: dogfoodログから (left_context, input_katakana, output) を抽出
   - ローマ字→カタカナは `RomaKana.swift` の rklist をパースしてIMEと同一ルール
-  - redaction（URL/ASCII識別子/数字列）・重複マージ込み。実績: accepted 730件 → 610 unique
-- [x] 混合: ドメイン550件を30倍oversample（train全体の約1.6%）、domain-valid 60件を取り分け
-- 生成物（gitignore、ローカルのみ）: `Tools/model-training/data/{train,valid,domain-valid,domain}.jsonl`（train 1,011,500行）
+  - redaction（URL/ASCII識別子/数字列）・ノイズ/人名除外・重複マージ込み。2026-08-16時点で684 unique
+- [x] 混合: ドメイン624件を30倍oversample（train全体の約1.8%）、domain-valid 60件を取り分け
+- 生成物（gitignore、`domain.jsonl`以外はローカルのみ）: `Tools/model-training/data/{train,valid,domain-valid,domain}.jsonl`
+  - 2026-08-16 Windows再生成: train 1,013,720行、valid 5,000行、domain-valid 60行
+  - 最新domain 684行のうち60行を検証用、624行を30倍oversampleしたため、旧runよりtrainが2,220行増えた
 
-### M7-2. ベースライン学習 mixed-v1（実行中）
+### M7-2. ベースライン学習 mixed-v1（Windows FP16で完了）
 
 - 実行コマンド（再現用）:
   ```
@@ -425,14 +427,29 @@ Definition of done:
   ```
 - 実測スループット: M5 MPS で約0.49 step/s（batch 32）≒ **15.7 examples/s**。100万行1epoch ≒ 約18〜20時間
 - 中断時は `--resume` で `runs/mixed-v1` の最新checkpointから再開できる（4,000ステップごとに保存）
-- 既知の問題: Trainerのloss logがログファイルに出ていない。checkpoint内 `trainer_state.json` の `log_history` で確認する
+- Mac runの既知の問題: Trainerのloss logがログファイルに出ていない。checkpoint内 `trainer_state.json` の `log_history` で確認する
+  - Windows runは `PYTHONUNBUFFERED=1` とstdout/stderr分離でloss・進捗をログへ保存できている
+- 2026-08-16: RX 9070 XT / native Windows / PyTorch 2.9.1 + ROCm 7.2.1へ引き継ぎ
+  - `train_zenz.py` に `--fp16` を追加
+  - 501 stepベンチ: 226 examples/s、loss 2.135 → 1.177、NaNなし
+  - 本番31,679 step完了: 71分32秒、236.2 examples/s、7.381 step/s、train loss 0.2328
+  - valid 5,000件: loss 0.1167、perplexity 1.12
+  - Windows GPU Engine実測: Compute 0 平均93.6%、最大98.2%。batch 32のままでもGPU計算はほぼ飽和
+  - 実行手順と初心者向け解説: `docs/gyaim-lm-windows-training-guide.md`
 
-### M7-3. 評価とGGUF化（未着手）
+### M7-3. 評価とGGUF化（Windows側完了、Macアプリ実測待ち）
 
-- [ ] domain-valid 60件のexact match（特化の効果測定）と valid loss
-- [ ] eval fixture 122件で `compare-hf-gguf.py --backend hf --hf-model runs/mixed-v1/final` を実行し、現行 zenz-v3.1-small（80/122）・xsmall（77/122）と比較
-- [ ] GGUF化: llama.cpp convert は pre-tokenizer 名の対応が必要（M4-2の知見: 素のllama.cppは `gpt2-small-japanese-char` を知らない。変換時に `tokenizer.ggml.pre` の指定 or 同梱フォークのconvert利用を検証）
-- [ ] Q5_K_M量子化 → テストバンドル差し替えでレイテンシ・実機動作確認（手順はM4-2と同一）
+- [x] domain-valid 60件のexact match（特化の効果測定）と valid loss
+  - `Tools/model-training/evaluate_domain_valid.py` を追加
+  - 元モデル0/60 → mixed-v1 50/60（83.3%）。valid loss 0.1167、perplexity 1.12
+- [x] eval fixture 122件で `compare-hf-gguf.py --backend hf --hf-model runs/mixed-v1/final` を実行
+  - mixed-v1 84/122。現行 zenz-v3.1-small 80/122より+4、xsmall 77/122より+7
+- [x] GGUF化: llama.cpp convert は pre-tokenizer 名の対応が必要（M4-2の知見: 素のllama.cppは `gpt2-small-japanese-char` を知らない。変換時に `tokenizer.ggml.pre` の指定 or 同梱フォークのconvert利用を検証）
+  - `azooKey/llama.cpp` commit `88b97a4`でconverter/runtime双方の対応を確認
+  - Transformers 5の`n_positions`と旧converterの`n_ctx`の互換差を`train_zenz.py`で吸収
+  - F16 183.04 MiB、Q5_K_M 70.26 MiBを生成。metadataのpre-tokenizerとWindows CLI loadを確認
+- [x] Q5_K_M量子化
+- [ ] Macのテストバンドル差し替えで量子化後順位・レイテンシ・実機動作確認（手順はM4-2と同一）
 
 ### M7-4. 学習インフラの判断ガイド
 
@@ -440,18 +457,20 @@ Definition of done:
 
 | 規模 | 場所 | 時間 | 費用 | 備考 |
 |---|---|---|---|---|
-| 100万ペア（今回） | 常用Mac (M5, MPS) | 18〜20h | 0円 | 実測15.7 examples/s。常用機を占有 |
+| 100万ペア（今回） | Windows (RX 9070 XT, FP16) | **71分32秒** | 0円 | 本番実測236.2 examples/s |
+| 100万ペア（比較） | 常用Mac (M5, MPS) | 18〜20h | 0円 | 実測15.7 examples/s。常用機を占有 |
 | 500万〜1000万ペア | ローカルMac | 3〜7日 | 電気代のみ | レシピ探索・週次のドメイン再学習向き |
 | 1.9億ペア（フル） | ローカルMac | 実測換算で約140日（最適化10倍でも約2週間） | 電気代のみ | 非推奨 |
 | 1.9億ペア（フル） | さくら高火力DOK H100 1GPU | 数時間（本家実績） | **約1,008円/時 → 1回3,000〜6,000円** | 試行錯誤込みでも1〜3万円。train_zenz.pyはCUDA自動対応 |
 
-**Windows + RX 9070 XT（RDNA4）を学習マシンにする場合**（2026-08-15調査）:
+**Windows + RX 9070 XT（RDNA4）実測**（2026-08-16）:
 
-- ROCm 7.2（2026-01リリース）でRX 9070 XT（gfx1201）が公式サポート。WSL2（Ubuntu 22.04/24.04）でのPyTorchが公式対応、ネイティブWindowsも7.2からファーストクラス化
-- 要件: AMD Software Adrenalin 26.1.1以降、WSL2内で `amdgpu-install --usecase=wsl,rocm`、ROCm版PyTorch
-- `train_zenz.py` はROCmをcudaデバイスとして自動認識するためコード変更不要
-- 見込みスループットはM5 MPSの5〜15倍（FP16理論値約97 TFLOPS、VRAM 16GB）。10倍なら100万ペア約2時間、1000万ペア半日〜1日、1.9億フルでも2〜3週間で費用ゼロの射程
-- ただしROCmは荒削りなため、採用前に下記Macと同じ500ステップベンチで実測すること
+- ネイティブWindowsのPyTorch 2.9.1 + ROCm 7.2.1でRX 9070 XT（gfx1201）が公式サポート
+- 要件: Windows 11、Python 3.12、AMD Software Adrenalin 26.2.2以降
+- `train_zenz.py` はROCmをcudaデバイスとして認識する。GPUを活かすため `--fp16` を使用する
+- FP32実測は約27 examples/s、FP16本番実測は236.2 examples/s（M5 MPSの約15倍）
+- 単純推定: 100万ペア約72分、1000万ペア約11.8時間、1.9億フル約9.3日
+- 詳細な構築・検証・評価手順は `docs/gyaim-lm-windows-training-guide.md`
 
 **余りMacを学習マシンにする場合の評価手順**:
 

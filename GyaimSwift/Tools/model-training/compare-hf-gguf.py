@@ -76,8 +76,14 @@ class HFScorer:
                 "  python3 -m pip install torch transformers"
             ) from exc
         self.torch = torch
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
-        self.model = AutoModelForCausalLM.from_pretrained(model_id)
+        self.model = AutoModelForCausalLM.from_pretrained(model_id).to(self.device)
         self.model.eval()
 
     def score(self, prompt: str, continuation: str) -> float | None:
@@ -86,14 +92,13 @@ class HFScorer:
         continuation_ids = self.tokenizer.encode(continuation, add_special_tokens=False)
         if not prompt_ids or not continuation_ids:
             return None
-        input_ids = torch.tensor([prompt_ids + continuation_ids])
+        input_ids = torch.tensor([prompt_ids + continuation_ids], device=self.device)
         with torch.no_grad():
             logits = self.model(input_ids).logits[0]
         log_probs = torch.log_softmax(logits, dim=-1)
-        total = 0.0
-        for position, token_id in enumerate(continuation_ids):
-            total += float(log_probs[len(prompt_ids) - 1 + position, token_id])
-        return total / len(continuation_ids)
+        positions = torch.arange(len(continuation_ids), device=self.device) + len(prompt_ids) - 1
+        targets = torch.tensor(continuation_ids, device=self.device)
+        return float(log_probs[positions, targets].mean().item())
 
 
 class GGUFScorer:

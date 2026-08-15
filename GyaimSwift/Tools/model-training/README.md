@@ -9,6 +9,8 @@ SwiftyGyaim専用のかな漢字変換モデル **gyaim-lm** を学習するた�
 - zenz比較用ツール（compare-hf-gguf.py）も本ディレクトリに同居する
 
 背景と経緯は `docs/specs/zenz-model-tuning.md` と `docs/zenz-model-tuning-tasklist.md`（M7）を参照。
+Windowsでの実測を含む初心者向け手順は
+[`docs/gyaim-lm-windows-training-guide.md`](../../../docs/gyaim-lm-windows-training-guide.md) を参照。
 
 ## 全体像
 
@@ -19,7 +21,8 @@ train_zenz.py          HF Trainerで学習（MPS/CUDA(ROCm含む)/CPU自動選�
 compare-hf-gguf.py     eval fixture 122件でスコアリング品質を比較
 ```
 
-データとcheckpointは `data/` と `runs/`（どちらもgitignore、リポジトリに入れない）。
+公開データから再生成するsplitとcheckpointは `data/` と `runs/` でgitignoreする。
+redaction済みの `data/domain.jsonl` だけは、学習マシンへ安全に引き継ぐため追跡する。
 
 ## リポジトリ方針
 
@@ -53,49 +56,36 @@ mise exec python@3.12 -- python3 -m venv .venv
 ./.venv/bin/pip install torch transformers accelerate datasets llama-cpp-python
 ```
 
-### Windows + Radeon RX 9070 XT（WSL2 + ROCm）
+### Windows + Radeon RX 9070 XT（ネイティブWindows + ROCm、推奨）
 
-ROCm 7.2（2026-01）以降でRX 9070 XT（gfx1201）が公式サポート。経路はWSL2が実績豊富。
+RX 9070 XT（gfx1201）は、Windows 11 / Python 3.12 / PyTorch 2.9.1 + ROCm 7.2.1で
+公式サポートされている。AMD Software 26.2.2以降へ更新してから、プロジェクト内venvへ
+AMD公式wheelを入れる。完全なコマンド、GPU検証、実測値は初心者向け手順書を参照。
 
-1. **Windows側**: AMD Software Adrenalin **26.1.1以降**へ更新。
-   WSL2を有効化し、Ubuntu 24.04をインストール（`wsl --install -d Ubuntu-24.04`）
-2. **WSL2 (Ubuntu)側**: AMD公式のamdgpu-installでROCmを導入
-   ```bash
-   # インストーラのURLはAMD ROCmドキュメント(rocm.docs.amd.com)の
-   # "Install Radeon software for WSL" の最新版を参照すること
-   sudo amdgpu-install --usecase=wsl,rocm --no-dkms
-   ```
-3. **動作確認**: `rocminfo | grep gfx` に `gfx1201` が出ること
-4. **Python環境**:
-   ```bash
-   sudo apt install -y python3.12-venv
-   git clone https://github.com/tanabe1478/SwiftyGyaim.git && cd SwiftyGyaim/GyaimSwift/Tools/model-training
-   python3.12 -m venv .venv
-   # ROCm版PyTorch（indexのバージョンはPyTorch公式のROCm対応表に合わせる）
-   ./.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/rocm7.0
-   ./.venv/bin/pip install transformers accelerate datasets
-   ./.venv/bin/python3 -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-   # → True / Radeon RX 9070 XT ならOK（ROCmはcudaデバイスとして見える）
-   ```
-5. **データ転送**: Macから `data/` をコピー（同一LAN内・自分のマシン間なのでドメインデータ可）
-   ```bash
-   rsync -av mac-host:~/Documents/repositories/SwiftyGyaim/GyaimSwift/Tools/model-training/data/ data/
-   ```
-   または公開部分だけ再生成して `data/domain.jsonl` のみコピーでも同じ（`prepare_dataset.py` はseed固定で再現的）
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip wheel
+# ROCm SDKとROCm版torchはAMD公式手順の7.2.1 wheelを使用する
+.\.venv\Scripts\python.exe -m pip install transformers accelerate datasets
+.\.venv\Scripts\python.exe -c "import torch; print(torch.__version__, torch.version.hip, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+`train_zenz.py` ではROCmも `device=cuda` と表示される。RX 9070 XTでは `--fp16` が重要で、
+500 step実測はFP32約27 examples/sに対し、FP16 **226 examples/s**だった。
 
 ## Windows側でゼロから始めるチェックリスト
 
 Macに接続せず、Windowsマシン単体で始める場合の完全な手順。
 
-1. WSL2 + Ubuntu 24.04 とAMDドライバ（上記「環境構築」参照）
+1. Windows 11 + Python 3.12とAMDドライバ（上記「環境構築」参照）
 2. リポジトリ取得:
-   ```bash
+   ```powershell
    git clone https://github.com/tanabe1478/SwiftyGyaim.git
    cd SwiftyGyaim
    git checkout feature/zenz-specialized-training   # PR #93マージ前の場合
    cd GyaimSwift/Tools/model-training
    ```
-3. venv + ROCm版PyTorch（上記手順4）
+3. venv + ネイティブWindows版ROCm/PyTorch
 4. **ベンチ実行**（下記）→ examples/s を確認し判断表と照合
 5. データ:
    - 公開データはseed固定で**Windows側だけで再現可能**（`prepare_dataset.py` を同じ引数で実行すれば
@@ -110,10 +100,10 @@ Macに接続せず、Windowsマシン単体で始める場合の完全な手順�
 
 新しい学習マシンでは500ステップの実測をしてから採用を決める。
 
-```bash
-./.venv/bin/python3 prepare_dataset.py --wikipedia 20000 --llm-jp 10000 --valid 100 --output data-bench
-./.venv/bin/python3 train_zenz.py --train data-bench/train.jsonl --output runs/bench \
-  --epochs 1 --batch-size 32 --max-length 192
+```powershell
+.\.venv\Scripts\python.exe prepare_dataset.py --wikipedia 20000 --llm-jp 10000 --valid 100 --output data-bench
+.\.venv\Scripts\python.exe train_zenz.py --train data-bench\train.jsonl --output runs\bench `
+  --epochs 0.535 --batch-size 32 --max-length 192 --fp16
 # 進捗バーの it/s × batch-size = examples/s。500ステップ見たらCtrl+Cで打ち切ってよい
 ```
 
@@ -123,7 +113,7 @@ Macに接続せず、Windowsマシン単体で始める場合の完全な手順�
 |---|---|---|---|
 | ~15（M5 MPS実測） | 18〜20h | 約140日 | 中規模実験・週次再学習 |
 | ~50 | 5.5h | 約44日 | 中規模は快適、フルは要相談 |
-| ~150（9070 XT見込み） | 2h | 約15日 | フルもローカル圏内 |
+| 226（9070 XT FP16実測） | 約75分 | 約9.7日 | フルもローカル圏内 |
 | H100 1GPU（参考） | 分単位 | 数時間（本家実績、約1,008円/h） | 確定レシピの本番1回用 |
 
 ## 学習の実行と引き継ぎ
@@ -152,8 +142,13 @@ nohup ./.venv/bin/python3 train_zenz.py --train data/train.jsonl --valid data/va
 ./.venv/bin/python3 compare-hf-gguf.py --backend hf --hf-model runs/mixed-v1/final --json
 
 # ドメイン検証（ユーザー語彙60件のexact match）
-# TODO(M7-3): domain-valid.jsonl のgreedy decode評価スクリプト
+./.venv/bin/python3 evaluate_domain_valid.py \
+  --model runs/mixed-v1/final --data data/domain-valid.jsonl --json
 ```
+
+2026-08-16 Windows実測: mixed-v1はvalid loss 0.1167、domain-valid 50/60、
+fixture 84/122。Q5_K_M GGUFは70.26 MiB。詳細とWindows用コマンドは
+`docs/gyaim-lm-windows-training-guide.md`を参照。
 
 GGUF化: 素のllama.cppは pre-tokenizer `gpt2-small-japanese-char` を知らないため
 （M4-2の知見）、変換時に `tokenizer.ggml.pre` の扱いを検証すること。同梱llama.cppフォークは対応済み。

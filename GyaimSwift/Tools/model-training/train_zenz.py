@@ -121,6 +121,24 @@ def greedy_decode(model, tokenizer, prompt: str, device: str, max_new_tokens: in
     return tokenizer.decode(out[0][ids.shape[1]:], skip_special_tokens=True)
 
 
+def add_legacy_gpt2_context_alias(model_dir: Path) -> None:
+    """Keep the saved GPT-2 config compatible with the bundled GGUF converter.
+
+    Transformers 5 serializes the context length as ``n_positions``.  The
+    azooKey llama.cpp fork's GPT-2 converter still reads the historical
+    ``n_ctx`` key.  They describe the same value, so retaining both avoids a
+    manual edit between training and GGUF conversion.
+    """
+    config_path = model_dir / "config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if "n_ctx" not in config and "n_positions" in config:
+        config["n_ctx"] = config["n_positions"]
+        config_path.write_text(
+            json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-model", default=DEFAULT_BASE)
@@ -134,6 +152,8 @@ def main() -> int:
     parser.add_argument("--max-length", type=int, default=256)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--save-steps", type=int, default=2000)
+    parser.add_argument("--fp16", action="store_true",
+                        help="Use mixed-precision FP16 training on a compatible GPU.")
     parser.add_argument("--resume", action="store_true",
                         help="output配下の最新checkpointから学習を再開する")
     parser.add_argument("--smoke", action="store_true",
@@ -143,7 +163,7 @@ def main() -> int:
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = pick_device()
-    print(f"device={device} base={args.base_model}")
+    print(f"device={device} base={args.base_model} fp16={args.fp16}")
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     model = AutoModelForCausalLM.from_pretrained(args.base_model).to(device)
@@ -164,6 +184,7 @@ def main() -> int:
         eval_strategy="epoch" if valid_ds else "no",
         report_to=[],
         seed=args.seed,
+        fp16=args.fp16,
         use_cpu=(device == "cpu"),
     )
     trainer = Trainer(
@@ -174,8 +195,10 @@ def main() -> int:
         data_collator=lambda batch: collate(batch, tokenizer.eos_token_id),
     )
     trainer.train(resume_from_checkpoint=True if args.resume else None)
-    trainer.save_model(str(args.output / "final"))
-    tokenizer.save_pretrained(str(args.output / "final"))
+    final_dir = args.output / "final"
+    trainer.save_model(str(final_dir))
+    tokenizer.save_pretrained(str(final_dir))
+    add_legacy_gpt2_context_alias(final_dir)
 
     if valid_ds:
         metrics = trainer.evaluate()
