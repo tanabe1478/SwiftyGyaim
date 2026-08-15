@@ -83,6 +83,29 @@ ROCm 7.2（2026-01）以降でRX 9070 XT（gfx1201）が公式サポート。経
    ```
    または公開部分だけ再生成して `data/domain.jsonl` のみコピーでも同じ（`prepare_dataset.py` はseed固定で再現的）
 
+## Windows側でゼロから始めるチェックリスト
+
+Macに接続せず、Windowsマシン単体で始める場合の完全な手順。
+
+1. WSL2 + Ubuntu 24.04 とAMDドライバ（上記「環境構築」参照）
+2. リポジトリ取得:
+   ```bash
+   git clone https://github.com/tanabe1478/SwiftyGyaim.git
+   cd SwiftyGyaim
+   git checkout feature/zenz-specialized-training   # PR #93マージ前の場合
+   cd GyaimSwift/Tools/model-training
+   ```
+3. venv + ROCm版PyTorch（上記手順4）
+4. **ベンチ実行**（下記）→ examples/s を確認し判断表と照合
+5. データ:
+   - 公開データはseed固定で**Windows側だけで再現可能**（`prepare_dataset.py` を同じ引数で実行すれば
+     Macと同一のtrain/validができる）
+   - **唯一Macからの持ち込みが必要なのは `data/domain.jsonl`（69KB、ユーザーのログ由来）**。
+     scp等でコピーするか、無ければ `--domain` を外して公開データのみで学習開始してよい
+     （ドメイン混合は後からの継続学習でも追加できる）
+6. 学習実行（下記「学習の実行と引き継ぎ」）。Macで学習が走っている場合は、Windows側の
+   ベンチが十分速いことを確認してからMac側を止める（両方走らせても害はないが電力の無駄）
+
 ## ベンチマーク（採用判断は必ず実測で）
 
 新しい学習マシンでは500ステップの実測をしてから採用を決める。
