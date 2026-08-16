@@ -457,6 +457,27 @@ step 72,857まで進んでおり、最新の完全な定期保存は`checkpoint-
 処理し、約7.7 step/sへ復帰した。再開後500件のlossは0.1418で、再起動前の0.14台と連続している。
 失われたのは72,001〜72,857の857 step、約1分45秒ぶんだけであり、それ以前の学習は失われなかった。
 
+### 8.4 別用途でPCを使うための安全停止記録
+
+2026-08-16 19:32（JST）、Windowsを別用途へ空けるため、
+`runs/zenz-v2.5-full/STOP_REQUESTED`を作成して安全停止を要求した。
+学習ループは実行中のstepを完了してから停止要求を消費し、step 421,052で
+`checkpoint-421052`を保存して正常終了した。
+
+停止後、学習用Pythonプロセスが0件であることに加え、再開に必要な次のファイルを確認した。
+
+- `model.safetensors`
+- `optimizer.pt`
+- `scheduler.pt`
+- `trainer_state.json`（`global_step: 421052`）
+- `training_args.bin`
+- `rng_state.pth`
+- `dataset_state.pt`
+
+次回は8.2節と同じコマンドへ`--resume`を付けて実行する。スクリプトが
+`checkpoint-421052`を自動選択し、モデルだけでなくoptimizer、乱数、shuffle buffer、
+巨大JSONLの読取位置も復元する。
+
 進捗確認:
 
 ```powershell
