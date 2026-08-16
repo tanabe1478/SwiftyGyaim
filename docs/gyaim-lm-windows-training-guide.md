@@ -478,6 +478,16 @@ step 72,857まで進んでおり、最新の完全な定期保存は`checkpoint-
 `checkpoint-421052`を自動選択し、モデルだけでなくoptimizer、乱数、shuffle buffer、
 巨大JSONLの読取位置も復元する。
 
+2026-08-17 00:42（JST）に、同じ学習引数と`--resume`で再開した。ログは次の2ファイルに
+分け、バックグラウンドの非表示プロセスとして起動した。
+
+- `runs/zenz-v2.5-full.resume-20260817-004249.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260817-004249.stderr.log`
+
+標準出力の`restored streaming data position from ...checkpoint-421052/dataset_state.pt`と、
+進捗がstep 421,053以降へ進んだことを確認した。CUDA・FP16で約8 step/sに復帰し、
+Traceback、Out of Memory、NaNなどの重大エラーは発生していない。
+
 進捗確認:
 
 ```powershell
