@@ -488,6 +488,17 @@ step 72,857まで進んでおり、最新の完全な定期保存は`checkpoint-
 進捗がstep 421,053以降へ進んだことを確認した。CUDA・FP16で約8 step/sに復帰し、
 Traceback、Out of Memory、NaNなどの重大エラーは発生していない。
 
+### 8.5 進捗報告後の2回目の安全停止記録
+
+2026-08-17 22:19（JST）、step 1,060,876（全体の約18.0%、約3,395万件処理済み）で
+進捗を報告した後、`STOP_REQUESTED`で安全停止を要求した。実行中のstepを完了し、
+step 1,060,954で`checkpoint-1060954`を保存して正常終了した。
+
+学習用Pythonプロセスが0件になったことと、model、optimizer、scheduler、training args、
+乱数状態、trainer state、streaming dataset stateの7種類が揃っていることを確認した。
+`trainer_state.json`の`global_step`も1,060,954である。次回の`--resume`はこのcheckpointを
+自動選択するため、今回の安全停止によるstepの巻き戻りはない。
+
 進捗確認:
 
 ```powershell
