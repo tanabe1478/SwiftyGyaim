@@ -499,6 +499,16 @@ step 1,060,954で`checkpoint-1060954`を保存して正常終了した。
 `trainer_state.json`の`global_step`も1,060,954である。次回の`--resume`はこのcheckpointを
 自動選択するため、今回の安全停止によるstepの巻き戻りはない。
 
+2026-08-18 03:22（JST）に、同じ学習引数と`--resume`で2回目の再開を行った。今回は
+Python起動から最初のログまで約2分半かかったが、プロセスは応答を維持しており、03:25に
+`checkpoint-1060954/dataset_state.pt`からのデータ位置復元を確認した。その後、step 1,060,955
+以降へ進み、CUDA・FP16で学習を継続している。重大エラーは発生していない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260818-032237.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260818-032237.stderr.log`
+
 進捗確認:
 
 ```powershell
