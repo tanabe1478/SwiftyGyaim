@@ -520,6 +520,16 @@ step 1,563,801（全体の約26.5%、約5,004万件処理済み）で`checkpoint
 `trainer_state.json`の`global_step`は1,563,801であり、次回は`--resume`によってこの位置から
 巻き戻りなく再開できる。
 
+2026-08-19 01:04（JST）に`checkpoint-1563801`から3回目の再開を行った。PythonとGPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 1,563,802以降への進行を
+確認した。直後のstep 1,564,000で新しい定期checkpointも正常に保存され、その後もCUDA・FP16で
+学習を継続している。重大エラーは発生していない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260819-010442.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260819-010442.stderr.log`
+
 進捗確認:
 
 ```powershell
