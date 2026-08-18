@@ -509,6 +509,17 @@ Python起動から最初のログまで約2分半かかったが、プロセス�
 - `runs/zenz-v2.5-full.resume-20260818-032237.stdout.log`
 - `runs/zenz-v2.5-full.resume-20260818-032237.stderr.log`
 
+### 8.6 3回目の安全停止記録
+
+2026-08-18 20:24（JST）、`STOP_REQUESTED`で安全停止を要求した。実行中のstepを完了し、
+step 1,563,801（全体の約26.5%、約5,004万件処理済み）で`checkpoint-1563801`を保存して
+正常終了した。
+
+学習用Pythonプロセスが0件になったことと、model、optimizer、scheduler、training args、
+乱数状態、trainer state、streaming dataset stateがすべて揃っていることを確認した。
+`trainer_state.json`の`global_step`は1,563,801であり、次回は`--resume`によってこの位置から
+巻き戻りなく再開できる。
+
 進捗確認:
 
 ```powershell
