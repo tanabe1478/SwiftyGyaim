@@ -530,6 +530,16 @@ step 1,563,801（全体の約26.5%、約5,004万件処理済み）で`checkpoint
 - `runs/zenz-v2.5-full.resume-20260819-010442.stdout.log`
 - `runs/zenz-v2.5-full.resume-20260819-010442.stderr.log`
 
+### 8.7 進捗報告後の4回目の安全停止記録
+
+2026-08-19 20:49（JST）、step 2,148,062（全体の約36.4%、約6,874万件処理済み）、
+学習loss 0.06749、最新valid loss 0.06697と報告した後、`STOP_REQUESTED`で安全停止を
+要求した。実行中のstepを完了し、step 2,148,120で`checkpoint-2148120`を保存して正常終了した。
+
+学習用Pythonプロセスが0件になったことと、model、optimizer、scheduler、training args、
+乱数状態、trainer state、streaming dataset stateがすべて揃っていることを確認した。
+`trainer_state.json`の`global_step`は2,148,120であり、次回はこの位置から再開できる。
+
 進捗確認:
 
 ```powershell
