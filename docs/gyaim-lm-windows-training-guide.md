@@ -578,6 +578,16 @@ step 3,028,793（全体の約51.3%、約9,692万件処理済み）で`checkpoint
 乱数状態、trainer state、streaming dataset stateがすべて揃っていることを確認した。
 `trainer_state.json`の`global_step`は3,028,793であり、次回はこの位置から再開できる。
 
+2026-08-23 02:53（JST）に`checkpoint-3028793`から6回目の再開を行った。Python・GPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 3,028,794以降への進行を
+確認した。起動直後の実測速度はデータ長やPC負荷の影響で約4〜5 step/s、最初のlossは
+0.06415だった。CUDA・FP16で正常に動作し、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260823-025327.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260823-025327.stderr.log`
+
 進捗確認:
 
 ```powershell
