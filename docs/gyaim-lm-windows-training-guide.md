@@ -626,6 +626,42 @@ step 3,761,976（全体の約63.7%、約1億2,038万件処理済み）で`checkp
 - `runs/zenz-v2.5-full.resume-20260825-011520.stdout.log`
 - `runs/zenz-v2.5-full.resume-20260825-011520.stderr.log`
 
+### 8.12 2回目の電源断と破損checkpointからの復旧記録
+
+2026-08-26、Windowsの電源断後に学習プロセスが0件であることを確認した。電源断直前の
+ログはstep 4,012,224、最新ディレクトリは`checkpoint-4012000`だった。必要なファイル名は
+すべて存在したが、17:15の最初の`--resume`はoptimizer復元時に次のエラーで終了した。
+
+```text
+RuntimeError: PytorchStreamReader failed reading zip archive: failed finding central directory
+```
+
+これは`optimizer.pt`のZIP終端が電源断時に書き切られなかったことを示す。ファイルの存在や
+サイズだけでは完全性を保証できないため、一つ前の`checkpoint-4008000`について次を実際に
+読み込んで検証した。
+
+- safetensorsのmodel 148テンソル
+- optimizerとscheduler
+- RNG state
+- streaming dataset state
+
+すべて正常に読み込めたため、破損checkpointは削除せず次へ隔離した。
+
+```text
+runs/corrupt-checkpoints/checkpoint-4012000-powerloss-20260826
+```
+
+17:17に`--resume`を再実行し、`checkpoint-4008000/dataset_state.pt`からのデータ位置復元と
+step 4,008,001以降への進行を確認した。巻き戻ったのは4,224 step、135,168件であり、
+step 4,008,000以前の学習は失われていない。重大エラーはない。
+
+失敗時と成功時のログ:
+
+- `runs/zenz-v2.5-full.resume-20260826-171558.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260826-171558.stderr.log`
+- `runs/zenz-v2.5-full.resume-20260826-171739.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260826-171739.stderr.log`
+
 進捗確認:
 
 ```powershell
