@@ -662,6 +662,27 @@ step 4,008,000以前の学習は失われていない。重大エラーはない
 - `runs/zenz-v2.5-full.resume-20260826-171739.stdout.log`
 - `runs/zenz-v2.5-full.resume-20260826-171739.stderr.log`
 
+### 8.13 3回目の電源断と完全なcheckpointからの復旧記録
+
+2026-08-26 18:33:26（JST）にWindowsが予期せず停止し、2026-08-27 20:25に再起動した。
+SystemイベントにはKernel-Power 41とEventLog 6008が記録されていた。BugcheckCode、
+PowerButtonTimestamp、SleepInProgress、WHEABootErrorCountはいずれも0で、minidumpも
+存在しなかった。Windows Updateや正常なシャットダウンの記録もなく、OSから正確な原因は
+特定できないが、給電断、電源ユニットやハードウェアの保護停止、完全フリーズと整合する。
+
+電源断直前のログはstep 4,059,790、最新保存は`checkpoint-4056000`だった。2026-08-28の
+再開前に、safetensorsのmodel 148テンソル、optimizer、scheduler、RNG state、streaming
+dataset state、trainer stateを実際に読み込み、すべて正常であることを確認した。
+
+04:14に`--resume`を実行し、`checkpoint-4056000/dataset_state.pt`からのデータ位置復元と
+step 4,056,001以降への進行を確認した。巻き戻ったのは3,790 step、121,280件であり、
+step 4,056,000以前の学習は失われていない。重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260828-041444.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260828-041444.stderr.log`
+
 進捗確認:
 
 ```powershell
