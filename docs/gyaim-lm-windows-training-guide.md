@@ -694,6 +694,16 @@ model 148テンソル、optimizer、scheduler、RNG state、streaming dataset st
 stateを実際に読み込んだ。すべて正常で、`global_step`は4,312,348だった。学習用Python
 プロセスも0件であり、次回はこの位置から巻き戻りなく再開できる。
 
+2026-08-29 02:00（JST）に`checkpoint-4312348`から9回目の再開を行った。Python・GPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 4,312,349以降を
+約7 step/sで処理していることを確認した。最初のlossは0.06019で、CUDA・FP16で正常に
+動作し、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260829-020026.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260829-020026.stderr.log`
+
 進捗確認:
 
 ```powershell
