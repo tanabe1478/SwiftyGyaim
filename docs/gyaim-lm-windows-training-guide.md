@@ -683,6 +683,17 @@ step 4,056,000以前の学習は失われていない。重大エラーはない
 - `runs/zenz-v2.5-full.resume-20260828-041444.stdout.log`
 - `runs/zenz-v2.5-full.resume-20260828-041444.stderr.log`
 
+### 8.14 9回目の安全停止記録
+
+2026-08-28 21:07（JST）、`STOP_REQUESTED`で安全停止を要求した。実行中のstepを完了し、
+step 4,312,348（全体の約73.0%、約1億3,800万件処理済み）で`checkpoint-4312348`を
+保存して正常終了した。
+
+電源断による破損を早期検出できるよう、今回はファイルの存在確認に加え、safetensorsの
+model 148テンソル、optimizer、scheduler、RNG state、streaming dataset state、trainer
+stateを実際に読み込んだ。すべて正常で、`global_step`は4,312,348だった。学習用Python
+プロセスも0件であり、次回はこの位置から巻き戻りなく再開できる。
+
 進捗確認:
 
 ```powershell
