@@ -704,6 +704,22 @@ stateを実際に読み込んだ。すべて正常で、`global_step`は4,312,34
 - `runs/zenz-v2.5-full.resume-20260829-020026.stdout.log`
 - `runs/zenz-v2.5-full.resume-20260829-020026.stderr.log`
 
+### 8.15 4回目の停電と復旧記録
+
+2026-08-29の停電で学習が中断した。停電直前のログはstep 4,410,219、最新保存は
+`checkpoint-4408000`だった。再開前に、safetensorsのmodel 148テンソル、optimizer、
+scheduler、RNG state、streaming dataset state、trainer stateを実際に読み込み、すべて
+正常であることを確認した。
+
+12:05（JST）に`--resume`を実行し、`checkpoint-4408000/dataset_state.pt`からのデータ位置
+復元とstep 4,408,001以降への進行を確認した。巻き戻ったのは2,219 step、71,008件であり、
+step 4,408,000以前の学習は失われていない。CUDA・FP16で約7〜8 step/s、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260829-120557.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260829-120557.stderr.log`
+
 進捗確認:
 
 ```powershell
