@@ -731,6 +731,15 @@ RNG state、streaming dataset state、trainer stateを実際に読み込んだ�
 `global_step`は4,666,113だった。学習用Pythonプロセスも0件であり、次回はこの位置から
 巻き戻りなく再開できる。
 
+2026-08-30 01:32（JST）に`checkpoint-4666113`から10回目の再開を行った。Python・GPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 4,666,114以降を
+約7 step/sで処理していることを確認した。CUDA・FP16で正常に動作し、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260830-013249.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260830-013249.stderr.log`
+
 進捗確認:
 
 ```powershell
