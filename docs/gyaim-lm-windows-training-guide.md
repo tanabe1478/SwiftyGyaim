@@ -11,13 +11,24 @@
 ## 1. 今回作るもの
 
 gyaim-lm は、SwiftyGyaimのかな漢字変換候補を評価するための小さな言語モデルである。
-元モデル `ku-nlp/gpt2-small-japanese-char` から、次の2種類のデータを使って追加学習する。
+このプロジェクトでは、元モデル `ku-nlp/gpt2-small-japanese-char` から、次の2種類のデータを使う実験を行った。
 
 1. 公開データ: `Miwa-Keita/zenz-v2.5-dataset`
 2. ドメインデータ: SwiftyGyaimの実利用ログから抽出・redactionした変換ペア
 
 「追加学習」は、すでに日本語の文字列を扱えるモデルへ、SwiftyGyaimで重要な変換パターンを
 覚えさせる作業である。このPRではSFT（Supervised Fine-Tuning、教師あり微調整）を行う。
+
+> **2026-08-31のデータ方針:** 配布候補にする`zenz-v2.5-full`は、公開データだけで学習する。
+> SwiftyGyaimの利用ログから作った`data/domain.jsonl`、それを混ぜた`data/train.jsonl`、
+> および旧実験`runs/mixed-v1`は、今後の本学習・配布モデルの出発点にしない。
+> 個人データ由来のファイルは確認用にローカルへ残すが、明示的に方針を変更するまでは
+> 学習、評価、Hugging Faceへのアップロードに使わない。
+
+この区別は重要である。ニューラルネットワークは、一度学習した行だけを後から選んで
+取り除くことが簡単ではない。そのため個人データを混ぜたモデルから継続するのではなく、
+個人データを一度も読んでいない別runを使う。現在の`zenz-v2.5-full`は元モデルから直接開始し、
+後述の公開データ2ファイルだけを読んでいるため、最初からやり直す必要はない。
 
 学習データ1行の概念は次のとおり。
 
@@ -365,6 +376,19 @@ Windowsをゲーム、動画処理、GPUを使う開発などへ確実に空け�
 
 100万件版は全行をRAMへ読み込めたが、約1.9億件を同じ方法で扱うと32GB RAMを大きく超える。
 `--streaming`はJSONLを少しずつ読み、最大`--shuffle-buffer`件だけをメモリに置く。
+
+このrunの学習データは、次の2ファイルだけを許可する。
+
+| ファイル | 由来 | 個人利用ログ由来か |
+|---|---|---|
+| `data-full/train_wikipedia.jsonl` | `Miwa-Keita/zenz-v2.5-dataset`のWikipedia split | いいえ |
+| `data-full/train_llm-jp-corpus-v3.jsonl` | 同datasetのllm-jp corpus v3 split | いいえ |
+
+検証用の`data/valid.jsonl`も、`prepare_dataset.py`が公開データを分割した時点で作られる。
+ドメインデータをtrainへ追加する処理より前に確定するため、利用ログ由来行は入っていない。
+一方、`data/domain.jsonl`、`data/domain-valid.jsonl`、`data/train.jsonl`はこのrunでは指定しない。
+再開時には`run_manifest.json`が学習ファイルの絶対パスとサイズを照合するため、別データを
+誤って混ぜたまま同じcheckpointを再開することもできない。
 
 まず公開データ2ファイル（合計約36.5GB）を取得する。Hugging Face CLIは`.venv`内にある。
 同じコマンドを再実行すると、完了済み部分を利用してdownloadを続けられる。
@@ -739,6 +763,29 @@ RNG state、streaming dataset state、trainer stateを実際に読み込んだ�
 
 - `runs/zenz-v2.5-full.resume-20260830-013249.stdout.log`
 - `runs/zenz-v2.5-full.resume-20260830-013249.stderr.log`
+
+### 8.17 公開データ限定方針の確認と11回目の再開
+
+2026-08-31、利用状況から作ったデータを当面の学習対象から外す方針を確認した。
+`runs/zenz-v2.5-full/run_manifest.json`を調べると、このrunが指定している学習ファイルは
+`data-full/train_wikipedia.jsonl`と`data-full/train_llm-jp-corpus-v3.jsonl`だけだった。
+元モデル`ku-nlp/gpt2-small-japanese-char`から直接開始したrunであり、個人データを混ぜた
+`mixed-v1`を初期モデルとして使っていない。したがって、既学習部分を破棄して最初から
+やり直す必要はない。
+
+再開前の最新保存は`checkpoint-5276000`（全体の約89.3%、168,832,000件処理済み）だった。
+電源断などによる途中破損を見逃さないよう、model 148テンソル、optimizer、scheduler、
+RNG state、streaming dataset state、trainer stateを実際に読み込み、すべて正常であることと
+`global_step=5276000`を確認した。
+
+03:30（JST）に同じ公開データ限定コマンドへ`--resume`を付けて再開した。
+`checkpoint-5276000/dataset_state.pt`から読み取り位置を復元し、step 5,276,001以降へ
+進んでいることを確認した。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260831-033042.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260831-033042.stderr.log`
 
 進捗確認:
 
