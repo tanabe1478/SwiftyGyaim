@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from train_zenz import StreamingZenzSFTDataset
+from train_zenz import (
+    STREAMING_EXHAUSTION_MESSAGE,
+    StreamingZenzSFTDataset,
+    train_allowing_streaming_exhaustion,
+)
 
 
 class FakeTokenizer:
@@ -91,6 +95,52 @@ class StreamingZenzSFTDatasetTests(unittest.TestCase):
                 self.assertEqual((2, 6), (small_examples, large_examples))
             finally:
                 dataset.close()
+
+
+class FakeTrainer:
+    def __init__(self, error=None, global_step=123):
+        self.error = error
+        self.resume_checkpoint = None
+        self.state = type("State", (), {"global_step": global_step})()
+
+    def train(self, resume_from_checkpoint=None):
+        self.resume_checkpoint = resume_from_checkpoint
+        if self.error is not None:
+            raise self.error
+
+
+class StreamingCompletionTests(unittest.TestCase):
+    def test_streaming_exhaustion_is_treated_as_completion(self):
+        trainer = FakeTrainer(ValueError(STREAMING_EXHAUSTION_MESSAGE), global_step=99)
+
+        exhausted = train_allowing_streaming_exhaustion(
+            trainer,
+            resume_checkpoint="checkpoint-80",
+            streaming=True,
+        )
+
+        self.assertTrue(exhausted)
+        self.assertEqual("checkpoint-80", trainer.resume_checkpoint)
+
+    def test_non_streaming_exhaustion_remains_fatal(self):
+        trainer = FakeTrainer(ValueError(STREAMING_EXHAUSTION_MESSAGE))
+
+        with self.assertRaisesRegex(ValueError, "Batch does not contain"):
+            train_allowing_streaming_exhaustion(
+                trainer,
+                resume_checkpoint=None,
+                streaming=False,
+            )
+
+    def test_unrelated_streaming_value_error_remains_fatal(self):
+        trainer = FakeTrainer(ValueError("corrupt training row"))
+
+        with self.assertRaisesRegex(ValueError, "corrupt training row"):
+            train_allowing_streaming_exhaustion(
+                trainer,
+                resume_checkpoint=None,
+                streaming=True,
+            )
 
 
 if __name__ == "__main__":

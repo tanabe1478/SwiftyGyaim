@@ -55,6 +55,33 @@ INPUT_TAG = "\uEE00"
 OUTPUT_TAG = "\uEE01"
 
 DEFAULT_BASE = "ku-nlp/gpt2-small-japanese-char"
+STREAMING_EXHAUSTION_MESSAGE = (
+    "Batch does not contain any data (`None`). At the end of all iterable "
+    "data available before expected stop iteration."
+)
+
+
+def train_allowing_streaming_exhaustion(
+    trainer: Trainer,
+    resume_checkpoint: str | None,
+    streaming: bool,
+) -> bool:
+    """Run Trainer and treat verified iterable exhaustion as normal completion.
+
+    Returns True only when Transformers reports that a streaming dataset has
+    been fully consumed before max_steps. Other ValueErrors remain fatal.
+    """
+    try:
+        trainer.train(resume_from_checkpoint=resume_checkpoint)
+    except ValueError as error:
+        if not streaming or STREAMING_EXHAUSTION_MESSAGE not in str(error):
+            raise
+        print(
+            "streaming dataset exhausted after step "
+            f"{trainer.state.global_step:,}; saving final model"
+        )
+        return True
+    return False
 
 
 def build_prompt(row: dict) -> str:
@@ -560,7 +587,11 @@ def main() -> int:
         if stop_signal is not None:
             previous_handlers[stop_signal] = signal.signal(stop_signal, handle_stop_signal)
     try:
-        trainer.train(resume_from_checkpoint=resume_checkpoint)
+        train_allowing_streaming_exhaustion(
+            trainer,
+            resume_checkpoint=resume_checkpoint,
+            streaming=args.streaming,
+        )
     finally:
         for stop_signal, previous_handler in previous_handlers.items():
             signal.signal(stop_signal, previous_handler)

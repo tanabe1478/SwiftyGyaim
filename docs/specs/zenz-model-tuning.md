@@ -1,7 +1,7 @@
 # Spec: Zenz / Zenzai model tuning for SwiftyGyaim
 
 > Status: Draft
-> Last updated: 2026-07-08
+> Last updated: 2026-09-01
 > Trigger: Zenzai / zenz model investigation, GGUF model replacement, AIReranker / ZenzRuntime training workflow, pi-tinker suitability review
 
 ## 目的
@@ -348,6 +348,15 @@ Conceptual JSONL:
 ```
 
 実学習時は tokenizer / Trainer 側で `prompt` 部分の labels を `-100` にする。
+
+### 大規模streaming学習の完了条件
+
+公開JSONL全件をstreamingで学習するときは、入力ファイルごとの期待行数を指定し、実ファイルが
+途中で終わった場合はエラーにする。一方、停止・再開を繰り返したrunではTrainerのバッチ先読みと
+checkpoint保存の境界により、`max_steps = ceil(総行数 / batch size)`へ数step届く前に、検証済みの
+全streamingデータを使い切る場合がある。このときTransformersが返すデータ終端固有のValueError
+だけは正常完了として扱い、最終モデルを保存する。JSON破損、期待行数より短いファイル、その他の
+ValueErrorは引き続き異常終了させる。
 
 ### Preference data
 
