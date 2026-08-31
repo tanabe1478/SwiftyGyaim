@@ -909,11 +909,12 @@ exact matchは、生成文字列が期待値と1文字単位で完全一致し�
 60件はtrainから除外されているので、この改善はtrain行の単純な丸暗記だけを測った値ではない。
 一方、同じドメイン原本から分割した検証データなので、まったく別分野への汎化性能を表すものでもない。
 
-## 10. Hugging Faceへprivate保存する
+## 10. Hugging Faceへ安全に保存・公開する
 
 旧`tanabe1478/gyaim-lm-small`には個人データを混ぜた`mixed-v1`の履歴がある。
-公開データ限定版は履歴まで分離するため、別のprivateリポジトリ
-`tanabe1478/gyaim-lm-small-public-v1`へ保存する。
+公開データ限定版は履歴まで分離するため、別リポジトリ
+`tanabe1478/gyaim-lm-small-public-v1`へ保存する。最初はprivateで作成して内容を検証し、
+検証合格後の2026-09-01にpublicへ変更した。
 このWindows環境は作業開始時にHugging Faceへ未ログインだったため、OAuth device flowで
 認証した。tokenをコマンド履歴、ログ、Gitへ書かない。
 
@@ -984,21 +985,31 @@ $env:HF_XET_HIGH_PERFORMANCE = '1'
   .
 ```
 
-作成直後は必ずprivateにする。Hub側のファイル一覧とmodel cardを再確認してから、公開するかを
-別途判断する。CC BY-SA 4.0のbase modelを継承し、Wikipedia subsetはCC BY-SA 4.0、
+作成直後はまずprivateにする。Hub側のファイル一覧、model card、privacy、licenseを再確認してから
+publicへ変更する。CC BY-SA 4.0のbase modelを継承し、Wikipedia subsetはCC BY-SA 4.0、
 llm-jp Common Crawl subsetはODC-BYとCommon Crawl Terms of Useの対象であることを
 model cardへ明記した。
 
 ### 10.1 2026-09-01のアップロード結果
 
 - repository: [tanabe1478/gyaim-lm-small-public-v1](https://huggingface.co/tanabe1478/gyaim-lm-small-public-v1)
-- visibility: `private`（Hub APIで再確認）
+- visibility: 最初は`private`で検証し、現在は`public`（未認証APIでも再確認）
 - Hub commit: `698ad397e85e5ff7526f6c72d044b7704cdde4d2`
 - upload対象: 上記7ファイル、合計436,088,134 bytes
 - Hub上の追加ファイル: Hugging Faceが管理用に自動生成した`.gitattributes`だけ
 - `model.safetensors`: 361,816,704 bytes
 - `gyaim-lm-small-public-v1-Q5_K_M.gguf`: 73,871,808 bytes
 - 学習データ、個人利用データ、checkpoint、optimizer、log、F16 GGUF、評価case別JSONは含まない
+
+内容確認後、次のAPI操作でvisibilityだけを変更した。モデルファイルのHub commitは変わらない。
+
+```powershell
+.\.venv\Scripts\python.exe -c `
+  "from huggingface_hub import HfApi; HfApi().update_repo_settings('tanabe1478/gyaim-lm-small-public-v1', repo_type='model', private=False)"
+```
+
+検証にはtokenを使わない`HfApi(token=False)`を使用した。これで、所有者として見えているだけでなく、
+未ログインの利用者もmodel cardと全成果物を取得できる状態だと確認できる。
 
 ### 10.2 このモデルから別モデルを追加学習する
 
@@ -1029,9 +1040,9 @@ gyaim-lm-small-public-v1（親、固定）
   --fp16
 ```
 
-privateな親モデルでも、このPCはHugging Faceへ認証済みなので読み込める。別PCや共同作業者は
-親repositoryへのaccess権とログインが必要になる。ローカルの
-`runs\zenz-v2.5-full\final`を`--base-model`へ渡すこともできる。
+親モデルはpublicなので、別PCでも認証なしで読み込める。Hugging Faceのrate limitを避けたい場合や、
+子モデルをprivateにする場合はログインする。ローカルの`runs\zenz-v2.5-full\final`を
+`--base-model`へ渡すこともできる。
 
 ここでの`--resume`は使わない。`--resume`は、同じrunを停止地点から同じデータ・同じ設定で
 再開するための機能である。親モデルから新しい派生モデルを作る場合は、新しい`--output`から
@@ -1201,7 +1212,8 @@ FP16の数値範囲を超えた可能性がある。直前checkpointからFP32�
 - `data/domain.jsonl` はredaction済みだが、ユーザー語彙を含むため取り扱いに注意する
 - それ以外の `data/*`、`data-bench/`、`runs/`、`.venv/` はGit管理外
 - ドメインデータを外部GPUやpublicモデルリポジトリへ送らない
-- 学習成果物をHugging Faceへ置く場合はprivateリポジトリにする
+- 個人由来データを含む学習成果物はprivateリポジトリにする
+- 公開データ限定版は、ファイルallowlist・privacy scan・license確認後に限りpublic化を検討する
 - commit前は必ず `git status --short` で巨大なJSONLやcheckpointが入っていないことを確認する
 
 ## 14. このWindows引き継ぎで変更したもの
@@ -1222,6 +1234,6 @@ FP16の数値範囲を超えた可能性がある。直前checkpointからFP32�
 - 公開2ファイル約1.9億件だけを使う`zenz-v2.5-full`を完了（valid loss 0.05007）
 - 個人由来タグを除外した一般fixture 104件で74/104（71.15%）を確認
 - 公開データ限定版のF16/Q5_K_Mを生成し、GGUF metadataとフォーク版CLIロードを確認
-- 公開専用model cardと7ファイルを新しいprivate Hugging Face repositoryへ保存し、Hub APIで検証
+- 公開専用model cardと7ファイルを独立Hugging Face repositoryへ保存し、検証後にpublic化
 
 残作業は、Mac上でのアプリbundle差し替え・量子化後の候補順位比較・レイテンシ計測である。

@@ -456,8 +456,8 @@ Definition of done:
   - 一般fixtureは`user-dict` / `dogfood-regression` / `preference`を除外し、74/104（71.15%）
   - F16 192,132,384 bytes、Q5_K_M 73,871,808 bytes
   - Q5_K_MはGGUF V3、149 tensors、`tokenizer.ggml.pre=gpt2-small-japanese-char`でCLIロード成功
-  - public-only model cardと7ファイルを`tanabe1478/gyaim-lm-small-public-v1`へprivate保存
-  - Hub APIで`private: true`、commit `698ad397e85e5ff7526f6c72d044b7704cdde4d2`、想定ファイルとサイズを確認
+  - public-only model cardと7ファイルを`tanabe1478/gyaim-lm-small-public-v1`へ保存
+  - private状態で内容を検証後、publicへ変更。未認証APIで`private: false`、commit `698ad397e85e5ff7526f6c72d044b7704cdde4d2`、想定ファイルとサイズを確認
 - [ ] Macのテストバンドル差し替えで量子化後順位・レイテンシ・実機動作確認（手順はM4-2と同一）
 
 ### M7-4. 学習インフラの判断ガイド
