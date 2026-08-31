@@ -852,18 +852,28 @@ Get-ChildItem runs\zenz-v2.5-full\checkpoint-*
 
 学習lossだけが下がりvalid lossが悪化する場合は、trainデータを暗記する過学習の可能性がある。
 
-### 9.2 fixture 122件
+### 9.2 公開可能な一般fixture 104件
+
+元の122件fixtureには、一般的な変換ケースだけでなく、ユーザー辞書、dogfood回帰、
+利用時の選好から作ったケースも含まれる。現行モデルの公開データ限定方針に合わせ、
+`user-dict`、`dogfood-regression`、`preference`タグを持つ18件は、モデルへ渡す前に除外する。
+`--exclude-tags`は評価後の集計から消すのではなく、scoring自体を行わないための指定である。
 
 ```powershell
 .\.venv\Scripts\python.exe compare-hf-gguf.py `
   --backend hf `
-  --hf-model runs\mixed-v1\final `
-  --json
+  --hf-model runs\zenz-v2.5-full\final `
+  --exclude-tags user-dict dogfood-regression preference `
+  --output runs\zenz-v2.5-full\eval\public-general-hf.json
 ```
 
-旧`mixed-v1`のHFモデルは **84/122（68.85%）**。現行zenz-v3.1-smallの基準80/122より4件多く、
-xsmallの77/122より7件多かった。ただし差は大きくないため、量子化後とアプリ内ルール込みの
-評価も続ける。`zenz-v2.5-full`のfixture評価は次工程で別途実施する。
+`zenz-v2.5-full`のHFモデルは **74/104（71.15%）**。これは候補生成を評価する指標ではなく、
+fixtureにすでに入っている候補を条件付き平均log probabilityで並べたとき、期待候補が先頭に
+なった割合である。プロジェクト内の回帰指標なので、一般的な日本語IME精度を保証する値ではない。
+完全なcase別scoreは`runs/zenz-v2.5-full/eval/public-general-hf.json`へ保存した。
+
+参考として、旧`mixed-v1`は個人ケースを含む元fixtureで84/122だった。評価集合が異なるので、
+74/104と直接比較して優劣を判断しない。
 
 ### 9.3 domain-valid 60件
 
@@ -901,7 +911,9 @@ exact matchは、生成文字列が期待値と1文字単位で完全一致し�
 
 ## 10. Hugging Faceへprivate保存する
 
-学習済みHF形式は、`tanabe1478/gyaim-lm-small` のprivateモデルリポジトリへ置く。
+旧`tanabe1478/gyaim-lm-small`には個人データを混ぜた`mixed-v1`の履歴がある。
+公開データ限定版は履歴まで分離するため、別のprivateリポジトリ
+`tanabe1478/gyaim-lm-small-public-v1`へ置く準備をする。
 このWindows環境は作業開始時にHugging Faceへ未ログインだったため、OAuth device flowで
 認証した。tokenをコマンド履歴、ログ、Gitへ書かない。
 
@@ -910,27 +922,75 @@ exact matchは、生成文字列が期待値と1文字単位で完全一致し�
 .\.venv\Scripts\hf.exe auth whoami
 ```
 
-評価結果をmodel cardの `README.md` に記録してから、privateリポジトリを作成・アップロードする。
+評価結果をmodel cardの `README.md` に記録してから、アップロード専用directoryを作る。
+2026-09-01時点では準備までで、Hubへのuploadはまだ実行していない。
 
-```powershell
-.\.venv\Scripts\hf.exe repos create tanabe1478/gyaim-lm-small --private --exist-ok
-$env:HF_XET_HIGH_PERFORMANCE = '1'
-.\.venv\Scripts\hf.exe upload `
-  tanabe1478/gyaim-lm-small `
-  runs\mixed-v1\final `
-  .
+model cardのGit管理版:
 
-.\.venv\Scripts\hf.exe upload `
-  tanabe1478/gyaim-lm-small `
-  runs\mixed-v1\gyaim-lm-small-v1-Q5_K_M.gguf `
-  gyaim-lm-small-v1-Q5_K_M.gguf
+```text
+GyaimSwift/Tools/model-training/model-cards/gyaim-lm-small-public-v1/README.md
 ```
 
-アップロード対象は原則として `final/` のモデル、tokenizer、model cardと配布用Q5_K_Mだけにする。
-F16 GGUFはQ5_K_Mの再生成用ローカル成果物で、HF形式の元重みと内容が重複するため通常は省く。
-`data/` やdogfoodログ、途中checkpointを同じリポジトリへ誤って含めない。
+アップロード専用directory:
 
-2026-08-16の実行結果:
+```text
+runs/zenz-v2.5-full/hf-upload-public-v1/
+```
+
+このdirectoryには次の7ファイルだけを明示的にコピーした。
+
+- `README.md`
+- `config.json`
+- `generation_config.json`
+- `model.safetensors`
+- `tokenizer_config.json`
+- `tokenizer.json`
+- `gyaim-lm-small-public-v1-Q5_K_M.gguf`
+
+再作成するときも`final/`全体をそのまま指定せず、allowlistでコピーする。
+
+```powershell
+$stage = 'runs\zenz-v2.5-full\hf-upload-public-v1'
+New-Item $stage -ItemType Directory
+
+$hfFiles = @(
+  'README.md',
+  'config.json',
+  'generation_config.json',
+  'model.safetensors',
+  'tokenizer_config.json',
+  'tokenizer.json'
+)
+foreach ($name in $hfFiles) {
+  Copy-Item "runs\zenz-v2.5-full\final\$name" "$stage\$name"
+}
+Copy-Item `
+  runs\zenz-v2.5-full\gyaim-lm-small-public-v1-Q5_K_M.gguf `
+  $stage
+```
+
+合計436,088,134 bytes。`training_args.bin`はローカル実行情報を含みうるため除外した。
+F16 GGUF、評価case別JSON、学習データ、利用ログ、checkpoint、optimizerも含めていない。
+ステージングdirectoryをTransformersで再読込し、model card metadata、90,450,432 parameters、
+tokenizer 6,000語彙を確認した。token、ローカル絶対パス、個人データファイル名の文字列scanも0件。
+
+後日アップロードする場合のコマンド:
+
+```powershell
+.\.venv\Scripts\hf.exe repos create tanabe1478/gyaim-lm-small-public-v1 --private --exist-ok
+$env:HF_XET_HIGH_PERFORMANCE = '1'
+.\.venv\Scripts\hf.exe upload `
+  tanabe1478/gyaim-lm-small-public-v1 `
+  runs\zenz-v2.5-full\hf-upload-public-v1 `
+  .
+```
+
+作成直後は必ずprivateにする。Hub側のファイル一覧とmodel cardを再確認してから、公開するかを
+別途判断する。CC BY-SA 4.0のbase modelを継承し、Wikipedia subsetはCC BY-SA 4.0、
+llm-jp Common Crawl subsetはODC-BYとCommon Crawl Terms of Useの対象であることを
+model cardへ明記した。
+
+2026-08-16の旧`mixed-v1`実行結果（履歴）:
 
 - private repository: [tanabe1478/gyaim-lm-small](https://huggingface.co/tanabe1478/gyaim-lm-small)
 - `private: true` をHub APIで再確認
@@ -998,20 +1058,20 @@ azooKey converterは旧名`n_ctx`を読む。`train_zenz.py`は、同じ値を�
 
 ```powershell
 .\.venv\Scripts\python.exe -c `
-  "from pathlib import Path; from train_zenz import add_legacy_gpt2_context_alias; add_legacy_gpt2_context_alias(Path(r'runs/mixed-v1/final'))"
+  "from pathlib import Path; from train_zenz import add_legacy_gpt2_context_alias; add_legacy_gpt2_context_alias(Path(r'runs/zenz-v2.5-full/final'))"
 ```
 
 ```powershell
 .\runs\tools\.venv-convert\Scripts\python.exe `
   runs\tools\llama.cpp\convert_hf_to_gguf.py `
-  runs\mixed-v1\final `
-  --outfile runs\mixed-v1\gyaim-lm-small-v1-f16.gguf `
+  runs\zenz-v2.5-full\final `
+  --outfile runs\zenz-v2.5-full\gyaim-lm-small-public-v1-f16.gguf `
   --outtype f16 `
-  --model-name gyaim-lm-small-v1
+  --model-name gyaim-lm-small-public-v1
 
 .\runs\tools\llama.cpp\build-windows\bin\Release\llama-quantize.exe `
-  runs\mixed-v1\gyaim-lm-small-v1-f16.gguf `
-  runs\mixed-v1\gyaim-lm-small-v1-Q5_K_M.gguf `
+  runs\zenz-v2.5-full\gyaim-lm-small-public-v1-f16.gguf `
+  runs\zenz-v2.5-full\gyaim-lm-small-public-v1-Q5_K_M.gguf `
   Q5_K_M
 ```
 
@@ -1023,12 +1083,13 @@ converterログまたはGGUF metadata dumpで、`tokenizer.ggml.pre` が
 
 | ファイル | サイズ | SHA-256 |
 |---|---:|---|
-| `gyaim-lm-small-v1-f16.gguf` | 183.04 MiB | `D3A5BAC50A1D69ACB1810E93AA7ED3CD5ACB0EC66AC829E188DE947AD1C2AD09` |
-| `gyaim-lm-small-v1-Q5_K_M.gguf` | 70.26 MiB | `5F141ED09C41A918FF8D8653443BBC1D92DE1C274555BE1E3F0742A2E0C8D992` |
+| `gyaim-lm-small-public-v1-f16.gguf` | 192,132,384 bytes | `218B08CF0A995A12AF33A8F7378670A0C2465E807F25C20F9C52359A29E4F274` |
+| `gyaim-lm-small-public-v1-Q5_K_M.gguf` | 73,871,808 bytes | `F8F9180C1F751092B6298A4DF13F7E20CBF487D4F2AF6F89727605C4F4BED860` |
 
-Q5_K_MはフォークのWindows CLIでロードでき、95.06M parameters、GGUF V3、
-`tokenizer.ggml.pre=gpt2-small-japanese-char` を確認した。WindowsではSwift/macOSアプリを
-実行できないため、量子化による候補順位差、app bundle差し替え、レイテンシはMacで行う。
+Q5_K_Mはフォークcommit`88b97a4`のWindows CLIでロード・1 token推論でき、95.06M GGUF
+parameters、GGUF V3、149 tensors、Q5_K_M、`tokenizer.ggml.pre=gpt2-small-japanese-char`
+を確認した。Windowsの通常`llama-cpp-python`はこのpre-tokenizerを扱えないため、量子化後の
+104件ランキング比較、app bundle差し替え、レイテンシは対応フォークを使うMac工程で行う。
 
 ## 12. よく出る警告と対処
 
@@ -1082,7 +1143,11 @@ FP16の数値範囲を超えた可能性がある。直前checkpointからFP32�
 - `evaluate_domain_valid.py` を追加し、学習前0/60から学習後50/60への改善を確認
 - fixture 122件で84/122を確認（現行small基準80/122）
 - Transformers 5とconverterの`n_positions` / `n_ctx`互換差を学習スクリプトで吸収
-- F16 GGUFとQ5_K_M GGUFを生成し、フォークのWindows CLIでロードを確認
-- HFモデル・tokenizer・model card・Q5_K_MをHugging Faceへprivateアップロード
+- 旧mixed-v1のF16 GGUFとQ5_K_M GGUFを生成し、private Hugging Faceへ保存
+- 公開2ファイル約1.9億件だけを使う`zenz-v2.5-full`を完了（valid loss 0.05007）
+- 個人由来タグを除外した一般fixture 104件で74/104（71.15%）を確認
+- 公開データ限定版のF16/Q5_K_Mを生成し、GGUF metadataとフォーク版CLIロードを確認
+- 公開専用model cardと7ファイルのprivate-upload stagingを準備（Hub uploadは未実施）
 
-残作業は、Mac上でのアプリbundle差し替え・量子化後の候補順位比較・レイテンシ計測である。
+残作業は、Mac上でのアプリbundle差し替え・量子化後の候補順位比較・レイテンシ計測と、
+確認後の新しいprivate Hugging Faceリポジトリへのuploadである。

@@ -54,6 +54,15 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
     return cases
 
 
+def exclude_cases_by_tags(
+    cases: list[dict[str, Any]], excluded_tags: list[str]
+) -> list[dict[str, Any]]:
+    excluded = set(excluded_tags)
+    if not excluded:
+        return cases
+    return [case for case in cases if excluded.isdisjoint(case.get("tags", []))]
+
+
 def build_prompt(case: dict[str, Any], *, context_mode: str) -> str:
     prompt = ""
     context = (case.get("context") or "").strip() if context_mode == "fixture" else ""
@@ -165,10 +174,24 @@ def main() -> int:
     parser.add_argument("--gguf", type=Path, default=DEFAULT_GGUF)
     parser.add_argument("--context-mode", choices=["fixture", "none"], default="fixture")
     parser.add_argument("--limit", type=int, default=0, help="Evaluate only the first N cases (0 = all).")
+    parser.add_argument(
+        "--exclude-tags",
+        nargs="*",
+        default=[],
+        help="Skip cases containing any of these tags before scoring.",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Write the full JSON report to this path.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     cases = load_cases(args.fixture)
+    source_case_count = len(cases)
+    cases = exclude_cases_by_tags(cases, args.exclude_tags)
+    excluded_case_count = source_case_count - len(cases)
     if args.limit > 0:
         cases = cases[: args.limit]
 
@@ -205,7 +228,10 @@ def main() -> int:
 
     summary: dict[str, Any] = {
         "fixture": str(args.fixture),
+        "sourceCases": source_case_count,
         "cases": len(cases),
+        "excludedCases": excluded_case_count,
+        "excludedTags": args.exclude_tags,
         "contextMode": args.context_mode,
         "top1": {name: {"hits": hits, "rate": round(hits / len(cases), 4) if cases else None}
                  for name, hits in top1_hits.items()},
@@ -215,10 +241,16 @@ def main() -> int:
         summary["meanKendallTauDistance"] = round(tau_total / len(cases), 4) if cases else None
 
     output = {"summary": summary, "cases": per_case}
+    rendered_output = json.dumps(output, ensure_ascii=False, indent=2)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered_output + "\n", encoding="utf-8")
     if args.json:
-        print(json.dumps(output, ensure_ascii=False, indent=2))
+        print(rendered_output)
     else:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
+        if args.output:
+            print(f"full report: {args.output}")
         disagreements = [entry for entry in per_case if entry.get("top1Agree") is False]
         if disagreements:
             print("\n## top1 disagreements")

@@ -451,6 +451,12 @@ Definition of done:
 - [x] Q5_K_M量子化
 - [x] HFモデル・tokenizer・model card・Q5_K_Mを`tanabe1478/gyaim-lm-small`へprivate保存
   - Hub APIで`private: true`と、データ・checkpointが含まれないファイル一覧を確認
+- [x] 2026-09-01: 公開データ限定`zenz-v2.5-full`のHF評価とGGUF化
+  - valid loss 0.05007、perplexity 1.05
+  - 一般fixtureは`user-dict` / `dogfood-regression` / `preference`を除外し、74/104（71.15%）
+  - F16 192,132,384 bytes、Q5_K_M 73,871,808 bytes
+  - Q5_K_MはGGUF V3、149 tensors、`tokenizer.ggml.pre=gpt2-small-japanese-char`でCLIロード成功
+  - public-only model cardと7ファイルのupload stagingを作成。新しいprivate repoへのupload自体は未実施
 - [ ] Macのテストバンドル差し替えで量子化後順位・レイテンシ・実機動作確認（手順はM4-2と同一）
 
 ### M7-4. 学習インフラの判断ガイド

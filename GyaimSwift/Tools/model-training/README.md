@@ -18,7 +18,7 @@ Windowsでの実測を含む初心者向け手順は
 build_sft_dataset.py   ~/.gyaim/gyaim.log → ドメインJSONL（ユーザーの実変換ペア）
 prepare_dataset.py     zenz-v2.5-dataset(公開1.9億ペア)をストリーミングサンプル + ドメイン混合
 train_zenz.py          HF Trainerで学習（MPS/CUDA(ROCm含む)/CPU自動選択、--resume対応）
-compare-hf-gguf.py     eval fixture 122件でスコアリング品質を比較
+compare-hf-gguf.py     eval fixtureでHF/GGUFスコアリング品質を比較（タグ除外対応）
 ```
 
 公開データから再生成するsplitとcheckpointは `data/` と `runs/` でgitignoreする。
@@ -138,17 +138,22 @@ nohup ./.venv/bin/python3 train_zenz.py --train data/train.jsonl --valid data/va
 ## 評価（学習後）
 
 ```bash
-# fixture 122件でのスコアリング品質（現行 zenz-v3.1-small は 80/122）
-./.venv/bin/python3 compare-hf-gguf.py --backend hf --hf-model runs/mixed-v1/final --json
+# 公開可能な一般fixtureだけでスコアリング品質を測る
+./.venv/bin/python3 compare-hf-gguf.py \
+  --backend hf \
+  --hf-model runs/zenz-v2.5-full/final \
+  --exclude-tags user-dict dogfood-regression preference \
+  --output runs/zenz-v2.5-full/eval/public-general-hf.json
 
 # ドメイン検証（ユーザー語彙60件のexact match）
 ./.venv/bin/python3 evaluate_domain_valid.py \
   --model runs/mixed-v1/final --data data/domain-valid.jsonl --json
 ```
 
-2026-08-16 Windows実測: mixed-v1はvalid loss 0.1167、domain-valid 50/60、
-fixture 84/122。Q5_K_M GGUFは70.26 MiB。詳細とWindows用コマンドは
-`docs/gyaim-lm-windows-training-guide.md`を参照。
+2026-09-01 Windows実測: 公開データ限定`zenz-v2.5-full`はvalid loss 0.05007、
+public-general fixture 74/104（71.15%）。Q5_K_M GGUFは73,871,808 bytesで、
+対応フォークのCLIからロードできる。詳細とWindows用コマンドは
+`docs/gyaim-lm-windows-training-guide.md`を参照。旧`mixed-v1`とdomain評価は履歴としてのみ残す。
 
 GGUF化: 素のllama.cppは pre-tokenizer `gpt2-small-japanese-char` を知らないため
 （M4-2の知見）、変換時に `tokenizer.ggml.pre` の扱いを検証すること。同梱llama.cppフォークは対応済み。
