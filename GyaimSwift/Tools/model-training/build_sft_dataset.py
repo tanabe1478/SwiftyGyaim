@@ -115,6 +115,9 @@ def main() -> int:
     parser.add_argument("--romakana", type=Path, default=ROMAKANA_SWIFT)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--no-redact", action="store_true")
+    parser.add_argument("--merge", action="store_true", default=True,
+                        help="出力先の既存JSONLと統合する（ログローテーションによる履歴消失を防ぐ。既定ON）")
+    parser.add_argument("--no-merge", dest="merge", action="store_false")
     parser.add_argument("--exclude-regex", default=None,
                         help="このパターンに一致する行（文脈・表記）を除外する（人名等の手動除外用）")
     parser.add_argument("--max-context", type=int, default=40)
@@ -156,6 +159,13 @@ def main() -> int:
         rows.append({"input": katakana, "output": word, "left_context": context})
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    if args.merge and args.output.exists():
+        existing = [json.loads(l) for l in open(args.output, encoding="utf-8") if l.strip()]
+        current = {(r["input"], r["output"], r.get("left_context")) for r in rows}
+        carried = [r for r in existing
+                   if (r["input"], r["output"], r.get("left_context")) not in current]
+        rows = carried + rows
+        stats["merged-from-existing"] = len(carried)
     with open(args.output, "w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
