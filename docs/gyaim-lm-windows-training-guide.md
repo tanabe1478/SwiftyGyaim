@@ -787,6 +787,47 @@ RNG state、streaming dataset state、trainer stateを実際に読み込み、�
 - `runs/zenz-v2.5-full.resume-20260831-033042.stdout.log`
 - `runs/zenz-v2.5-full.resume-20260831-033042.stderr.log`
 
+### 8.18 データ終端エラーの修正と全件学習の完了
+
+2026-09-01 00:39（JST）ごろ、学習はstep 5,905,652 / 5,905,667（99.9997%）まで
+到達したが、入力データを使い切った時点でTransformersが`Batch does not contain any data`
+を返し、`final/`を保存せず終了した。OOM、NaN、モデル破損ではなく、停止・再開時のバッチ
+先読みとcheckpoint保存の境界によって、予定step数と残データ数に小さな差が生じたものだった。
+
+`train_zenz.py`を修正し、次の条件をすべて満たす場合だけ正常完了として最終保存へ進めるようにした。
+
+1. `--streaming`で実行している
+2. 入力側の期待行数チェックを通過して全データを使い切っている
+3. Transformersのデータ終端固有エラーと完全に一致する
+
+ファイルが期待行数より短い場合、JSONが壊れている場合、非streamingの場合、別のValueErrorは
+引き続き異常終了する。例外を広く無視する修正ではない。`StreamingCompletionTests`に正常終端、
+非streaming、無関係なValueErrorの3ケースを追加し、既存2テストと合わせて5件すべて通過した。
+修正コミットは`bae9a42`。
+
+再開前に`checkpoint-5904000`のmodel 148テンソル、optimizer、scheduler、RNG state、
+streaming dataset state、trainer stateを実際に読み込み、破損がないことを確認した。
+01:05（JST）に公開データ2ファイル限定のまま再開し、約3分34秒後のstep 5,905,651で
+検証済みデータの終端を検出して`runs/zenz-v2.5-full/final/`を保存した。
+
+停止・再開境界でoptimizer更新に使われなかった行は最大510件で、188,981,342件の
+約0.00027%である。全体規模に対する影響は無視できるほど小さく、数日間の学習を最初から
+やり直す必要はない。
+
+完了確認:
+
+- validation loss: `0.05007`
+- perplexity: `1.05`
+- final model: 90,450,432 parameters、148 tensors
+- `model.safetensors` SHA-256: `49DAA42672E98C0BD4DE020256BEAFF0295C8526711D6DFC200AE9A5B4F2D596`
+- `AutoModelForCausalLM` / `AutoTokenizer`で再読込成功
+- 学習用Pythonプロセス: 0件
+
+最終再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260901-010525.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260901-010525.stderr.log`
+
 進捗確認:
 
 ```powershell
@@ -797,15 +838,17 @@ Get-ChildItem runs\zenz-v2.5-full\checkpoint-*
 
 ## 9. 学習後の評価
 
-評価は「loss」「一般fixture」「ドメインexact match」の3方向から見る。
+公開データ限定の現行モデルは「loss」と「一般fixture」で評価する。以下のdomain exact matchは
+個人利用ログを使った旧`mixed-v1`実験の記録であり、現行`zenz-v2.5-full`の評価には使わない。
 
 ### 9.1 valid loss
 
-`train_zenz.py` は学習終了後にvalid 5,000件を評価する。今回の結果は次のとおり。
+`train_zenz.py` は学習終了後に公開データ由来のvalid 5,000件を評価する。
 
-```text
-valid loss=0.1167 ppl=1.12
-```
+| モデル | 学習規模 | valid loss | perplexity |
+|---|---:|---:|---:|
+| 旧`mixed-v1` | 約101万件（個人データ混合） | 0.1167 | 1.12 |
+| `zenz-v2.5-full` | 約1.9億件（公開データ限定） | **0.05007** | **1.05** |
 
 学習lossだけが下がりvalid lossが悪化する場合は、trainデータを暗記する過学習の可能性がある。
 
@@ -818,9 +861,9 @@ valid loss=0.1167 ppl=1.12
   --json
 ```
 
-今回のHFモデルは **84/122（68.85%）**。現行zenz-v3.1-smallの基準80/122より4件多く、
+旧`mixed-v1`のHFモデルは **84/122（68.85%）**。現行zenz-v3.1-smallの基準80/122より4件多く、
 xsmallの77/122より7件多かった。ただし差は大きくないため、量子化後とアプリ内ルール込みの
-評価も続ける。
+評価も続ける。`zenz-v2.5-full`のfixture評価は次工程で別途実施する。
 
 ### 9.3 domain-valid 60件
 
