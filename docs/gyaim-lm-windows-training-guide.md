@@ -913,7 +913,7 @@ exact matchは、生成文字列が期待値と1文字単位で完全一致し�
 
 旧`tanabe1478/gyaim-lm-small`には個人データを混ぜた`mixed-v1`の履歴がある。
 公開データ限定版は履歴まで分離するため、別のprivateリポジトリ
-`tanabe1478/gyaim-lm-small-public-v1`へ置く準備をする。
+`tanabe1478/gyaim-lm-small-public-v1`へ保存する。
 このWindows環境は作業開始時にHugging Faceへ未ログインだったため、OAuth device flowで
 認証した。tokenをコマンド履歴、ログ、Gitへ書かない。
 
@@ -923,7 +923,6 @@ exact matchは、生成文字列が期待値と1文字単位で完全一致し�
 ```
 
 評価結果をmodel cardの `README.md` に記録してから、アップロード専用directoryを作る。
-2026-09-01時点では準備までで、Hubへのuploadはまだ実行していない。
 
 model cardのGit管理版:
 
@@ -974,7 +973,7 @@ F16 GGUF、評価case別JSON、学習データ、利用ログ、checkpoint、opt
 ステージングdirectoryをTransformersで再読込し、model card metadata、90,450,432 parameters、
 tokenizer 6,000語彙を確認した。token、ローカル絶対パス、個人データファイル名の文字列scanも0件。
 
-後日アップロードする場合のコマンド:
+アップロードに使ったコマンド:
 
 ```powershell
 .\.venv\Scripts\hf.exe repos create tanabe1478/gyaim-lm-small-public-v1 --private --exist-ok
@@ -989,6 +988,82 @@ $env:HF_XET_HIGH_PERFORMANCE = '1'
 別途判断する。CC BY-SA 4.0のbase modelを継承し、Wikipedia subsetはCC BY-SA 4.0、
 llm-jp Common Crawl subsetはODC-BYとCommon Crawl Terms of Useの対象であることを
 model cardへ明記した。
+
+### 10.1 2026-09-01のアップロード結果
+
+- repository: [tanabe1478/gyaim-lm-small-public-v1](https://huggingface.co/tanabe1478/gyaim-lm-small-public-v1)
+- visibility: `private`（Hub APIで再確認）
+- Hub commit: `698ad397e85e5ff7526f6c72d044b7704cdde4d2`
+- upload対象: 上記7ファイル、合計436,088,134 bytes
+- Hub上の追加ファイル: Hugging Faceが管理用に自動生成した`.gitattributes`だけ
+- `model.safetensors`: 361,816,704 bytes
+- `gyaim-lm-small-public-v1-Q5_K_M.gguf`: 73,871,808 bytes
+- 学習データ、個人利用データ、checkpoint、optimizer、log、F16 GGUF、評価case別JSONは含まない
+
+### 10.2 このモデルから別モデルを追加学習する
+
+可能である。これはゼロからの学習ではなく、`gyaim-lm-small-public-v1`の重みを初期値として
+さらに教師あり学習する「継続fine-tuning」に当たる。親モデルは変更せず、run directoryと
+Hugging Face repositoryを毎回分ける。
+
+```text
+gyaim-lm-small-public-v1（親、固定）
+  └─ 追加データでfine-tuning
+       └─ gyaim-lm-small-programming-v2（子、別モデルの例）
+```
+
+小規模な追加データを使う例。`programming`の部分は`conversion-review`など、何を
+学習させたモデルか分かる名前に置き換える。
+
+```powershell
+.\.venv\Scripts\python.exe train_zenz.py `
+  --base-model tanabe1478/gyaim-lm-small-public-v1 `
+  --train data-child\train.jsonl `
+  --valid data-child\valid.jsonl `
+  --output runs\gyaim-lm-small-programming-v2 `
+  --epochs 1 `
+  --batch-size 32 `
+  --max-length 192 `
+  --lr 1e-5 `
+  --save-steps 2000 `
+  --fp16
+```
+
+privateな親モデルでも、このPCはHugging Faceへ認証済みなので読み込める。別PCや共同作業者は
+親repositoryへのaccess権とログインが必要になる。ローカルの
+`runs\zenz-v2.5-full\final`を`--base-model`へ渡すこともできる。
+
+ここでの`--resume`は使わない。`--resume`は、同じrunを停止地点から同じデータ・同じ設定で
+再開するための機能である。親モデルから新しい派生モデルを作る場合は、新しい`--output`から
+開始する。派生モデルの学習を途中停止した後に限り、その派生runと同じ引数へ`--resume`を足す。
+
+追加データだけを何度も学習すると、元モデルが持っていた一般的な変換能力を忘れる
+「破滅的忘却」が起こりうる。そのため次を守る。
+
+1. 親モデルと子モデルを同じ固定fixture・validationで比較する
+2. 狭い追加データだけで悪化する場合は、元の公開データの一部をreplay用として混ぜる
+3. まず小さなlearning rateと1 epochから試し、改善を確認してから増やす
+4. 個人利用データは、明示的に採用すると決めるまではtrainへ入れない
+5. 子モデルのmodel cardに親モデルID、追加データ、license、評価値、privacy範囲を記録する
+
+子モデルを保存するときも、親repositoryへ上書きせず別repositoryを作る。アップロード前に
+10章と同じallowlist方式で`hf-upload` directoryを作り、不要な学習状態やデータがないことを確認する。
+
+```powershell
+.\.venv\Scripts\hf.exe repos create `
+  tanabe1478/gyaim-lm-small-programming-v2 --private
+
+.\.venv\Scripts\hf.exe upload `
+  tanabe1478/gyaim-lm-small-programming-v2 `
+  runs\gyaim-lm-small-programming-v2\hf-upload `
+  .
+```
+
+子モデルのmodel cardでは、少なくとも次のmetadataを設定する。
+
+```yaml
+base_model: tanabe1478/gyaim-lm-small-public-v1
+```
 
 2026-08-16の旧`mixed-v1`実行結果（履歴）:
 
@@ -1147,7 +1222,6 @@ FP16の数値範囲を超えた可能性がある。直前checkpointからFP32�
 - 公開2ファイル約1.9億件だけを使う`zenz-v2.5-full`を完了（valid loss 0.05007）
 - 個人由来タグを除外した一般fixture 104件で74/104（71.15%）を確認
 - 公開データ限定版のF16/Q5_K_Mを生成し、GGUF metadataとフォーク版CLIロードを確認
-- 公開専用model cardと7ファイルのprivate-upload stagingを準備（Hub uploadは未実施）
+- 公開専用model cardと7ファイルを新しいprivate Hugging Face repositoryへ保存し、Hub APIで検証
 
-残作業は、Mac上でのアプリbundle差し替え・量子化後の候補順位比較・レイテンシ計測と、
-確認後の新しいprivate Hugging Faceリポジトリへのuploadである。
+残作業は、Mac上でのアプリbundle差し替え・量子化後の候補順位比較・レイテンシ計測である。
