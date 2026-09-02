@@ -1237,3 +1237,42 @@ FP16の数値範囲を超えた可能性がある。直前checkpointからFP32�
 - 公開専用model cardと7ファイルを独立Hugging Face repositoryへ保存し、検証後にpublic化
 
 残作業は、Mac上でのアプリbundle差し替え・量子化後の候補順位比較・レイテンシ計測である。
+
+## 15. 2026-09-02のSSD整理
+
+Cドライブの空き容量が少なくなったため、今後の追加学習とMac実機評価に必要な成果物を
+先に定義し、それ以外の再生成・再取得可能なファイルだけを削除した。
+
+削除したもの:
+
+- 中断されたHugging Face downloadの`.incomplete` 3件（35.689 GiB）
+- benchmark、smoke、resume検証で生成した古いrun directory
+- 旧`mixed-v1`のローカルrun（private Hub repositoryから再取得可能）
+- 完了済み`zenz-v2.5-full`の最後のcheckpoint 2件
+- Hub upload用staging directory
+- Q5_K_M生成後の中間F16 GGUF
+- 完了済み学習・downloadの標準出力・標準エラーログ
+
+削除対象の論理サイズは合計56.092 GiB。古いtest runはソースコード上のtestやfixtureではなく、
+test実行時に生成されたモデル重み・optimizerであり、必要なら同じscriptから再生成できる。
+削除後、`model-training`全体は約98.3 GiBから約42.2 GiBになった。
+
+残したもの:
+
+- 公開学習データ本体: Wikipediaとllm-jp（合計約34.0 GiB）
+- `zenz-v2.5-full/final`: 今後のfine-tuning元になるHF形式モデル
+- Q5_K_M GGUF: Macアプリ実機評価用
+- 一般fixture評価結果とrun manifest
+- `.venv`: Windows GPU学習環境
+- `runs/tools`: 対応llama.cpp converter/runtime
+- `data`、`data-bench`: validationと再評価用の小さいデータ
+- Git管理中のscript、test、model card、ドキュメント
+
+整理後にHF重みとQ5_K_MのSHA-256を再計算し、アップロード時の値と一致することを確認した。
+また、Hugging Face上の現行publicモデルと旧privateモデルの双方に`model.safetensors`があることも
+削除前に確認した。
+
+Windowsが報告した空き容量は87.43 GiBから473.22 GiBへ増えた。選定した削除対象の論理サイズ
+56.092 GiBより変化が大きいため、残りはファイル削除そのものではなく、遅延していたストレージ
+集計や別の一時領域の解放が同時に反映された可能性がある。今回の作業による回収量としては
+検証可能な56.092 GiBを記録値とする。
