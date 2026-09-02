@@ -5,6 +5,7 @@ enum GyaimSettings {
 
     private static let knownKeys = [
         "loggingEnabled",
+        "customModelPath",
         "candidateDisplayMode",
         "studyDictEvictionMode",
         "studyHiraganaEnabled",

@@ -13,6 +13,31 @@ final class BundledAIRerankModel {
     static let modelFilename = "ggml-model-Q5_K_M"
     static let modelExtension = "gguf"
 
+    /// カスタムモデルのGGUF絶対パス（settings.json / UserDefaults）。
+    /// 設定があり実在すれば同梱モデルより優先する。空なら同梱モデル。
+    /// 反映はIMEプロセスの次回起動時（モデルは起動後1回だけmmapされるため）。
+    static let customModelPathKey = "customModelPath"
+
+    static func customModelURL() -> URL? {
+        guard let path = GyaimSettings.string(forKey: customModelPathKey),
+              !path.isEmpty else { return nil }
+        let expanded = (path as NSString).expandingTildeInPath
+        guard FileManager.default.fileExists(atPath: expanded) else {
+            Log.config.warning("customModelPath not found, falling back to bundled: \(expanded)")
+            return nil
+        }
+        return URL(fileURLWithPath: expanded)
+    }
+
+    /// ログ・rerank応答に載せるモデルラベル。カスタム時はファイル名由来。
+    /// dogfoodログの model= フィールドでモデル別のA/B集計ができる。
+    static var activeModelLabel: String {
+        if let custom = customModelURL() {
+            return "custom-" + custom.deletingPathExtension().lastPathComponent
+        }
+        return "bundled-zenz-v3.1-small"
+    }
+
     private let lock = NSLock()
     private var mappedData: Data?
     private(set) var modelURL: URL?
@@ -53,9 +78,10 @@ final class BundledAIRerankModel {
     }
 
     static func resolveModelURL(bundle: Bundle = .main) -> URL? {
-        bundle.url(forResource: modelFilename,
-                   withExtension: modelExtension,
-                   subdirectory: modelDirectory)
+        if let custom = customModelURL() { return custom }
+        return bundle.url(forResource: modelFilename,
+                          withExtension: modelExtension,
+                          subdirectory: modelDirectory)
             ?? bundle.url(forResource: modelFilename, withExtension: modelExtension)
     }
 }
