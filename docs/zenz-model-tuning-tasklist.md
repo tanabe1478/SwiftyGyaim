@@ -472,10 +472,11 @@ cd GyaimSwift/Tools/model-training
 ./.venv/bin/python3 - <<'PY'
 import json, random
 random.seed(42)
-valid_keys = {(r['input'], r['output'], r.get('left_context'))
+# リーク防止: validの(読み,出力)キーに一致する行は文脈違いも含め全て学習から除外する
+valid_keys = {(r['input'], r['output'])
               for r in map(json.loads, open('data/domain-valid.jsonl'))}
 domain = [r for r in map(json.loads, open('data/domain.jsonl'))
-          if (r['input'], r['output'], r.get('left_context')) not in valid_keys]
+          if (r['input'], r['output']) not in valid_keys]
 replay = random.sample(open('data/train.jsonl').readlines(), 60000)
 rows = [json.dumps(r, ensure_ascii=False) + '\n' for r in domain * 20] + replay
 random.shuffle(rows)
@@ -490,7 +491,8 @@ PY
 
 合格基準（v1実測との比較）:
 - fixture 122件: v1 = 82/122 以上（`compare-hf-gguf.py --backend hf --hf-model runs/gyaim-lm-small-v2/final`）
-- domain-valid 60件 exact match: v1 = 56/60 を上回ること
+- domain-valid 60件 exact match: v1 = **55/60**（2026-09-05にリークなし分割へ再構築後の再測定値。
+  旧56/60は旧分割の値で比較に使わない）を上回ること
 - dogfood弱点の解消: `kinou`→機能、`mitumori`→見積もり
 - 学習成果はHF privateへ（ドメインデータ込みのため公開不可）。GGUF Q5_K_M化→
   Mac側は `~/.gyaim/models/` に置き `customModelPath` 書き換え+IME再起動のみで切替
