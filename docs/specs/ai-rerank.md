@@ -384,9 +384,11 @@ Tools/ai-rerank/evaluate-reranker.py \
 同梱zenzと自前モデル（gyaim-lm等）を設定で切り替えられる。
 
 - 設定キー `customModelPath`（settings.json / UserDefaults、GGUF絶対パス。`~`展開可）
-- パスが設定され実在すれば `BundledAIRerankModel.resolveModelURL` が同梱モデルより優先して返す。
-  実在しなければ警告ログを出して同梱 zenz-v3.1-small にフォールバック
+- 同梱モデルは **gyaim-lm-small-public-v1**（公開データのみで学習・再配布可、Q5_K_M 70MB）。
+  customModelPath が未設定・不在の場合はこの同梱モデルにフォールバックする
+- customModelPath は**ドメインデータ入りprivateモデル（gyaim-lm v2以降）用**。
+  privateモデルは同梱・コミットしない
 - モデルは起動時に1回だけmmapされるため、**反映はIMEプロセスの再起動時**
 - ログ・rerank応答の model= ラベルはカスタム時 `custom-<ファイル名>`、同梱時
-  `bundled-zenz-v3.1-small`。dogfoodログでモデル別のA/B集計ができる
+  `bundled-gyaim-lm-small-public-v1`。dogfoodログでモデル別のA/B集計ができる
 - 検証: ModelSelectionTests（選択・フォールバック・ラベル・チルダ展開）

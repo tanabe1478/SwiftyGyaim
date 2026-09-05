@@ -21,9 +21,9 @@ final class ModelSelectionTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDefaultUsesBundledLabel() {
+    func testDefaultUsesBundledGyaimLM() {
         XCTAssertNil(BundledAIRerankModel.customModelURL())
-        XCTAssertEqual(BundledAIRerankModel.activeModelLabel, "bundled-zenz-v3.1-small")
+        XCTAssertEqual(BundledAIRerankModel.activeModelLabel, "bundled-gyaim-lm-small-public-v1")
     }
 
     func testCustomPathPreferredWhenFileExists() {
@@ -38,8 +38,7 @@ final class ModelSelectionTests: XCTestCase {
     func testMissingCustomPathFallsBackToBundled() {
         UserDefaults.standard.set("/nonexistent/model.gguf", forKey: BundledAIRerankModel.customModelPathKey)
         XCTAssertNil(BundledAIRerankModel.customModelURL())
-        XCTAssertEqual(BundledAIRerankModel.activeModelLabel, "bundled-zenz-v3.1-small")
-        // テストバンドルには同梱GGUFが含まれるため、fallback解決が非nilであること
+        XCTAssertEqual(BundledAIRerankModel.activeModelLabel, "bundled-gyaim-lm-small-public-v1")
         XCTAssertNotNil(BundledAIRerankModel.resolveModelURL(bundle: Bundle(for: type(of: self))))
     }
 

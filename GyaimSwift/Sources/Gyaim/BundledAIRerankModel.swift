@@ -9,7 +9,7 @@ import Foundation
 final class BundledAIRerankModel {
     static let shared = BundledAIRerankModel()
 
-    static let modelDirectory = "Models/zenz-v3.1-small-gguf"
+    static let modelDirectory = "Models/gyaim-lm-small-public-v1-gguf"
     static let modelFilename = "ggml-model-Q5_K_M"
     static let modelExtension = "gguf"
 
@@ -31,11 +31,13 @@ final class BundledAIRerankModel {
 
     /// ログ・rerank応答に載せるモデルラベル。カスタム時はファイル名由来。
     /// dogfoodログの model= フィールドでモデル別のA/B集計ができる。
+    /// 同梱は公開データのみで学習した gyaim-lm-small-public-v1（再配布可）。
+    /// customModelPath はドメインデータ入りのprivateモデル（v2以降）用。
     static var activeModelLabel: String {
         if let custom = customModelURL() {
             return "custom-" + custom.deletingPathExtension().lastPathComponent
         }
-        return "bundled-zenz-v3.1-small"
+        return "bundled-gyaim-lm-small-public-v1"
     }
 
     private let lock = NSLock()

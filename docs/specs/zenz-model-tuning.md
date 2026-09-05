@@ -6,7 +6,7 @@
 
 ## 目的
 
-SwiftyGyaim に同梱している `zenz-v3.1-small-gguf`（2026-08-15にxsmallから切替、M4-2の実測に基づく）を、SwiftyGyaim の候補生成・候補順位付けに合う形で評価・チューニングするための仕様を定義する。
+SwiftyGyaim で使うモデル（2026-09-05以降は同梱を廃止し、`customModelPath` で指定する外部GGUF。既定は自前の gyaim-lm）を、SwiftyGyaim の候補生成・候補順位付けに合う形で評価・チューニングするための仕様を定義する。
 
 この仕様の主目的は「すぐ fine-tuning すること」ではなく、以下を順番に固定することである。
 
