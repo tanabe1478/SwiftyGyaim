@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-08-03 (同音異義語レビューから記号のみ候補を除外 BUG-031)
+> Last updated: 2026-09-05 (customModelPathによるモデル選択を追加)
 
 ## 概要
 
@@ -313,7 +313,7 @@ preference data（M6-1）は `extract-preference-pairs.py` で抽出する。確
 
 feature weight の学習には `train-fast-context-weights.py` を使う。eval fixture（または同スキーマのpreference JSONL）から `expectedTop` vs 他候補の pairwise logistic regression で feature multiplier を学習し（1.0初期値・1.0方向へL2正則化・非負クランプ）、`--feature-weight` 引数として出力する。`model-required` タグ（heuristic featureでは解けない文脈依存同音異義語）は既定で学習から除外する。
 
-量子化の影響は `Tools/zenz-tuning/compare-hf-gguf.py`（M4-1）で計測する。HF非量子化モデルと GGUF Q5_K_M を同じ eval fixture・同じ条件付き平均logprob scoringで比較し、top1一致率・Kendall tau距離を出す（transformers / llama-cpp-python は backend別 opt-in 依存）。
+量子化の影響は `Tools/model-training/compare-hf-gguf.py`（M4-1）で計測する。HF非量子化モデルと GGUF Q5_K_M を同じ eval fixture・同じ条件付き平均logprob scoringで比較し、top1一致率・Kendall tau距離を出す（transformers / llama-cpp-python は backend別 opt-in 依存）。
 
 実ログから、azooKey の `anco evaluate` と同様に query / answer / outputs / rank を評価するデータを作る。SwiftyGyaim 内部ループでは JSONL を使い、azooKey 側との比較には `--azookey-json` で `anco evaluate` 互換JSONも出力できる。ログの確定結果を学習辞書として再生する場合は `--study-dict` で SwiftyGyaim study TSV を作る。
 
@@ -377,3 +377,18 @@ Tools/ai-rerank/evaluate-reranker.py \
 - app bundle / profile / 直近確定語を context に追加
 - rerank 前後とユーザー選択結果の評価ログ
 - 手動 rerank shortcut / 自動 rerank の設定分離
+
+
+## モデル選択（customModelPath）
+
+同梱zenzと自前モデル（gyaim-lm等）を設定で切り替えられる。
+
+- 設定キー `customModelPath`（settings.json / UserDefaults、GGUF絶対パス。`~`展開可）
+- 同梱モデルは **gyaim-lm-small-public-v1**（公開データのみで学習・再配布可、Q5_K_M 70MB）。
+  customModelPath が未設定・不在の場合はこの同梱モデルにフォールバックする
+- customModelPath は**ドメインデータ入りprivateモデル（gyaim-lm v2以降）用**。
+  privateモデルは同梱・コミットしない
+- モデルは起動時に1回だけmmapされるため、**反映はIMEプロセスの再起動時**
+- ログ・rerank応答の model= ラベルはカスタム時 `custom-<ファイル名>`、同梱時
+  `bundled-gyaim-lm-small-public-v1`。dogfoodログでモデル別のA/B集計ができる
+- 検証: ModelSelectionTests（選択・フォールバック・ラベル・チルダ展開）

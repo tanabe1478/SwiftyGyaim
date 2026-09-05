@@ -1,7 +1,7 @@
 # Zenz / Zenzai model tuning tasklist
 
 > Status: Draft
-> Last updated: 2026-08-15 (zenz学習方法の一次情報調査を追記、次はM5環境構築)
+> Last updated: 2026-08-15 (M7: 特化学習の実行と学習インフラ判断ガイドを追加)
 > Parent spec: `docs/specs/zenz-model-tuning.md`
 > Related PR: <https://github.com/tanabe1478/SwiftyGyaim/pull/52>
 
@@ -298,7 +298,7 @@ Definition of done:
 ### M4-1. 現行 GGUF と HF non-quantized の差を比較する
 
 - [x] `Miwa-Keita/zenz-v3.1-xsmall` を Transformers で読む script を作る
-  - `GyaimSwift/Tools/zenz-tuning/compare-hf-gguf.py`（torch/transformers・llama-cpp-python は backend別 opt-in）
+  - `GyaimSwift/Tools/model-training/compare-hf-gguf.py`（torch/transformers・llama-cpp-python は backend別 opt-in）
 - [x] 同じ eval cases で score を再現する（LlamaZenzContext.score と同じ条件付き平均logprob）
 - [ ] GGUF Q5_K_M と順位差を比較する（モデルdownload込みの実行が未実施。top1一致率・Kendall tau距離をscriptが出力する）
 
@@ -338,12 +338,12 @@ Definition of done:
 元モデル `ku-nlp/gpt2-small-japanese-char` から zenz-v3 形式で学習する。
 サイズは small（同梱モデルも #91 で small へ切替済み）。
 
-- [x] `Tools/zenz-tuning/train_zenz.py` を作る（HF Trainer + MPS/CUDA/CPU自動選択）
+- [x] `Tools/model-training/train_zenz.py` を作る（HF Trainer + MPS/CUDA/CPU自動選択）
 - [x] base model: `ku-nlp/gpt2-small-japanese-char`（デフォルト、--base-modelで変更可）
 - [x] tokenizer を base と同一に固定する（vocab 6000、zenzと同系）
 - [x] lr / epochs / batch / max-length を CLI 引数化
 - [x] validation loss と exact-match generation（--smoke）を出す
-- 環境: `Tools/zenz-tuning/.venv`（mise python 3.12 + torch/transformers/accelerate/llama-cpp-python、gitignore済み）
+- 環境: `Tools/model-training/.venv`（mise python 3.12 + torch/transformers/accelerate/llama-cpp-python、gitignore済み）
 
 Definition of done:
 
@@ -352,10 +352,10 @@ Definition of done:
 
 ### M5-3. GGUF conversion path
 
-- [ ] LoRA merge 手順を確認する
-- [ ] HF merged model を保存する
-- [ ] llama.cpp converter で GGUF 化する
-- [ ] Q5_K_M quantize する
+- [x] LoRA mergeは不要と確認する（今回はLoRAではなく元モデルからのfull SFT）
+- [x] HF full model を `runs/mixed-v1/final` に保存する
+- [x] azooKey/llama.cpp converter で GGUF 化する
+- [x] Q5_K_M quantize する（70.26 MiB）
 - [ ] SwiftyGyaim app bundle に差し替える
 - [ ] `run-fast-context-rerank-emulation.sh` で smoke test する
 
@@ -400,6 +400,171 @@ Definition of done:
 Definition of done:
 
 - [ ] RL を始める前に SFT / DPO / reranker の結果が揃っている
+
+## Milestone 7: gyaim-lm（特化モデル）の学習実行と学習インフラ判断
+
+> 2026-08-15 開始。作業ブランチ: `feature/zenz-specialized-training`（1本のPRにまとめる）
+> 自前モデルの名称は **gyaim-lm**（zenzではない。元モデルから学習、プロンプト形式のみzenz-v3互換）。
+> ツールは `Tools/model-training/`（旧 zenz-tuning から改名）
+
+### M7-1. データセット構築（完了）
+
+- [x] `prepare_dataset.py`: zenz-v2.5-dataset をHFストリーミングでサンプル（wikipedia 70万 + llm-jp 30万）
+- [x] `build_sft_dataset.py`: dogfoodログから (left_context, input_katakana, output) を抽出
+  - ローマ字→カタカナは `RomaKana.swift` の rklist をパースしてIMEと同一ルール
+  - redaction（URL/ASCII識別子/数字列）・ノイズ/人名除外・重複マージ込み。2026-08-16時点で684 unique
+- [x] 混合: ドメイン624件を30倍oversample（train全体の約1.8%）、domain-valid 60件を取り分け
+- 生成物（gitignore、`domain.jsonl`以外はローカルのみ）: `Tools/model-training/data/{train,valid,domain-valid,domain}.jsonl`
+  - 2026-08-16 Windows再生成: train 1,013,720行、valid 5,000行、domain-valid 60行
+  - 最新domain 684行のうち60行を検証用、624行を30倍oversampleしたため、旧runよりtrainが2,220行増えた
+
+### M7-2. ベースライン学習 mixed-v1（Windows FP16で完了）
+
+- 実行コマンド（再現用）:
+  ```
+  ./.venv/bin/python3 train_zenz.py --train data/train.jsonl --valid data/valid.jsonl \
+    --output runs/mixed-v1 --epochs 1 --batch-size 32 --max-length 192 --lr 1e-4 --save-steps 4000
+  ```
+- 実測スループット: M5 MPS で約0.49 step/s（batch 32）≒ **15.7 examples/s**。100万行1epoch ≒ 約18〜20時間
+- 中断時は `--resume` で `runs/mixed-v1` の最新checkpointから再開できる（4,000ステップごとに保存）
+- Mac runの既知の問題: Trainerのloss logがログファイルに出ていない。checkpoint内 `trainer_state.json` の `log_history` で確認する
+  - Windows runは `PYTHONUNBUFFERED=1` とstdout/stderr分離でloss・進捗をログへ保存できている
+- 2026-08-16: RX 9070 XT / native Windows / PyTorch 2.9.1 + ROCm 7.2.1へ引き継ぎ
+  - `train_zenz.py` に `--fp16` を追加
+  - 501 stepベンチ: 226 examples/s、loss 2.135 → 1.177、NaNなし
+  - 本番31,679 step完了: 71分32秒、236.2 examples/s、7.381 step/s、train loss 0.2328
+  - valid 5,000件: loss 0.1167、perplexity 1.12
+  - Windows GPU Engine実測: Compute 0 平均93.6%、最大98.2%。batch 32のままでもGPU計算はほぼ飽和
+  - 実行手順と初心者向け解説: `docs/gyaim-lm-windows-training-guide.md`
+
+### M7-3. 評価とGGUF化（Windows側完了、Macアプリ実測待ち）
+
+- [x] domain-valid 60件のexact match（特化の効果測定）と valid loss
+  - `Tools/model-training/evaluate_domain_valid.py` を追加
+  - 元モデル0/60 → mixed-v1 50/60（83.3%）。valid loss 0.1167、perplexity 1.12
+- [x] eval fixture 122件で `compare-hf-gguf.py --backend hf --hf-model runs/mixed-v1/final` を実行
+  - mixed-v1 84/122。現行 zenz-v3.1-small 80/122より+4、xsmall 77/122より+7
+- [x] GGUF化: llama.cpp convert は pre-tokenizer 名の対応が必要（M4-2の知見: 素のllama.cppは `gpt2-small-japanese-char` を知らない。変換時に `tokenizer.ggml.pre` の指定 or 同梱フォークのconvert利用を検証）
+  - `azooKey/llama.cpp` commit `88b97a4`でconverter/runtime双方の対応を確認
+  - Transformers 5の`n_positions`と旧converterの`n_ctx`の互換差を`train_zenz.py`で吸収
+  - F16 183.04 MiB、Q5_K_M 70.26 MiBを生成。metadataのpre-tokenizerとWindows CLI loadを確認
+- [x] Q5_K_M量子化
+- [x] HFモデル・tokenizer・model card・Q5_K_Mを`tanabe1478/gyaim-lm-small`へprivate保存
+  - Hub APIで`private: true`と、データ・checkpointが含まれないファイル一覧を確認
+- [x] 2026-09-01: 公開データ限定`zenz-v2.5-full`のHF評価とGGUF化
+  - valid loss 0.05007、perplexity 1.05
+  - 一般fixtureは`user-dict` / `dogfood-regression` / `preference`を除外し、74/104（71.15%）
+  - F16 192,132,384 bytes、Q5_K_M 73,871,808 bytes
+  - Q5_K_MはGGUF V3、149 tensors、`tokenizer.ggml.pre=gpt2-small-japanese-char`でCLIロード成功
+  - public-only model cardと7ファイルを`tanabe1478/gyaim-lm-small-public-v1`へ保存
+  - private状態で内容を検証後、publicへ変更。未認証APIで`private: false`、commit `698ad397e85e5ff7526f6c72d044b7704cdde4d2`、想定ファイルとサイズを確認
+- [ ] Macのテストバンドル差し替えで量子化後順位・レイテンシ・実機動作確認（手順はM4-2と同一）
+
+### M7-3b. gyaim-lm-small-v2 継続学習レシピ（Windows実行用、2026-09-05確定）
+
+初の個人化学習。v1（公開データのみ）の重みから、統合ドメインデータを焼き込む。
+
+```bash
+cd GyaimSwift/Tools/model-training
+# 1) 公開データを再現（seed固定でMacと同一になる）
+./.venv/bin/python3 prepare_dataset.py --wikipedia 700000 --llm-jp 300000 --valid 5000 --output data
+# 2) v2混合セット: domain(コミット済み2,201件) - domain-valid(60件) を20倍 + 公開リプレイ6万行
+./.venv/bin/python3 - <<'PY'
+import json, random
+random.seed(42)
+# リーク防止: validの(読み,出力)キーに一致する行は文脈違いも含め全て学習から除外する
+valid_keys = {(r['input'], r['output'])
+              for r in map(json.loads, open('data/domain-valid.jsonl'))}
+domain = [r for r in map(json.loads, open('data/domain.jsonl'))
+          if (r['input'], r['output']) not in valid_keys]
+replay = random.sample(open('data/train.jsonl').readlines(), 60000)
+rows = [json.dumps(r, ensure_ascii=False) + '\n' for r in domain * 20] + replay
+random.shuffle(rows)
+open('data/train-v2.jsonl', 'w').writelines(rows)
+print(len(rows), 'rows')
+PY
+# 3) 継続学習（v1の重みから、低lr）
+./.venv/bin/python3 train_zenz.py --base-model tanabe1478/gyaim-lm-small-public-v1 \
+  --train data/train-v2.jsonl --valid data/valid.jsonl \
+  --output runs/gyaim-lm-small-v2 --epochs 1 --batch-size 32 --max-length 192 --lr 2e-5
+```
+
+合格基準（v1実測との比較。**主指標は判別**——本番の仕事は生成ではなく候補リストの並べ替えのため）:
+- **[主] rerank-valid 78件（実際に表示された候補リストからの判別top1）: v1 = 74/78 (94.9%) を上回ること**
+  （`evaluate_rerank.py --model runs/gyaim-lm-small-v2/final`。zenz-v3.1-smallも74/78で同点。
+  v1の失敗4件はすべて「かな表記 vs 漢字」の選好: 二つ/２つ・要件/ようけ・形/かたち・作る/つくる）
+- [副] fixture 122件: v1 = 82/122 以上（`compare-hf-gguf.py --backend hf`）
+- [副] domain-valid 60件 生成exact match: v1 = 55/60（リークなし分割で再測定済み）以上
+- dogfood弱点の解消: `kinou`→機能、`mitumori`→見積もり
+- 学習成果はHF privateへ（ドメインデータ込みのため公開不可）。GGUF Q5_K_M化→
+  Mac側は `~/.gyaim/models/` に置き `customModelPath` 書き換え+IME再起動のみで切替
+
+### M7-4. 学習インフラの判断ガイド
+
+実測とカタログ値に基づく選択肢。**まずM7-2/M7-3の結果を見てから投資判断する**こと。
+
+| 規模 | 場所 | 時間 | 費用 | 備考 |
+|---|---|---|---|---|
+| 100万ペア（今回） | Windows (RX 9070 XT, FP16) | **71分32秒** | 0円 | 本番実測236.2 examples/s |
+| 100万ペア（比較） | 常用Mac (M5, MPS) | 18〜20h | 0円 | 実測15.7 examples/s。常用機を占有 |
+| 500万〜1000万ペア | ローカルMac | 3〜7日 | 電気代のみ | レシピ探索・週次のドメイン再学習向き |
+| 1.9億ペア（フル） | ローカルMac | 実測換算で約140日（最適化10倍でも約2週間） | 電気代のみ | 非推奨 |
+| 1.9億ペア（フル） | さくら高火力DOK H100 1GPU | 数時間（本家実績） | **約1,008円/時 → 1回3,000〜6,000円** | 試行錯誤込みでも1〜3万円。train_zenz.pyはCUDA自動対応 |
+
+**Windows + RX 9070 XT（RDNA4）実測**（2026-08-16）:
+
+- ネイティブWindowsのPyTorch 2.9.1 + ROCm 7.2.1でRX 9070 XT（gfx1201）が公式サポート
+- 要件: Windows 11、Python 3.12、AMD Software Adrenalin 26.2.2以降
+- `train_zenz.py` はROCmをcudaデバイスとして認識する。GPUを活かすため `--fp16` を使用する
+- FP32実測は約27 examples/s、FP16本番実測は236.2 examples/s（M5 MPSの約15倍）
+- 単純推定: 100万ペア約72分、1000万ペア約11.8時間、1.9億フル約9.3日
+- 詳細な構築・検証・評価手順は `docs/gyaim-lm-windows-training-guide.md`
+
+**余りMacを学習マシンにする場合の評価手順**:
+
+1. 対象Macのチップ・メモリを確認（学習スループットはGPUコア数とメモリ帯域で決まる）
+2. リポジトリをclone、`mise use -g python@3.12`、`Tools/model-training` で venv 作成 + `pip install torch transformers accelerate datasets`
+3. ベンチ実行（500ステップの実測）:
+   ```
+   ./.venv/bin/python3 prepare_dataset.py --wikipedia 20000 --llm-jp 10000 --valid 100 --output data-bench
+   ./.venv/bin/python3 train_zenz.py --train data-bench/train.jsonl --output runs/bench --epochs 1 --batch-size 32 --max-length 192
+   # 進捗バーの it/s × 32 = examples/s を読む。500ステップ経過時点でCtrl+Cで打ち切ってよい
+   ```
+4. 判断基準: examples/s から所要日数を換算（1.9億 ÷ examples/s ÷ 86400 = 日数）。
+   - 15 examples/s級（M5相当）→ フルは非現実的、中規模実験・週次再学習用
+   - 50 examples/s超（Ultra級+最適化）→ フルも数週間で視野
+5. 採用する場合: SSH有効化 + 電源接続 + `caffeinate -s` でスリープ抑止。学習はnohupで投げ、checkpointは `--resume` で再開可能
+
+**プライバシー制約**: ドメインデータ（dogfoodログ由来）を外部GPUに送る場合は事前にユーザー確認。回避策として「公開データのフル学習はクラウド → ドメイン混合の仕上げ継続学習はローカル」の分離が可能。
+
+### M7-5. 1.9億件フル学習の停止・再開対応
+
+- [x] 巨大JSONLを全件RAMへ載せない`--streaming`モードを追加
+- [x] checkpointへJSONL byte位置、shuffle buffer、shuffle乱数状態を保存
+- [x] `STOP_REQUESTED`または`Ctrl+C`をoptimizer step境界の安全停止へ変換
+- [x] `--resume`でmodel / optimizer / scheduler / RNG / データ位置を復元
+- [x] 停止step 1 → 再開 → step 4完走のWindows ROCm実機テスト
+- [x] 再開後の次の学習例が非停止runと20/20一致することをテスト
+- [x] zenz-v2.5公開フルJSONLをdownloadし、正確な総行数と`--max-steps`を確定
+  - Wikipedia 17,493,369件 + llm-jp 171,487,973件 = **188,981,342件**
+  - batch 32、1巡 = **5,905,667 step**
+- [x] 実データ500-stepベンチ（238.9 examples/s、7.467 step/s、約9.15日換算）
+- [x] 実データでstep 1安全停止 → データ位置復元 → step 4完走を再検証
+- [x] run manifestで入力・ハイパーパラメータ不一致の誤resumeを拒否
+- [x] フル学習を開始（2026-08-16 04:03 JST、`runs/zenz-v2.5-full`）
+- [x] 最初の定期checkpoint（step 4,000）を確認
+  - model / optimizer / scheduler / FP16 scaler / RNG / streaming data stateを読戻し検証
+  - 保存後も学習はstep 4,001以降へ正常継続
+- [x] Windows再起動後に`checkpoint-72000`から実復旧
+  - 強制停止時72,857 step、再実行は72,000 stepから（再処理857 step、約1分45秒）
+  - データ位置とshuffle bufferを復元し、約7.7 step/s・loss 0.1418へ正常復帰
+- [ ] 中間評価を記録し、最終モデルへドメイン仕上げ学習を行う
+
+### 引き継ぎメモ
+
+- 環境: `Tools/model-training/.venv`（gitignore）。壊れたら `mise exec python@3.12 -- python3 -m venv .venv && ./.venv/bin/pip install torch transformers accelerate datasets llama-cpp-python`
+- 学習ログ: `Tools/model-training/runs/*.log`（gitignore）
+- ドメインデータの更新: `./.venv/bin/python3 build_sft_dataset.py --output data/domain.jsonl` を再実行（ログが増えるほど件数が増える）
 
 ## 直近で切るIssue候補
 

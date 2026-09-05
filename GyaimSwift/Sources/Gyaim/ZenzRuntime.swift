@@ -56,7 +56,7 @@ extension ZenzRuntime {
 }
 
 final class BundledZenzRuntime: ZenzRuntime {
-    let identifier = "bundled-zenz-v3.1-small"
+    var identifier: String { BundledAIRerankModel.activeModelLabel }
 
     private let model: BundledAIRerankModel
     private let bundle: Bundle
@@ -161,7 +161,7 @@ final class BundledZenzRuntime: ZenzRuntime {
             + "latency=\(String(format: "%.1f", elapsed))ms")
         return AIRerankResponse(order: order,
                                 scores: scores,
-                                model: "bundled-zenz-v3.1-small+swift-local-heuristic")
+                                model: "\(BundledAIRerankModel.activeModelLabel)+swift-local-heuristic")
         #else
         nil
         #endif
@@ -365,7 +365,7 @@ final class BundledZenzRuntime: ZenzRuntime {
                 + "reason=\(failureReason) best=\"\(best.text)\"")
             return AIRerankResponse(order: localOrder,
                                     scores: heuristic.scores,
-                                    model: "bundled-zenz-v3.1-small-review-unavailable+swift-local-heuristic")
+                                    model: "\(BundledAIRerankModel.activeModelLabel)-review-unavailable+swift-local-heuristic")
         }
 
         var order = localOrder
@@ -392,7 +392,7 @@ final class BundledZenzRuntime: ZenzRuntime {
             + "outcome=\(outcome) order=\(order) latency=\(String(format: "%.1f", elapsed))ms")
         return AIRerankResponse(order: order,
                                 scores: heuristic.scores,
-                                model: "bundled-zenz-v3.1-small-review-\(outcome)+swift-local-heuristic")
+                                model: "\(BundledAIRerankModel.activeModelLabel)-review-\(outcome)+swift-local-heuristic")
     }
 
     /// Compare exact-reading homophones directly by conditional mean log
@@ -469,7 +469,7 @@ final class BundledZenzRuntime: ZenzRuntime {
             + "outcome=exact-homophone-\(outcome) order=\(order) latency=\(String(format: "%.1f", elapsed))ms")
         return AIRerankResponse(order: order,
                                 scores: heuristic.scores,
-                                model: "bundled-zenz-v3.1-small-review-exact-homophone-\(outcome)+swift-local-heuristic")
+                                model: "\(BundledAIRerankModel.activeModelLabel)-review-exact-homophone-\(outcome)+swift-local-heuristic")
     }
     #endif
 

@@ -1,0 +1,5 @@
+---
+license: cc-by-sa-4.0
+base: ku-nlp/gpt2-small-japanese-char + Miwa-Keita/zenz-v2.5-dataset
+source: https://huggingface.co/tanabe1478/gyaim-lm-small-public-v1
+---

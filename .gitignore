@@ -43,4 +43,4 @@ __pycache__/
 
 # diffai review state
 .diffai/
-GyaimSwift/Tools/zenz-tuning/.venv/
+GyaimSwift/Tools/model-training/.venv/
