@@ -1,16 +1,16 @@
-# Third-party AI model notices
+# Third-party notices for the bundled AI model
 
-SwiftyGyaim bundles the following third-party model for on-device AI candidate generation and reranking.
+## gyaim-lm-small-public-v1-gguf
 
-## zenz-v3.1-xsmall-gguf
-
-- Model: zenz-v3.1-xsmall-gguf
-- Source: https://huggingface.co/Miwa-Keita/zenz-v3.1-xsmall-gguf
-- Bundled file: Models/zenz-v3.1-xsmall-gguf/ggml-model-Q5_K_M.gguf
-- SHA-256: 189638370c43292fd54ba5e83854b24887ddd57e8914e19095514e663f60c7f5
+- Model: gyaim-lm-small-public-v1 (trained by the SwiftyGyaim project)
+- Bundled file: Models/gyaim-lm-small-public-v1-gguf/ggml-model-Q5_K_M.gguf
+- SHA-256: f8f9180c1f751092b6298a4df13f7e20cbf487d4f2af6f89727605c4f4bed860
 - License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
 - License URL: https://creativecommons.org/licenses/by-sa/4.0/
-- SPDX identifier: CC-BY-SA-4.0
-- Local modifications: none. The GGUF file is redistributed as downloaded.
 
-Attribution and license information are included to satisfy the CC BY-SA 4.0 attribution requirement for the bundled model.
+This model is a derivative work of:
+- ku-nlp/gpt2-small-japanese-char (base model, CC BY-SA 4.0)
+  https://huggingface.co/ku-nlp/gpt2-small-japanese-char
+- Miwa-Keita/zenz-v2.5-dataset (training data, CC BY-SA 4.0 / ODC-BY)
+  https://huggingface.co/datasets/Miwa-Keita/zenz-v2.5-dataset
+- Prompt format from the zenz / Zenzai project (Miwa Keita et al.)

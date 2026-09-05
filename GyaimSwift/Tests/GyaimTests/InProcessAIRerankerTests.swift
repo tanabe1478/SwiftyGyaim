@@ -26,6 +26,6 @@ final class InProcessAIRerankerTests: XCTestCase {
         let reranker = InProcessAIReranker(bundle: Bundle(for: type(of: self)))
         let response = reranker.rerank(request)
         XCTAssertEqual(response.order.first, 1)
-        XCTAssertEqual(response.model, "bundled-zenz-v3.1-small+swift-local-heuristic")
+        XCTAssertEqual(response.model, "bundled-gyaim-lm-small-public-v1+swift-local-heuristic")
     }
 }

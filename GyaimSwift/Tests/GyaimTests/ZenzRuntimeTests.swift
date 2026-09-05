@@ -28,7 +28,7 @@ final class ZenzRuntimeTests: XCTestCase {
         let response = backend.rerank(makeRequest())
 
         XCTAssertEqual(response.order.first, 1)
-        XCTAssertEqual(response.model, "swift-local-heuristic+bundled-zenz-v3.1-small-mapped")
+        XCTAssertEqual(response.model, "swift-local-heuristic+bundled-gyaim-lm-small-public-v1-mapped")
     }
 
     func testFastContextReplacementRejectsSingleCharacterPrefix() {

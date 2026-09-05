@@ -1,0 +1,1278 @@
+# gyaim-lm を Windows + Radeon で学習する手順
+
+> 対象: 機械学習を初めて触る開発者  
+> 対象PR: [#93 特化モデル学習](https://github.com/tanabe1478/SwiftyGyaim/pull/93)  
+> 実測日: 2026-08-16  
+> 実測機: Ryzen 7 9800X3D / RAM 32GB / Radeon RX 9070 XT 16GB / Windows 11
+
+この文書は、PR #93 のモデル学習をMacからWindowsへ引き継いだときの実作業を、
+再現できる形で説明する。コマンドだけでなく、何をしているのか、結果をどう判断するのかも扱う。
+
+## 1. 今回作るもの
+
+gyaim-lm は、SwiftyGyaimのかな漢字変換候補を評価するための小さな言語モデルである。
+このプロジェクトでは、元モデル `ku-nlp/gpt2-small-japanese-char` から、次の2種類のデータを使う実験を行った。
+
+1. 公開データ: `Miwa-Keita/zenz-v2.5-dataset`
+2. ドメインデータ: SwiftyGyaimの実利用ログから抽出・redactionした変換ペア
+
+「追加学習」は、すでに日本語の文字列を扱えるモデルへ、SwiftyGyaimで重要な変換パターンを
+覚えさせる作業である。このPRではSFT（Supervised Fine-Tuning、教師あり微調整）を行う。
+
+> **2026-08-31のデータ方針:** 配布候補にする`zenz-v2.5-full`は、公開データだけで学習する。
+> SwiftyGyaimの利用ログから作った`data/domain.jsonl`、それを混ぜた`data/train.jsonl`、
+> および旧実験`runs/mixed-v1`は、今後の本学習・配布モデルの出発点にしない。
+> 個人データ由来のファイルは確認用にローカルへ残すが、明示的に方針を変更するまでは
+> 学習、評価、Hugging Faceへのアップロードに使わない。
+
+この区別は重要である。ニューラルネットワークは、一度学習した行だけを後から選んで
+取り除くことが簡単ではない。そのため個人データを混ぜたモデルから継続するのではなく、
+個人データを一度も読んでいない別runを使う。現在の`zenz-v2.5-full`は元モデルから直接開始し、
+後述の公開データ2ファイルだけを読んでいるため、最初からやり直す必要はない。
+
+学習データ1行の概念は次のとおり。
+
+```json
+{"input":"キョウカイセン","output":"境界線","left_context":"モデルの"}
+```
+
+- `input`: 読み。カタカナで保持する
+- `output`: 正解として学習させる確定表記
+- `left_context`: 入力位置より左側の文脈。存在しない場合もある
+
+## 2. 最初に知っておく用語
+
+| 用語 | この作業での意味 |
+|---|---|
+| base model | 学習開始時点の元モデル。今回は `ku-nlp/gpt2-small-japanese-char` |
+| train | モデルの重み更新に使うデータ |
+| valid | 学習には使わず、未知データに対するlossを測るデータ |
+| domain-valid | ユーザー固有語彙に近いデータのうち、学習から除外して効果測定に使う60件 |
+| epoch | train全体を一巡すること。今回は1 epoch |
+| batch size | 1回の重み更新でまとめて処理する件数。今回は32 |
+| step | 1 batchを処理して重みを更新する単位 |
+| loss | モデルの予測誤差。条件が同じなら小さいほどよい |
+| exact match | 生成結果が正解文字列と完全一致した割合 |
+| checkpoint | 途中再開できるように保存したモデルと学習状態 |
+| FP32 | 32-bit浮動小数点。精度は高いが学習が遅く、VRAM使用量も多い |
+| FP16 | 16-bit浮動小数点を使う混合精度学習。対応GPUでは高速で省メモリ |
+| GGUF | 学習後のモデルをSwiftyGyaim内のllama.cpp系runtimeで読むための形式 |
+
+`loss` は単独の絶対値だけで良否を判断しない。学習中に下がっているか、valid lossが悪化して
+いないか、実際のfixtureやdomain-validで正解数が増えたかを組み合わせて判断する。
+
+## 3. Windowsを使う理由
+
+Mac M5での既存実測は約15.7 examples/sで、100万件に18〜20時間かかっていた。
+RX 9070 XTはFP16演算が速く、実測では500 stepを226 examples/sで処理できた。
+
+| 条件 | 実測 | 100万件の単純推定 |
+|---|---:|---:|
+| Mac M5 / 既存mixed-v1 | 15.7 examples/s | 18〜20時間（既存実測） |
+| RX 9070 XT / FP32 | 約27 examples/s | 約10.4時間 |
+| RX 9070 XT / FP16、101 step | 180.6 examples/s | 約93分 |
+| RX 9070 XT / FP16、501 step | **226 examples/s** | **約75分** |
+| RX 9070 XT / FP16、本番実測 | **236.2 examples/s** | **71分32秒** |
+
+501 stepのFP16学習ではlossが2.135から1.177まで下がり、NaNやGPUエラーは発生しなかった。
+1.9億件を1 epoch処理する単純推定は約9.7日だが、フル学習を行うかは今回の100万件モデルを
+評価してから判断する。
+
+### タスクマネージャーで余って見える理由
+
+タスクマネージャーの既定GPUグラフは「3D」で、機械学習に使うHIP computeの負荷を表さない。
+グラフ名をクリックして `Compute 0` を選ぶか、WindowsのGPU Engineカウンターを確認する。
+
+mixed-v1実行中に3秒間測定した結果、学習プロセスの `Compute 0` は平均93.6%、最大98.2%だった。
+したがって、GPUの計算器はすでにほぼ上限まで使えている。CPU・RAM・VRAMに空きがあるのは
+異常ではない。このsmallモデルでは、全PC資源を100%にすることより、最も遅いGPU computeを
+継続的に働かせることが重要である。
+
+batch sizeを64や128へ増やせば数%改善する可能性はあるが、1 stepで見る例数が変わり、
+既存Macレシピとの品質比較やlearning rateの意味も変わる。GPU computeがほぼ飽和している今回は、
+速度だけのために学習条件を変更せずbatch 32を維持した。
+
+## 4. cloneとブランチの確認
+
+作業ディレクトリが空であることを確認してから、PRのheadブランチを直接cloneした。
+
+```powershell
+git clone --branch feature/zenz-specialized-training --single-branch `
+  https://github.com/tanabe1478/SwiftyGyaim.git .
+git status --short --branch
+```
+
+期待する表示:
+
+```text
+## feature/zenz-specialized-training...origin/feature/zenz-specialized-training
+```
+
+最初はSSH URLも試したが、このWindowsにGitHub用公開鍵が登録されておらず
+`Permission denied (publickey)` になった。HTTPS cloneならこの問題を避けられる。
+
+## 5. ROCm版PyTorchを準備する
+
+### 5.1 ROCmとPyTorchの関係
+
+PyTorchは学習処理を書くためのライブラリ、ROCm/HIPはPyTorchからAMD GPUを使うための層である。
+ROCm版PyTorchでも歴史的な互換性のためAPI名は `torch.cuda` のままになっている。
+ログに `device=cuda` と出てもNVIDIA GPUを使っているという意味ではない。
+
+2026-08-16時点では、AMD公式のWindows版PyTorch 2.9.1 + ROCm 7.2.1が
+RX 9070 XT（gfx1201）、Windows 11、Python 3.12をサポートしている。
+
+- [AMD: Windows support matrix](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/compatibility/compatibilityrad/windows/windows_compatibility.html)
+- [AMD: PyTorch via PIP installation](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installryz/windows/install-pytorch.html)
+
+公式要件はAMD Software 26.2.2以降。この機体ではGPUドライバ
+`32.0.31021.5001`（2026-06-28）を確認した。
+
+### 5.2 venvを作る
+
+venvは、このプロジェクト専用のPython環境である。システム全体のPythonパッケージと混ざらず、
+失敗しても `.venv` を作り直せる。
+
+```powershell
+cd GyaimSwift\Tools\model-training
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip wheel
+```
+
+`.venv/` は `.gitignore` 済みで、commitしない。
+
+### 5.3 AMD公式wheelを入れる
+
+wheelは、コンパイル済みPythonパッケージである。以下はAMD公式のROCm 7.2.1配布物を使う。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --no-cache-dir `
+  "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_core-7.2.1-py3-none-win_amd64.whl" `
+  "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_devel-7.2.1-py3-none-win_amd64.whl" `
+  "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm_sdk_libraries_custom-7.2.1-py3-none-win_amd64.whl" `
+  "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/rocm-7.2.1.tar.gz"
+
+.\.venv\Scripts\python.exe -m pip install --no-cache-dir `
+  "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/torch-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl"
+
+.\.venv\Scripts\python.exe -m pip install transformers accelerate datasets
+```
+
+ROCm SDKは約1.4GB、PyTorch wheelは約0.8GBある。十分な空き容量と安定した回線が必要。
+
+### 5.4 GPUを検証する
+
+「GPU名が表示できた」だけでなく、実際にGPU上で行列積を完了できることまで確認する。
+
+```powershell
+.\.venv\Scripts\python.exe -c "import torch; print(torch.__version__); print(torch.version.hip); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0)); x=torch.randn((2048,2048),device='cuda'); y=x@x; torch.cuda.synchronize(); print(y.shape)"
+```
+
+この機体の実測:
+
+```text
+2.9.1+rocm7.2.1
+7.2.53211-158bd99533
+True
+AMD Radeon RX 9070 XT
+torch.Size([2048, 2048])
+```
+
+## 6. 本番前に500 stepベンチを行う
+
+### 6.1 小さなデータを作る
+
+```powershell
+.\.venv\Scripts\python.exe prepare_dataset.py `
+  --wikipedia 20000 --llm-jp 10000 --valid 100 --output data-bench
+```
+
+生成結果はtrain 29,900件、valid 100件。`data-bench/` もGit管理外である。
+
+### 6.2 FP16で約500 stepだけ学習する
+
+29,900 ÷ batch 32 ≒ 934 stepで1 epochになる。`0.535 epoch` にすると約501 stepになる。
+
+```powershell
+$env:PYTHONUTF8 = '1'
+.\.venv\Scripts\python.exe train_zenz.py `
+  --train data-bench\train.jsonl `
+  --output runs\bench-windows-fp16-500 `
+  --epochs 0.535 `
+  --batch-size 32 `
+  --max-length 192 `
+  --save-steps 10000 `
+  --fp16
+```
+
+最終行付近の `train_samples_per_second` が比較に使うexamples/sである。
+
+```text
+train_runtime: 70.78
+train_samples_per_second: 226
+train_steps_per_second: 7.079
+train_loss: 1.452
+```
+
+FP32では約1.16秒/stepだったが、FP16では約7.1 step/sになった。この差が大きいため、
+RX 9070 XTで本番学習するときは `--fp16` を付ける。
+
+## 7. 本番データを再生成する
+
+```powershell
+.\.venv\Scripts\python.exe prepare_dataset.py `
+  --wikipedia 700000 `
+  --llm-jp 300000 `
+  --valid 5000 `
+  --domain data\domain.jsonl `
+  --domain-oversample 30 `
+  --domain-valid 60 `
+  --output data
+```
+
+2026-08-16の最新ブランチでの件数:
+
+| ファイル | 件数 | 用途 |
+|---|---:|---|
+| `data/train.jsonl` | 1,013,720 | 重み更新 |
+| `data/valid.jsonl` | 5,000 | valid loss |
+| `data/domain-valid.jsonl` | 60 | ドメインexact match |
+| `data/domain.jsonl` | 684 | redaction済みドメインデータの原本 |
+
+trainの内訳は公開データ995,000件と、domain-validを除いた624件 × 30回 = 18,720件。
+PR本文の古い件数1,011,500との差は、ドメイン原本が更新されたためである。
+
+## 8. mixed-v1本番学習
+
+フォアグラウンドで実行する場合:
+
+```powershell
+.\.venv\Scripts\python.exe train_zenz.py `
+  --train data\train.jsonl `
+  --valid data\valid.jsonl `
+  --output runs\mixed-v1 `
+  --epochs 1 `
+  --batch-size 32 `
+  --max-length 192 `
+  --lr 1e-4 `
+  --save-steps 4000 `
+  --fp16
+```
+
+バックグラウンド実行では、標準出力と進捗・警告を別ログへ保存する。
+
+```powershell
+$workDir = (Resolve-Path '.').Path
+$pythonExe = (Resolve-Path '.\.venv\Scripts\python.exe').Path
+$env:PYTHONUTF8 = '1'
+$env:PYTHONUNBUFFERED = '1'
+
+Start-Process `
+  -FilePath $pythonExe `
+  -ArgumentList @(
+    'train_zenz.py',
+    '--train', 'data\train.jsonl',
+    '--valid', 'data\valid.jsonl',
+    '--output', 'runs\mixed-v1',
+    '--epochs', '1',
+    '--batch-size', '32',
+    '--max-length', '192',
+    '--lr', '1e-4',
+    '--save-steps', '4000',
+    '--fp16'
+  ) `
+  -WorkingDirectory $workDir `
+  -RedirectStandardOutput (Join-Path $workDir 'runs\mixed-v1-windows.stdout.log') `
+  -RedirectStandardError (Join-Path $workDir 'runs\mixed-v1-windows.stderr.log') `
+  -WindowStyle Hidden
+```
+
+進捗確認:
+
+```powershell
+Get-Content runs\mixed-v1-windows.stdout.log -Tail 20
+Get-Content runs\mixed-v1-windows.stderr.log -Tail 20
+Get-ChildItem runs\mixed-v1\checkpoint-*
+```
+
+このrunは31,679 step。2026-08-16 01:32ごろに開始し、02:43ごろに正常終了した。
+実測は71分32秒、236.2 examples/s、7.381 step/sだった。500 stepの短いベンチより本番が
+少し速いのは、開始直後の準備時間が全体に占める割合が小さくなったためである。
+
+学習の最終結果:
+
+| 指標 | 結果 |
+|---|---:|
+| train runtime | 4,292秒（71分32秒） |
+| train samples/s | 236.2 |
+| train steps/s | 7.381 |
+| train loss（全体平均） | 0.2328 |
+| valid loss | 0.1167 |
+| valid perplexity | 1.12 |
+
+`save_total_limit=2` のため、途中checkpointは最後の
+`checkpoint-28000` と `checkpoint-31679` だけが残る。学習完了後は
+`runs/mixed-v1/final/` が配布用のHFモデルである。
+
+### 8.1 Windowsを別用途で使うときの安全な停止・再開
+
+停止・再開は可能である。学習中のモデルは単なる1ファイルではなく、次の状態をまとめて
+`checkpoint-*`へ保存する必要がある。
+
+| 保存するもの | 保存する理由 |
+|---|---|
+| model weights | その時点までにモデルが覚えた内容 |
+| optimizer | 次の重み更新を同じ条件で続けるため |
+| learning-rate scheduler | learning rateの途中経過を保つため |
+| 乱数状態 | データ順や計算を再現するため |
+| JSONLのbyte位置・shuffle buffer | 1.9億件の先頭から読み直さず、次の学習例から続けるため |
+
+#### 推奨: 停止要求ファイルを作る
+
+バックグラウンド学習を止めたい場合、別のPowerShellで次を実行する。
+
+```powershell
+New-Item runs\zenz-v2.5-full\STOP_REQUESTED -ItemType File -Force
+```
+
+スクリプトは現在のoptimizer stepを最後まで処理し、checkpointを保存してから正常終了する。
+ログに次が出るまで待つ。
+
+```text
+stop requested; saving a resumable checkpoint after step ...
+graceful stop complete; resume checkpoint=...\checkpoint-...
+```
+
+PowerShellの前面で動かしている場合は `Ctrl+C` でも同じ安全な停止処理になる。
+モデル保存はこの実測機で数秒程度かかるため、キーを押してすぐプロセスを強制終了しない。
+
+#### 再開
+
+開始時と**同じ引数**に `--resume` だけを追加する。最新の`checkpoint-*`を自動選択し、
+モデル・optimizer・scheduler・データ位置を復元する。
+
+```powershell
+.\.venv\Scripts\python.exe train_zenz.py `
+  --train data\train.jsonl --valid data\valid.jsonl `
+  --output runs\mixed-v1 --epochs 1 --batch-size 32 --max-length 192 `
+  --lr 1e-4 --save-steps 4000 --fp16 --resume
+```
+
+1.9億件のstreaming学習では、`--max-steps`、`--shuffle-buffer`、入力ファイルの順番も
+開始時と同一にする。スクリプトは入力ファイルやshuffle buffer設定がcheckpointと違う場合、
+誤った位置から再開せずエラーで止まる。
+
+#### 強制終了しかできない場合
+
+タスクマネージャーの「タスクの終了」、`Stop-Process -Force`、Windowsの再起動や電源断では、
+その瞬間の状態は保存できない。それでも `--save-steps` ごとの定期checkpointから再開できる。
+たとえば実測7.38 step/sで `--save-steps 4000`なら、最悪でも約9分ぶんをやり直す。
+
+Windowsをゲーム、動画処理、GPUを使う開発などへ確実に空けたい場合は、まず上記の安全な停止を
+行う。Web閲覧や文書作成程度なら学習を動かしたままでもよいが、画面が重ければ停止して構わない。
+停止と再開を行っても、それまでの数日分が失われることはない。
+
+### 8.2 1.9億件を扱うstreamingモード
+
+100万件版は全行をRAMへ読み込めたが、約1.9億件を同じ方法で扱うと32GB RAMを大きく超える。
+`--streaming`はJSONLを少しずつ読み、最大`--shuffle-buffer`件だけをメモリに置く。
+
+このrunの学習データは、次の2ファイルだけを許可する。
+
+| ファイル | 由来 | 個人利用ログ由来か |
+|---|---|---|
+| `data-full/train_wikipedia.jsonl` | `Miwa-Keita/zenz-v2.5-dataset`のWikipedia split | いいえ |
+| `data-full/train_llm-jp-corpus-v3.jsonl` | 同datasetのllm-jp corpus v3 split | いいえ |
+
+検証用の`data/valid.jsonl`も、`prepare_dataset.py`が公開データを分割した時点で作られる。
+ドメインデータをtrainへ追加する処理より前に確定するため、利用ログ由来行は入っていない。
+一方、`data/domain.jsonl`、`data/domain-valid.jsonl`、`data/train.jsonl`はこのrunでは指定しない。
+再開時には`run_manifest.json`が学習ファイルの絶対パスとサイズを照合するため、別データを
+誤って混ぜたまま同じcheckpointを再開することもできない。
+
+まず公開データ2ファイル（合計約36.5GB）を取得する。Hugging Face CLIは`.venv`内にある。
+同じコマンドを再実行すると、完了済み部分を利用してdownloadを続けられる。
+
+```powershell
+.\.venv\Scripts\hf.exe download Miwa-Keita/zenz-v2.5-dataset `
+  train_wikipedia.jsonl train_llm-jp-corpus-v3.jsonl `
+  --repo-type dataset --local-dir data-full
+```
+
+```powershell
+.\.venv\Scripts\python.exe train_zenz.py `
+  --train data-full\train_wikipedia.jsonl data-full\train_llm-jp-corpus-v3.jsonl `
+  --train-counts 17493369 171487973 `
+  --valid data\valid.jsonl `
+  --output runs\zenz-v2.5-full `
+  --streaming --max-steps 5905667 `
+  --batch-size 32 --max-length 192 --lr 1e-4 `
+  --shuffle-buffer 10000 --logging-steps 500 `
+  --save-steps 4000 --eval-steps 100000 --fp16
+```
+
+`--train-counts`を渡すと、両ファイルがそれぞれ同じ割合で進むように交互に読み取る。
+たとえばWikipediaが全体の約2割なら、おおむね5件に1件がWikipediaになる。これにより、
+最初にWikipediaだけ、後半にCommon Crawlだけを学ぶデータ源の偏りを避ける。各ファイルの
+読取位置と残り件数もcheckpointに入る。
+
+`max_steps = ceil(総行数 / (batch-size × grad-accum))` である。ファイルの正確な行数を数えてから
+値を確定する。全行をRAMへ載せずに行数と`max_steps`を計算するコマンドは次のとおり。
+
+```powershell
+.\.venv\Scripts\python.exe count_jsonl.py `
+  data-full\train_wikipedia.jsonl data-full\train_llm-jp-corpus-v3.jsonl `
+  --batch-size 32
+```
+
+2026-08-16にdownloadした実ファイルの結果:
+
+| ファイル | 行数 |
+|---|---:|
+| `train_wikipedia.jsonl` | 17,493,369 |
+| `train_llm-jp-corpus-v3.jsonl` | 171,487,973 |
+| 合計 | **188,981,342** |
+| batch 32で1巡するstep | **5,905,667** |
+
+開始時に`runs/zenz-v2.5-full/run_manifest.json`を自動保存する。再開時に入力ファイル、
+行数、batch size、learning rate、`max_steps`などが変わっていれば、誤学習を避けるため
+`--resume`はエラーで停止する。
+
+checkpointは約1.1GBで、`save_total_limit=2`により通常は最新2個だけを保持する。
+shuffle bufferそのものと乱数状態も保存するので、安全停止後の次の学習例は停止しなかった場合と
+一致する。小規模テストでは、停止後に比較した次の20件が20/20で一致した。
+
+- `--logging-steps 500`: 約1分ごとにtrain lossを記録する
+- `--eval-steps 100000`: 約3時間45分ごとにvalid lossを測る（実測速度からの推定）
+- `--save-steps 4000`: 約9分ごとに再開用checkpointを保存する
+
+実データ500-stepベンチは66.96秒、238.9 examples/s、7.467 step/sだった。この速度を
+188,981,342件へ単純換算すると約9.15日である。実際には定期評価とcheckpoint保存が加わるため、
+完了見込みは約9〜10日とする。
+
+本番は2026-08-16 04:03（JST）にバックグラウンドで開始した。
+
+| 項目 | パス / 値 |
+|---|---|
+| output | `runs/zenz-v2.5-full` |
+| 標準出力 | `runs/zenz-v2.5-full.stdout.log` |
+| 進捗・警告 | `runs/zenz-v2.5-full.stderr.log` |
+| 停止要求 | `runs/zenz-v2.5-full/STOP_REQUESTED` |
+| 単純ETA | 2026-08-25朝〜昼ごろ（定期評価を含むと前後する） |
+
+04:12に最初の`checkpoint-4000`が完成した。model、optimizer、scheduler、FP16 scaler、
+RNG、JSONL読取位置、10,000件のshuffle bufferがすべて存在することを読み戻して確認した。
+checkpoint保存後も学習プロセスは正常に継続している。
+
+### 8.3 Windows再起動からの実復旧記録
+
+2026-08-16 06:34ごろ、Windowsの再起動によって学習プロセスが強制終了した。ログ上は
+step 72,857まで進んでおり、最新の完全な定期保存は`checkpoint-72000`だった。
+
+07:48に次を確認してから`--resume`で再開した。
+
+- `trainer_state.json`のglobal stepが72,000
+- model、optimizer、scheduler、FP16 scaler、RNGがすべて存在
+- Wikipedia 214,203行、llm-jp 2,099,829行までの読取位置を保存
+- 10,000件のshuffle bufferを保存
+- checkpoint全体は約1.09GB
+
+再開ログに`restored streaming data position from ...checkpoint-72000`が出た後、step 72,001以降を
+処理し、約7.7 step/sへ復帰した。再開後500件のlossは0.1418で、再起動前の0.14台と連続している。
+失われたのは72,001〜72,857の857 step、約1分45秒ぶんだけであり、それ以前の学習は失われなかった。
+
+### 8.4 別用途でPCを使うための安全停止記録
+
+2026-08-16 19:32（JST）、Windowsを別用途へ空けるため、
+`runs/zenz-v2.5-full/STOP_REQUESTED`を作成して安全停止を要求した。
+学習ループは実行中のstepを完了してから停止要求を消費し、step 421,052で
+`checkpoint-421052`を保存して正常終了した。
+
+停止後、学習用Pythonプロセスが0件であることに加え、再開に必要な次のファイルを確認した。
+
+- `model.safetensors`
+- `optimizer.pt`
+- `scheduler.pt`
+- `trainer_state.json`（`global_step: 421052`）
+- `training_args.bin`
+- `rng_state.pth`
+- `dataset_state.pt`
+
+次回は8.2節と同じコマンドへ`--resume`を付けて実行する。スクリプトが
+`checkpoint-421052`を自動選択し、モデルだけでなくoptimizer、乱数、shuffle buffer、
+巨大JSONLの読取位置も復元する。
+
+2026-08-17 00:42（JST）に、同じ学習引数と`--resume`で再開した。ログは次の2ファイルに
+分け、バックグラウンドの非表示プロセスとして起動した。
+
+- `runs/zenz-v2.5-full.resume-20260817-004249.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260817-004249.stderr.log`
+
+標準出力の`restored streaming data position from ...checkpoint-421052/dataset_state.pt`と、
+進捗がstep 421,053以降へ進んだことを確認した。CUDA・FP16で約8 step/sに復帰し、
+Traceback、Out of Memory、NaNなどの重大エラーは発生していない。
+
+### 8.5 進捗報告後の2回目の安全停止記録
+
+2026-08-17 22:19（JST）、step 1,060,876（全体の約18.0%、約3,395万件処理済み）で
+進捗を報告した後、`STOP_REQUESTED`で安全停止を要求した。実行中のstepを完了し、
+step 1,060,954で`checkpoint-1060954`を保存して正常終了した。
+
+学習用Pythonプロセスが0件になったことと、model、optimizer、scheduler、training args、
+乱数状態、trainer state、streaming dataset stateの7種類が揃っていることを確認した。
+`trainer_state.json`の`global_step`も1,060,954である。次回の`--resume`はこのcheckpointを
+自動選択するため、今回の安全停止によるstepの巻き戻りはない。
+
+2026-08-18 03:22（JST）に、同じ学習引数と`--resume`で2回目の再開を行った。今回は
+Python起動から最初のログまで約2分半かかったが、プロセスは応答を維持しており、03:25に
+`checkpoint-1060954/dataset_state.pt`からのデータ位置復元を確認した。その後、step 1,060,955
+以降へ進み、CUDA・FP16で学習を継続している。重大エラーは発生していない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260818-032237.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260818-032237.stderr.log`
+
+### 8.6 3回目の安全停止記録
+
+2026-08-18 20:24（JST）、`STOP_REQUESTED`で安全停止を要求した。実行中のstepを完了し、
+step 1,563,801（全体の約26.5%、約5,004万件処理済み）で`checkpoint-1563801`を保存して
+正常終了した。
+
+学習用Pythonプロセスが0件になったことと、model、optimizer、scheduler、training args、
+乱数状態、trainer state、streaming dataset stateがすべて揃っていることを確認した。
+`trainer_state.json`の`global_step`は1,563,801であり、次回は`--resume`によってこの位置から
+巻き戻りなく再開できる。
+
+2026-08-19 01:04（JST）に`checkpoint-1563801`から3回目の再開を行った。PythonとGPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 1,563,802以降への進行を
+確認した。直後のstep 1,564,000で新しい定期checkpointも正常に保存され、その後もCUDA・FP16で
+学習を継続している。重大エラーは発生していない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260819-010442.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260819-010442.stderr.log`
+
+### 8.7 進捗報告後の4回目の安全停止記録
+
+2026-08-19 20:49（JST）、step 2,148,062（全体の約36.4%、約6,874万件処理済み）、
+学習loss 0.06749、最新valid loss 0.06697と報告した後、`STOP_REQUESTED`で安全停止を
+要求した。実行中のstepを完了し、step 2,148,120で`checkpoint-2148120`を保存して正常終了した。
+
+学習用Pythonプロセスが0件になったことと、model、optimizer、scheduler、training args、
+乱数状態、trainer state、streaming dataset stateがすべて揃っていることを確認した。
+`trainer_state.json`の`global_step`は2,148,120であり、次回はこの位置から再開できる。
+
+2026-08-20 02:50（JST）に`checkpoint-2148120`から4回目の再開を行った。Python・GPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 2,148,121以降を
+約8 step/sで処理していることを確認した。CUDA・FP16で正常に動作し、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260820-025022.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260820-025022.stderr.log`
+
+### 8.8 進捗報告後の5回目の安全停止記録
+
+2026-08-20 20:23（JST）、step 2,665,654（全体の約45.1%、約8,530万件処理済み）、
+学習loss 0.06379、最新valid loss 0.06361と報告した後、`STOP_REQUESTED`で安全停止を
+要求した。実行中のstepを完了し、step 2,665,715で`checkpoint-2665715`を保存して正常終了した。
+
+学習用Pythonプロセスが0件になったことと、model、optimizer、scheduler、training args、
+乱数状態、trainer state、streaming dataset stateがすべて揃っていることを確認した。
+`trainer_state.json`の`global_step`は2,665,715であり、次回はこの位置から再開できる。
+
+2026-08-21 07:06（JST）に`checkpoint-2665715`から5回目の再開を行った。Python・GPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 2,665,716以降を
+約8 step/sで処理していることを確認した。CUDA・FP16で正常に動作し、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260821-070619.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260821-070619.stderr.log`
+
+### 8.9 6回目の安全停止記録
+
+2026-08-21 19:28（JST）、`STOP_REQUESTED`で安全停止を要求した。実行中のstepを完了し、
+step 3,028,793（全体の約51.3%、約9,692万件処理済み）で`checkpoint-3028793`を保存して
+正常終了した。
+
+学習用Pythonプロセスが0件になったことと、model、optimizer、scheduler、training args、
+乱数状態、trainer state、streaming dataset stateがすべて揃っていることを確認した。
+`trainer_state.json`の`global_step`は3,028,793であり、次回はこの位置から再開できる。
+
+2026-08-23 02:53（JST）に`checkpoint-3028793`から6回目の再開を行った。Python・GPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 3,028,794以降への進行を
+確認した。起動直後の実測速度はデータ長やPC負荷の影響で約4〜5 step/s、最初のlossは
+0.06415だった。CUDA・FP16で正常に動作し、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260823-025327.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260823-025327.stderr.log`
+
+### 8.10 7回目の安全停止記録
+
+2026-08-23 19:29（JST）、`STOP_REQUESTED`で安全停止を要求した。実行中のstepを完了し、
+step 3,285,593（全体の約55.6%、約1億514万件処理済み）で`checkpoint-3285593`を保存して
+正常終了した。
+
+学習用Pythonプロセスが0件になったことと、model、optimizer、scheduler、training args、
+乱数状態、trainer state、streaming dataset stateがすべて揃っていることを確認した。
+`trainer_state.json`の`global_step`は3,285,593であり、次回はこの位置から再開できる。
+
+2026-08-24 02:30（JST）に`checkpoint-3285593`から7回目の再開を行った。Python・GPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 3,285,594以降を
+約7〜8 step/sで処理していることを確認した。CUDA・FP16で正常に動作し、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260824-023058.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260824-023058.stderr.log`
+
+### 8.11 8回目の安全停止記録
+
+2026-08-24 19:13（JST）、`STOP_REQUESTED`で安全停止を要求した。実行中のstepを完了し、
+step 3,761,976（全体の約63.7%、約1億2,038万件処理済み）で`checkpoint-3761976`を
+保存して正常終了した。
+
+学習用Pythonプロセスが0件になったことと、model、optimizer、scheduler、training args、
+乱数状態、trainer state、streaming dataset stateがすべて揃っていることを確認した。
+`trainer_state.json`の`global_step`は3,761,976であり、次回はこの位置から再開できる。
+
+2026-08-25 01:15（JST）に`checkpoint-3761976`から8回目の再開を行った。Python・GPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 3,761,977以降への進行を
+確認した。最初のlossは0.0529で、CUDA・FP16で正常に動作し、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260825-011520.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260825-011520.stderr.log`
+
+### 8.12 2回目の電源断と破損checkpointからの復旧記録
+
+2026-08-26、Windowsの電源断後に学習プロセスが0件であることを確認した。電源断直前の
+ログはstep 4,012,224、最新ディレクトリは`checkpoint-4012000`だった。必要なファイル名は
+すべて存在したが、17:15の最初の`--resume`はoptimizer復元時に次のエラーで終了した。
+
+```text
+RuntimeError: PytorchStreamReader failed reading zip archive: failed finding central directory
+```
+
+これは`optimizer.pt`のZIP終端が電源断時に書き切られなかったことを示す。ファイルの存在や
+サイズだけでは完全性を保証できないため、一つ前の`checkpoint-4008000`について次を実際に
+読み込んで検証した。
+
+- safetensorsのmodel 148テンソル
+- optimizerとscheduler
+- RNG state
+- streaming dataset state
+
+すべて正常に読み込めたため、破損checkpointは削除せず次へ隔離した。
+
+```text
+runs/corrupt-checkpoints/checkpoint-4012000-powerloss-20260826
+```
+
+17:17に`--resume`を再実行し、`checkpoint-4008000/dataset_state.pt`からのデータ位置復元と
+step 4,008,001以降への進行を確認した。巻き戻ったのは4,224 step、135,168件であり、
+step 4,008,000以前の学習は失われていない。重大エラーはない。
+
+失敗時と成功時のログ:
+
+- `runs/zenz-v2.5-full.resume-20260826-171558.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260826-171558.stderr.log`
+- `runs/zenz-v2.5-full.resume-20260826-171739.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260826-171739.stderr.log`
+
+### 8.13 3回目の電源断と完全なcheckpointからの復旧記録
+
+2026-08-26 18:33:26（JST）にWindowsが予期せず停止し、2026-08-27 20:25に再起動した。
+SystemイベントにはKernel-Power 41とEventLog 6008が記録されていた。BugcheckCode、
+PowerButtonTimestamp、SleepInProgress、WHEABootErrorCountはいずれも0で、minidumpも
+存在しなかった。Windows Updateや正常なシャットダウンの記録もなく、OSから正確な原因は
+特定できないが、給電断、電源ユニットやハードウェアの保護停止、完全フリーズと整合する。
+
+電源断直前のログはstep 4,059,790、最新保存は`checkpoint-4056000`だった。2026-08-28の
+再開前に、safetensorsのmodel 148テンソル、optimizer、scheduler、RNG state、streaming
+dataset state、trainer stateを実際に読み込み、すべて正常であることを確認した。
+
+04:14に`--resume`を実行し、`checkpoint-4056000/dataset_state.pt`からのデータ位置復元と
+step 4,056,001以降への進行を確認した。巻き戻ったのは3,790 step、121,280件であり、
+step 4,056,000以前の学習は失われていない。重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260828-041444.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260828-041444.stderr.log`
+
+### 8.14 9回目の安全停止記録
+
+2026-08-28 21:07（JST）、`STOP_REQUESTED`で安全停止を要求した。実行中のstepを完了し、
+step 4,312,348（全体の約73.0%、約1億3,800万件処理済み）で`checkpoint-4312348`を
+保存して正常終了した。
+
+電源断による破損を早期検出できるよう、今回はファイルの存在確認に加え、safetensorsの
+model 148テンソル、optimizer、scheduler、RNG state、streaming dataset state、trainer
+stateを実際に読み込んだ。すべて正常で、`global_step`は4,312,348だった。学習用Python
+プロセスも0件であり、次回はこの位置から巻き戻りなく再開できる。
+
+2026-08-29 02:00（JST）に`checkpoint-4312348`から9回目の再開を行った。Python・GPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 4,312,349以降を
+約7 step/sで処理していることを確認した。最初のlossは0.06019で、CUDA・FP16で正常に
+動作し、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260829-020026.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260829-020026.stderr.log`
+
+### 8.15 4回目の停電と復旧記録
+
+2026-08-29の停電で学習が中断した。停電直前のログはstep 4,410,219、最新保存は
+`checkpoint-4408000`だった。再開前に、safetensorsのmodel 148テンソル、optimizer、
+scheduler、RNG state、streaming dataset state、trainer stateを実際に読み込み、すべて
+正常であることを確認した。
+
+12:05（JST）に`--resume`を実行し、`checkpoint-4408000/dataset_state.pt`からのデータ位置
+復元とstep 4,408,001以降への進行を確認した。巻き戻ったのは2,219 step、71,008件であり、
+step 4,408,000以前の学習は失われていない。CUDA・FP16で約7〜8 step/s、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260829-120557.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260829-120557.stderr.log`
+
+### 8.16 10回目の安全停止記録
+
+2026-08-29 20:59（JST）、`STOP_REQUESTED`で安全停止を要求した。実行中のstepを完了し、
+step 4,666,113（全体の約79.0%、約1億4,932万件処理済み）で`checkpoint-4666113`を
+保存して正常終了した。
+
+ファイルの存在確認に加え、safetensorsのmodel 148テンソル、optimizer、scheduler、
+RNG state、streaming dataset state、trainer stateを実際に読み込んだ。すべて正常で、
+`global_step`は4,666,113だった。学習用Pythonプロセスも0件であり、次回はこの位置から
+巻き戻りなく再開できる。
+
+2026-08-30 01:32（JST）に`checkpoint-4666113`から10回目の再開を行った。Python・GPUの
+初期化後、`dataset_state.pt`からstreamingデータ位置を復元し、step 4,666,114以降を
+約7 step/sで処理していることを確認した。CUDA・FP16で正常に動作し、重大エラーはない。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260830-013249.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260830-013249.stderr.log`
+
+### 8.17 公開データ限定方針の確認と11回目の再開
+
+2026-08-31、利用状況から作ったデータを当面の学習対象から外す方針を確認した。
+`runs/zenz-v2.5-full/run_manifest.json`を調べると、このrunが指定している学習ファイルは
+`data-full/train_wikipedia.jsonl`と`data-full/train_llm-jp-corpus-v3.jsonl`だけだった。
+元モデル`ku-nlp/gpt2-small-japanese-char`から直接開始したrunであり、個人データを混ぜた
+`mixed-v1`を初期モデルとして使っていない。したがって、既学習部分を破棄して最初から
+やり直す必要はない。
+
+再開前の最新保存は`checkpoint-5276000`（全体の約89.3%、168,832,000件処理済み）だった。
+電源断などによる途中破損を見逃さないよう、model 148テンソル、optimizer、scheduler、
+RNG state、streaming dataset state、trainer stateを実際に読み込み、すべて正常であることと
+`global_step=5276000`を確認した。
+
+03:30（JST）に同じ公開データ限定コマンドへ`--resume`を付けて再開した。
+`checkpoint-5276000/dataset_state.pt`から読み取り位置を復元し、step 5,276,001以降へ
+進んでいることを確認した。
+
+再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260831-033042.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260831-033042.stderr.log`
+
+### 8.18 データ終端エラーの修正と全件学習の完了
+
+2026-09-01 00:39（JST）ごろ、学習はstep 5,905,652 / 5,905,667（99.9997%）まで
+到達したが、入力データを使い切った時点でTransformersが`Batch does not contain any data`
+を返し、`final/`を保存せず終了した。OOM、NaN、モデル破損ではなく、停止・再開時のバッチ
+先読みとcheckpoint保存の境界によって、予定step数と残データ数に小さな差が生じたものだった。
+
+`train_zenz.py`を修正し、次の条件をすべて満たす場合だけ正常完了として最終保存へ進めるようにした。
+
+1. `--streaming`で実行している
+2. 入力側の期待行数チェックを通過して全データを使い切っている
+3. Transformersのデータ終端固有エラーと完全に一致する
+
+ファイルが期待行数より短い場合、JSONが壊れている場合、非streamingの場合、別のValueErrorは
+引き続き異常終了する。例外を広く無視する修正ではない。`StreamingCompletionTests`に正常終端、
+非streaming、無関係なValueErrorの3ケースを追加し、既存2テストと合わせて5件すべて通過した。
+修正コミットは`bae9a42`。
+
+再開前に`checkpoint-5904000`のmodel 148テンソル、optimizer、scheduler、RNG state、
+streaming dataset state、trainer stateを実際に読み込み、破損がないことを確認した。
+01:05（JST）に公開データ2ファイル限定のまま再開し、約3分34秒後のstep 5,905,651で
+検証済みデータの終端を検出して`runs/zenz-v2.5-full/final/`を保存した。
+
+停止・再開境界でoptimizer更新に使われなかった行は最大510件で、188,981,342件の
+約0.00027%である。全体規模に対する影響は無視できるほど小さく、数日間の学習を最初から
+やり直す必要はない。
+
+完了確認:
+
+- validation loss: `0.05007`
+- perplexity: `1.05`
+- final model: 90,450,432 parameters、148 tensors
+- `model.safetensors` SHA-256: `49DAA42672E98C0BD4DE020256BEAFF0295C8526711D6DFC200AE9A5B4F2D596`
+- `AutoModelForCausalLM` / `AutoTokenizer`で再読込成功
+- 学習用Pythonプロセス: 0件
+
+最終再開ログ:
+
+- `runs/zenz-v2.5-full.resume-20260901-010525.stdout.log`
+- `runs/zenz-v2.5-full.resume-20260901-010525.stderr.log`
+
+進捗確認:
+
+```powershell
+Get-Content runs\zenz-v2.5-full.stdout.log -Tail 20
+Get-Content runs\zenz-v2.5-full.stderr.log -Tail 5
+Get-ChildItem runs\zenz-v2.5-full\checkpoint-*
+```
+
+## 9. 学習後の評価
+
+公開データ限定の現行モデルは「loss」と「一般fixture」で評価する。以下のdomain exact matchは
+個人利用ログを使った旧`mixed-v1`実験の記録であり、現行`zenz-v2.5-full`の評価には使わない。
+
+### 9.1 valid loss
+
+`train_zenz.py` は学習終了後に公開データ由来のvalid 5,000件を評価する。
+
+| モデル | 学習規模 | valid loss | perplexity |
+|---|---:|---:|---:|
+| 旧`mixed-v1` | 約101万件（個人データ混合） | 0.1167 | 1.12 |
+| `zenz-v2.5-full` | 約1.9億件（公開データ限定） | **0.05007** | **1.05** |
+
+学習lossだけが下がりvalid lossが悪化する場合は、trainデータを暗記する過学習の可能性がある。
+
+### 9.2 公開可能な一般fixture 104件
+
+元の122件fixtureには、一般的な変換ケースだけでなく、ユーザー辞書、dogfood回帰、
+利用時の選好から作ったケースも含まれる。現行モデルの公開データ限定方針に合わせ、
+`user-dict`、`dogfood-regression`、`preference`タグを持つ18件は、モデルへ渡す前に除外する。
+`--exclude-tags`は評価後の集計から消すのではなく、scoring自体を行わないための指定である。
+
+```powershell
+.\.venv\Scripts\python.exe compare-hf-gguf.py `
+  --backend hf `
+  --hf-model runs\zenz-v2.5-full\final `
+  --exclude-tags user-dict dogfood-regression preference `
+  --output runs\zenz-v2.5-full\eval\public-general-hf.json
+```
+
+`zenz-v2.5-full`のHFモデルは **74/104（71.15%）**。これは候補生成を評価する指標ではなく、
+fixtureにすでに入っている候補を条件付き平均log probabilityで並べたとき、期待候補が先頭に
+なった割合である。プロジェクト内の回帰指標なので、一般的な日本語IME精度を保証する値ではない。
+完全なcase別scoreは`runs/zenz-v2.5-full/eval/public-general-hf.json`へ保存した。
+
+参考として、旧`mixed-v1`は個人ケースを含む元fixtureで84/122だった。評価集合が異なるので、
+74/104と直接比較して優劣を判断しない。
+
+### 9.3 domain-valid 60件
+
+まず元モデルを同じ60件で測り、学習前の基準値を保存する。
+
+```powershell
+.\.venv\Scripts\python.exe evaluate_domain_valid.py `
+  --model ku-nlp/gpt2-small-japanese-char `
+  --data data\domain-valid.jsonl `
+  --json
+```
+
+次に、学習済みモデルを測る。
+
+```powershell
+.\.venv\Scripts\python.exe evaluate_domain_valid.py `
+  --model runs\mixed-v1\final `
+  --data data\domain-valid.jsonl `
+  --show-misses `
+  --json
+```
+
+exact matchは、生成文字列が期待値と1文字単位で完全一致した件数である。厳しい指標なので、
+不一致例も確認し、表記揺れなのか、本当に変換できていないのかを分けて読む。
+
+今回の結果:
+
+| モデル | exact match |
+|---|---:|
+| 学習前 `ku-nlp/gpt2-small-japanese-char` | 0/60（0%） |
+| `mixed-v1` | **50/60（83.3%）** |
+
+60件はtrainから除外されているので、この改善はtrain行の単純な丸暗記だけを測った値ではない。
+一方、同じドメイン原本から分割した検証データなので、まったく別分野への汎化性能を表すものでもない。
+
+## 10. Hugging Faceへ安全に保存・公開する
+
+旧`tanabe1478/gyaim-lm-small`には個人データを混ぜた`mixed-v1`の履歴がある。
+公開データ限定版は履歴まで分離するため、別リポジトリ
+`tanabe1478/gyaim-lm-small-public-v1`へ保存する。最初はprivateで作成して内容を検証し、
+検証合格後の2026-09-01にpublicへ変更した。
+このWindows環境は作業開始時にHugging Faceへ未ログインだったため、OAuth device flowで
+認証した。tokenをコマンド履歴、ログ、Gitへ書かない。
+
+```powershell
+.\.venv\Scripts\hf.exe auth login
+.\.venv\Scripts\hf.exe auth whoami
+```
+
+評価結果をmodel cardの `README.md` に記録してから、アップロード専用directoryを作る。
+
+model cardのGit管理版:
+
+```text
+GyaimSwift/Tools/model-training/model-cards/gyaim-lm-small-public-v1/README.md
+```
+
+アップロード専用directory:
+
+```text
+runs/zenz-v2.5-full/hf-upload-public-v1/
+```
+
+このdirectoryには次の7ファイルだけを明示的にコピーした。
+
+- `README.md`
+- `config.json`
+- `generation_config.json`
+- `model.safetensors`
+- `tokenizer_config.json`
+- `tokenizer.json`
+- `gyaim-lm-small-public-v1-Q5_K_M.gguf`
+
+再作成するときも`final/`全体をそのまま指定せず、allowlistでコピーする。
+
+```powershell
+$stage = 'runs\zenz-v2.5-full\hf-upload-public-v1'
+New-Item $stage -ItemType Directory
+
+$hfFiles = @(
+  'README.md',
+  'config.json',
+  'generation_config.json',
+  'model.safetensors',
+  'tokenizer_config.json',
+  'tokenizer.json'
+)
+foreach ($name in $hfFiles) {
+  Copy-Item "runs\zenz-v2.5-full\final\$name" "$stage\$name"
+}
+Copy-Item `
+  runs\zenz-v2.5-full\gyaim-lm-small-public-v1-Q5_K_M.gguf `
+  $stage
+```
+
+合計436,088,134 bytes。`training_args.bin`はローカル実行情報を含みうるため除外した。
+F16 GGUF、評価case別JSON、学習データ、利用ログ、checkpoint、optimizerも含めていない。
+ステージングdirectoryをTransformersで再読込し、model card metadata、90,450,432 parameters、
+tokenizer 6,000語彙を確認した。token、ローカル絶対パス、個人データファイル名の文字列scanも0件。
+
+アップロードに使ったコマンド:
+
+```powershell
+.\.venv\Scripts\hf.exe repos create tanabe1478/gyaim-lm-small-public-v1 --private --exist-ok
+$env:HF_XET_HIGH_PERFORMANCE = '1'
+.\.venv\Scripts\hf.exe upload `
+  tanabe1478/gyaim-lm-small-public-v1 `
+  runs\zenz-v2.5-full\hf-upload-public-v1 `
+  .
+```
+
+作成直後はまずprivateにする。Hub側のファイル一覧、model card、privacy、licenseを再確認してから
+publicへ変更する。CC BY-SA 4.0のbase modelを継承し、Wikipedia subsetはCC BY-SA 4.0、
+llm-jp Common Crawl subsetはODC-BYとCommon Crawl Terms of Useの対象であることを
+model cardへ明記した。
+
+### 10.1 2026-09-01のアップロード結果
+
+- repository: [tanabe1478/gyaim-lm-small-public-v1](https://huggingface.co/tanabe1478/gyaim-lm-small-public-v1)
+- visibility: 最初は`private`で検証し、現在は`public`（未認証APIでも再確認）
+- Hub commit: `698ad397e85e5ff7526f6c72d044b7704cdde4d2`
+- upload対象: 上記7ファイル、合計436,088,134 bytes
+- Hub上の追加ファイル: Hugging Faceが管理用に自動生成した`.gitattributes`だけ
+- `model.safetensors`: 361,816,704 bytes
+- `gyaim-lm-small-public-v1-Q5_K_M.gguf`: 73,871,808 bytes
+- 学習データ、個人利用データ、checkpoint、optimizer、log、F16 GGUF、評価case別JSONは含まない
+
+内容確認後、次のAPI操作でvisibilityだけを変更した。モデルファイルのHub commitは変わらない。
+
+```powershell
+.\.venv\Scripts\python.exe -c `
+  "from huggingface_hub import HfApi; HfApi().update_repo_settings('tanabe1478/gyaim-lm-small-public-v1', repo_type='model', private=False)"
+```
+
+検証にはtokenを使わない`HfApi(token=False)`を使用した。これで、所有者として見えているだけでなく、
+未ログインの利用者もmodel cardと全成果物を取得できる状態だと確認できる。
+
+### 10.2 このモデルから別モデルを追加学習する
+
+可能である。これはゼロからの学習ではなく、`gyaim-lm-small-public-v1`の重みを初期値として
+さらに教師あり学習する「継続fine-tuning」に当たる。親モデルは変更せず、run directoryと
+Hugging Face repositoryを毎回分ける。
+
+```text
+gyaim-lm-small-public-v1（親、固定）
+  └─ 追加データでfine-tuning
+       └─ gyaim-lm-small-programming-v2（子、別モデルの例）
+```
+
+小規模な追加データを使う例。`programming`の部分は`conversion-review`など、何を
+学習させたモデルか分かる名前に置き換える。
+
+```powershell
+.\.venv\Scripts\python.exe train_zenz.py `
+  --base-model tanabe1478/gyaim-lm-small-public-v1 `
+  --train data-child\train.jsonl `
+  --valid data-child\valid.jsonl `
+  --output runs\gyaim-lm-small-programming-v2 `
+  --epochs 1 `
+  --batch-size 32 `
+  --max-length 192 `
+  --lr 1e-5 `
+  --save-steps 2000 `
+  --fp16
+```
+
+親モデルはpublicなので、別PCでも認証なしで読み込める。Hugging Faceのrate limitを避けたい場合や、
+子モデルをprivateにする場合はログインする。ローカルの`runs\zenz-v2.5-full\final`を
+`--base-model`へ渡すこともできる。
+
+ここでの`--resume`は使わない。`--resume`は、同じrunを停止地点から同じデータ・同じ設定で
+再開するための機能である。親モデルから新しい派生モデルを作る場合は、新しい`--output`から
+開始する。派生モデルの学習を途中停止した後に限り、その派生runと同じ引数へ`--resume`を足す。
+
+追加データだけを何度も学習すると、元モデルが持っていた一般的な変換能力を忘れる
+「破滅的忘却」が起こりうる。そのため次を守る。
+
+1. 親モデルと子モデルを同じ固定fixture・validationで比較する
+2. 狭い追加データだけで悪化する場合は、元の公開データの一部をreplay用として混ぜる
+3. まず小さなlearning rateと1 epochから試し、改善を確認してから増やす
+4. 個人利用データは、明示的に採用すると決めるまではtrainへ入れない
+5. 子モデルのmodel cardに親モデルID、追加データ、license、評価値、privacy範囲を記録する
+
+子モデルを保存するときも、親repositoryへ上書きせず別repositoryを作る。アップロード前に
+10章と同じallowlist方式で`hf-upload` directoryを作り、不要な学習状態やデータがないことを確認する。
+
+```powershell
+.\.venv\Scripts\hf.exe repos create `
+  tanabe1478/gyaim-lm-small-programming-v2 --private
+
+.\.venv\Scripts\hf.exe upload `
+  tanabe1478/gyaim-lm-small-programming-v2 `
+  runs\gyaim-lm-small-programming-v2\hf-upload `
+  .
+```
+
+子モデルのmodel cardでは、少なくとも次のmetadataを設定する。
+
+```yaml
+base_model: tanabe1478/gyaim-lm-small-public-v1
+```
+
+2026-08-16の旧`mixed-v1`実行結果（履歴）:
+
+- private repository: [tanabe1478/gyaim-lm-small](https://huggingface.co/tanabe1478/gyaim-lm-small)
+- `private: true` をHub APIで再確認
+- HF model、tokenizer、model card、Q5_K_Mの計8ファイルを保存
+- HubがHF重み90,450,432 parameters、GGUF 73,871,776 bytesとして認識
+- 使用ストレージ435,693,681 bytes
+- `data/`、domain原本、checkpoint、F16 GGUFはアップロードしていない
+
+## 11. GGUF化とアプリ実測
+
+HF形式で品質が確認できた後にGGUFへ変換し、Q5_K_Mへ量子化する。量子化はモデルサイズと
+実行速度を改善する一方、精度を少し落とす可能性があるため、HF版との比較が必要。
+
+このモデルのtokenizerは `gpt2-small-japanese-char` というpre-tokenizer情報を持つ。
+素のllama.cpp converter/runtimeでは未知として拒否される可能性があるので、PR #93のM7-3に従い、
+SwiftyGyaim同梱フォークの対応状況と `tokenizer.ggml.pre` を検証してからbundleを差し替える。
+
+### 11.1 converterを学習環境から分離する
+
+SwiftyGyaimが利用する`azooKey/llama.cpp`フォークには、converterとruntimeの両方に
+`gpt2-small-japanese-char`対応がある。確認時のcommitは`88b97a4`。
+
+converterはTransformers 4系、学習環境はTransformers 5.15を使うため、同じvenvへ混ぜない。
+
+```powershell
+git clone --depth 1 `
+  https://github.com/azooKey/llama.cpp.git `
+  runs\tools\llama.cpp
+
+py -3.12 -m venv runs\tools\.venv-convert
+.\runs\tools\.venv-convert\Scripts\python.exe -m pip install --upgrade pip wheel
+.\runs\tools\.venv-convert\Scripts\python.exe -m pip install `
+  -r runs\tools\llama.cpp\requirements\requirements-convert_hf_to_gguf.txt
+```
+
+### 11.2 Windows用quantizeツールをビルドする
+
+この機体にはVisual Studio 2022 Build Toolsと同梱CMakeが入っている。
+
+```powershell
+$cmake = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe'
+
+& $cmake `
+  -S runs\tools\llama.cpp `
+  -B runs\tools\llama.cpp\build-windows `
+  -G 'Visual Studio 17 2022' `
+  -A x64 `
+  -DLLAMA_CURL=OFF `
+  -DGGML_NATIVE=OFF
+
+& $cmake `
+  --build runs\tools\llama.cpp\build-windows `
+  --config Release `
+  --target llama-quantize `
+  --parallel 8
+```
+
+生成物は`runs/tools/llama.cpp/build-windows/bin/Release/llama-quantize.exe`。
+
+### 11.3 HFからF16 GGUF、Q5_K_Mへ変換する
+
+Transformers 5が保存するGPT-2設定は文脈長を`n_positions`として持つ一方、確認時点の
+azooKey converterは旧名`n_ctx`を読む。`train_zenz.py`は、同じ値を両方の名前で保存して
+この互換差を吸収する。既存の`final/config.json`で`n_ctx`がない場合だけ、次を一度実行する。
+
+```powershell
+.\.venv\Scripts\python.exe -c `
+  "from pathlib import Path; from train_zenz import add_legacy_gpt2_context_alias; add_legacy_gpt2_context_alias(Path(r'runs/zenz-v2.5-full/final'))"
+```
+
+```powershell
+.\runs\tools\.venv-convert\Scripts\python.exe `
+  runs\tools\llama.cpp\convert_hf_to_gguf.py `
+  runs\zenz-v2.5-full\final `
+  --outfile runs\zenz-v2.5-full\gyaim-lm-small-public-v1-f16.gguf `
+  --outtype f16 `
+  --model-name gyaim-lm-small-public-v1
+
+.\runs\tools\llama.cpp\build-windows\bin\Release\llama-quantize.exe `
+  runs\zenz-v2.5-full\gyaim-lm-small-public-v1-f16.gguf `
+  runs\zenz-v2.5-full\gyaim-lm-small-public-v1-Q5_K_M.gguf `
+  Q5_K_M
+```
+
+converterログまたはGGUF metadata dumpで、`tokenizer.ggml.pre` が
+`gpt2-small-japanese-char` になっていることを必ず確認する。F16 GGUFは変換元として残し、
+アプリ同梱候補にはQ5_K_Mを使う。
+
+今回の生成結果:
+
+| ファイル | サイズ | SHA-256 |
+|---|---:|---|
+| `gyaim-lm-small-public-v1-f16.gguf` | 192,132,384 bytes | `218B08CF0A995A12AF33A8F7378670A0C2465E807F25C20F9C52359A29E4F274` |
+| `gyaim-lm-small-public-v1-Q5_K_M.gguf` | 73,871,808 bytes | `F8F9180C1F751092B6298A4DF13F7E20CBF487D4F2AF6F89727605C4F4BED860` |
+
+Q5_K_Mはフォークcommit`88b97a4`のWindows CLIでロード・1 token推論でき、95.06M GGUF
+parameters、GGUF V3、149 tensors、Q5_K_M、`tokenizer.ggml.pre=gpt2-small-japanese-char`
+を確認した。Windowsの通常`llama-cpp-python`はこのpre-tokenizerを扱えないため、量子化後の
+104件ランキング比較、app bundle差し替え、レイテンシは対応フォークを使うMac工程で行う。
+
+## 12. よく出る警告と対処
+
+### `Permission denied (publickey)`
+
+GitHub SSH鍵がWindowsに未設定。HTTPS URLでcloneするか、別途SSH鍵を登録する。
+
+### Hugging Faceのsymlink警告
+
+WindowsのDeveloper Modeが無効だと、Hugging Face cacheがsymlinkを使えず容量効率が落ちる。
+学習自体は継続できる。繰り返し多数のモデルを扱う場合はDeveloper Modeを検討する。
+
+### unauthenticated requests警告
+
+公開モデル・公開データは未ログインでも取得できる。大量・頻回アクセスではrate limitを避けるため
+Hugging Face tokenを設定する。tokenをログやリポジトリへ書かない。
+
+### `nvidia-smi` が見つからない
+
+AMD GPUなので正常。GPU認識は `torch.cuda.is_available()` と
+`torch.cuda.get_device_name(0)`、実際のGPU演算で確認する。
+
+### `device=cuda` と表示される
+
+ROCm版PyTorchがCUDA互換API名を使っているため正常。`torch.version.hip` が7.2系ならAMD経路である。
+
+### lossがNaNになる
+
+FP16の数値範囲を超えた可能性がある。直前checkpointからFP32で再開する、learning rateを下げる、
+またはgradient clippingや別の混合精度設定を検討する。今回の500 stepベンチでは発生していない。
+
+## 13. プライバシーとGit管理
+
+- `data/domain.jsonl` はredaction済みだが、ユーザー語彙を含むため取り扱いに注意する
+- それ以外の `data/*`、`data-bench/`、`runs/`、`.venv/` はGit管理外
+- ドメインデータを外部GPUやpublicモデルリポジトリへ送らない
+- 個人由来データを含む学習成果物はprivateリポジトリにする
+- 公開データ限定版は、ファイルallowlist・privacy scan・license確認後に限りpublic化を検討する
+- commit前は必ず `git status --short` で巨大なJSONLやcheckpointが入っていないことを確認する
+
+## 14. このWindows引き継ぎで変更したもの
+
+- PRブランチをHTTPSでclone
+- ネイティブWindows用ROCm 7.2.1 / PyTorch 2.9.1環境を `.venv` に構築
+- GPU検出と実GPU行列積を確認
+- 30,000件のベンチデータを生成
+- FP32とFP16を比較し、FP16 501 stepで226 examples/sを確認
+- `train_zenz.py` に明示的な `--fp16` オプションを追加
+- 最新の本番データ1,013,720件を再生成
+- FP16のmixed-v1学習を71分32秒で完了（236.2 examples/s）
+- valid loss 0.1167、perplexity 1.12を確認
+- `evaluate_domain_valid.py` を追加し、学習前0/60から学習後50/60への改善を確認
+- fixture 122件で84/122を確認（現行small基準80/122）
+- Transformers 5とconverterの`n_positions` / `n_ctx`互換差を学習スクリプトで吸収
+- 旧mixed-v1のF16 GGUFとQ5_K_M GGUFを生成し、private Hugging Faceへ保存
+- 公開2ファイル約1.9億件だけを使う`zenz-v2.5-full`を完了（valid loss 0.05007）
+- 個人由来タグを除外した一般fixture 104件で74/104（71.15%）を確認
+- 公開データ限定版のF16/Q5_K_Mを生成し、GGUF metadataとフォーク版CLIロードを確認
+- 公開専用model cardと7ファイルを独立Hugging Face repositoryへ保存し、検証後にpublic化
+
+残作業は、Mac上でのアプリbundle差し替え・量子化後の候補順位比較・レイテンシ計測である。
+
+## 15. 2026-09-02のSSD整理
+
+Cドライブの空き容量が少なくなったため、今後の追加学習とMac実機評価に必要な成果物を
+先に定義し、それ以外の再生成・再取得可能なファイルだけを削除した。
+
+削除したもの:
+
+- 中断されたHugging Face downloadの`.incomplete` 3件（35.689 GiB）
+- benchmark、smoke、resume検証で生成した古いrun directory
+- 旧`mixed-v1`のローカルrun（private Hub repositoryから再取得可能）
+- 完了済み`zenz-v2.5-full`の最後のcheckpoint 2件
+- Hub upload用staging directory
+- Q5_K_M生成後の中間F16 GGUF
+- 完了済み学習・downloadの標準出力・標準エラーログ
+
+削除対象の論理サイズは合計56.092 GiB。古いtest runはソースコード上のtestやfixtureではなく、
+test実行時に生成されたモデル重み・optimizerであり、必要なら同じscriptから再生成できる。
+削除後、`model-training`全体は約98.3 GiBから約42.2 GiBになった。
+
+残したもの:
+
+- 公開学習データ本体: Wikipediaとllm-jp（合計約34.0 GiB）
+- `zenz-v2.5-full/final`: 今後のfine-tuning元になるHF形式モデル
+- Q5_K_M GGUF: Macアプリ実機評価用
+- 一般fixture評価結果とrun manifest
+- `.venv`: Windows GPU学習環境
+- `runs/tools`: 対応llama.cpp converter/runtime
+- `data`、`data-bench`: validationと再評価用の小さいデータ
+- Git管理中のscript、test、model card、ドキュメント
+
+整理後にHF重みとQ5_K_MのSHA-256を再計算し、アップロード時の値と一致することを確認した。
+また、Hugging Face上の現行publicモデルと旧privateモデルの双方に`model.safetensors`があることも
+削除前に確認した。
+
+Windowsが報告した空き容量は87.43 GiBから473.22 GiBへ増えた。選定した削除対象の論理サイズ
+56.092 GiBより変化が大きいため、残りはファイル削除そのものではなく、遅延していたストレージ
+集計や別の一時領域の解放が同時に反映された可能性がある。今回の作業による回収量としては
+検証可能な56.092 GiBを記録値とする。

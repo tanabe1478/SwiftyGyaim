@@ -1,12 +1,12 @@
 # Spec: Zenz / Zenzai model tuning for SwiftyGyaim
 
 > Status: Draft
-> Last updated: 2026-07-08
+> Last updated: 2026-09-01
 > Trigger: Zenzai / zenz model investigation, GGUF model replacement, AIReranker / ZenzRuntime training workflow, pi-tinker suitability review
 
 ## 目的
 
-SwiftyGyaim に同梱している `zenz-v3.1-small-gguf`（2026-08-15にxsmallから切替、M4-2の実測に基づく）を、SwiftyGyaim の候補生成・候補順位付けに合う形で評価・チューニングするための仕様を定義する。
+SwiftyGyaim で使うモデル（2026-09-05以降は同梱を廃止し、`customModelPath` で指定する外部GGUF。既定は自前の gyaim-lm）を、SwiftyGyaim の候補生成・候補順位付けに合う形で評価・チューニングするための仕様を定義する。
 
 この仕様の主目的は「すぐ fine-tuning すること」ではなく、以下を順番に固定することである。
 
@@ -265,9 +265,9 @@ GyaimSwift/Tools/ai-rerank/evaluate-fast-context-rerank.py
 将来的に training data は以下に分ける。
 
 ```text
-data/zenz-tuning/eval.jsonl
-data/zenz-tuning/train.jsonl
-data/zenz-tuning/preference.jsonl
+data/model-training/eval.jsonl
+data/model-training/train.jsonl
+data/model-training/preference.jsonl
 ```
 
 `data/` は大きくなる可能性があるため、リポジトリに含めるのは小さい fixture / schema / synthetic sample に限定する。
@@ -348,6 +348,15 @@ Conceptual JSONL:
 ```
 
 実学習時は tokenizer / Trainer 側で `prompt` 部分の labels を `-100` にする。
+
+### 大規模streaming学習の完了条件
+
+公開JSONL全件をstreamingで学習するときは、入力ファイルごとの期待行数を指定し、実ファイルが
+途中で終わった場合はエラーにする。一方、停止・再開を繰り返したrunではTrainerのバッチ先読みと
+checkpoint保存の境界により、`max_steps = ceil(総行数 / batch size)`へ数step届く前に、検証済みの
+全streamingデータを使い切る場合がある。このときTransformersが返すデータ終端固有のValueError
+だけは正常完了として扱い、最終モデルを保存する。JSON破損、期待行数より短いファイル、その他の
+ValueErrorは引き続き異常終了させる。
 
 ### Preference data
 
