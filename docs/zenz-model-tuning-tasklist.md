@@ -489,10 +489,12 @@ PY
   --output runs/gyaim-lm-small-v2 --epochs 1 --batch-size 32 --max-length 192 --lr 2e-5
 ```
 
-合格基準（v1実測との比較）:
-- fixture 122件: v1 = 82/122 以上（`compare-hf-gguf.py --backend hf --hf-model runs/gyaim-lm-small-v2/final`）
-- domain-valid 60件 exact match: v1 = **55/60**（2026-09-05にリークなし分割へ再構築後の再測定値。
-  旧56/60は旧分割の値で比較に使わない）を上回ること
+合格基準（v1実測との比較。**主指標は判別**——本番の仕事は生成ではなく候補リストの並べ替えのため）:
+- **[主] rerank-valid 78件（実際に表示された候補リストからの判別top1）: v1 = 74/78 (94.9%) を上回ること**
+  （`evaluate_rerank.py --model runs/gyaim-lm-small-v2/final`。zenz-v3.1-smallも74/78で同点。
+  v1の失敗4件はすべて「かな表記 vs 漢字」の選好: 二つ/２つ・要件/ようけ・形/かたち・作る/つくる）
+- [副] fixture 122件: v1 = 82/122 以上（`compare-hf-gguf.py --backend hf`）
+- [副] domain-valid 60件 生成exact match: v1 = 55/60（リークなし分割で再測定済み）以上
 - dogfood弱点の解消: `kinou`→機能、`mitumori`→見積もり
 - 学習成果はHF privateへ（ドメインデータ込みのため公開不可）。GGUF Q5_K_M化→
   Mac側は `~/.gyaim/models/` に置き `customModelPath` 書き換え+IME再起動のみで切替

@@ -1,6 +1,7 @@
 data/*
 !data/domain.jsonl
 !data/domain-valid.jsonl
+!data/rerank-valid.jsonl
 runs/
 data-bench/
 data-full/
