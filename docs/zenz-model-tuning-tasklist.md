@@ -460,6 +460,41 @@ Definition of done:
   - private状態で内容を検証後、publicへ変更。未認証APIで`private: false`、commit `698ad397e85e5ff7526f6c72d044b7704cdde4d2`、想定ファイルとサイズを確認
 - [ ] Macのテストバンドル差し替えで量子化後順位・レイテンシ・実機動作確認（手順はM4-2と同一）
 
+### M7-3b. gyaim-lm-small-v2 継続学習レシピ（Windows実行用、2026-09-05確定）
+
+初の個人化学習。v1（公開データのみ）の重みから、統合ドメインデータを焼き込む。
+
+```bash
+cd GyaimSwift/Tools/model-training
+# 1) 公開データを再現（seed固定でMacと同一になる）
+./.venv/bin/python3 prepare_dataset.py --wikipedia 700000 --llm-jp 300000 --valid 5000 --output data
+# 2) v2混合セット: domain(コミット済み2,201件) - domain-valid(60件) を20倍 + 公開リプレイ6万行
+./.venv/bin/python3 - <<'PY'
+import json, random
+random.seed(42)
+valid_keys = {(r['input'], r['output'], r.get('left_context'))
+              for r in map(json.loads, open('data/domain-valid.jsonl'))}
+domain = [r for r in map(json.loads, open('data/domain.jsonl'))
+          if (r['input'], r['output'], r.get('left_context')) not in valid_keys]
+replay = random.sample(open('data/train.jsonl').readlines(), 60000)
+rows = [json.dumps(r, ensure_ascii=False) + '\n' for r in domain * 20] + replay
+random.shuffle(rows)
+open('data/train-v2.jsonl', 'w').writelines(rows)
+print(len(rows), 'rows')
+PY
+# 3) 継続学習（v1の重みから、低lr）
+./.venv/bin/python3 train_zenz.py --base-model tanabe1478/gyaim-lm-small-public-v1 \
+  --train data/train-v2.jsonl --valid data/valid.jsonl \
+  --output runs/gyaim-lm-small-v2 --epochs 1 --batch-size 32 --max-length 192 --lr 2e-5
+```
+
+合格基準（v1実測との比較）:
+- fixture 122件: v1 = 82/122 以上（`compare-hf-gguf.py --backend hf --hf-model runs/gyaim-lm-small-v2/final`）
+- domain-valid 60件 exact match: v1 = 56/60 を上回ること
+- dogfood弱点の解消: `kinou`→機能、`mitumori`→見積もり
+- 学習成果はHF privateへ（ドメインデータ込みのため公開不可）。GGUF Q5_K_M化→
+  Mac側は `~/.gyaim/models/` に置き `customModelPath` 書き換え+IME再起動のみで切替
+
 ### M7-4. 学習インフラの判断ガイド
 
 実測とカタログ値に基づく選択肢。**まずM7-2/M7-3の結果を見てから投資判断する**こと。
