@@ -1,0 +1,16 @@
+# Bundled AI Models
+
+SwiftyGyaim bundles a small on-device GGUF model for in-process AI candidate work.
+
+## gyaim-lm-small-public-v1-gguf
+
+- Source: https://huggingface.co/tanabe1478/gyaim-lm-small-public-v1
+- File: `gyaim-lm-small-public-v1-gguf/ggml-model-Q5_K_M.gguf`
+- License: CC-BY-SA-4.0
+- Derived from: ku-nlp/gpt2-small-japanese-char (CC-BY-SA-4.0) trained on
+  Miwa-Keita/zenz-v2.5-dataset (CC-BY-SA-4.0 / ODC-BY) in the zenz-v3 prompt format
+- License notice: `THIRD_PARTY_NOTICES.txt`
+- License text/link: `CC-BY-SA-4.0.txt`
+- SHA-256: `f8f9180c1f751092b6298a4df13f7e20cbf487d4f2af6f89727605c4f4bed860`
+
+The implementation memory-maps this file in-process.
