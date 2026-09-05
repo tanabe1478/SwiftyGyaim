@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-08-03 (同音異義語レビューから記号のみ候補を除外 BUG-031)
+> Last updated: 2026-09-05 (customModelPathによるモデル選択を追加)
 
 ## 概要
 
@@ -377,3 +377,16 @@ Tools/ai-rerank/evaluate-reranker.py \
 - app bundle / profile / 直近確定語を context に追加
 - rerank 前後とユーザー選択結果の評価ログ
 - 手動 rerank shortcut / 自動 rerank の設定分離
+
+
+## モデル選択（customModelPath）
+
+同梱zenzと自前モデル（gyaim-lm等）を設定で切り替えられる。
+
+- 設定キー `customModelPath`（settings.json / UserDefaults、GGUF絶対パス。`~`展開可）
+- パスが設定され実在すれば `BundledAIRerankModel.resolveModelURL` が同梱モデルより優先して返す。
+  実在しなければ警告ログを出して同梱 zenz-v3.1-small にフォールバック
+- モデルは起動時に1回だけmmapされるため、**反映はIMEプロセスの再起動時**
+- ログ・rerank応答の model= ラベルはカスタム時 `custom-<ファイル名>`、同梱時
+  `bundled-zenz-v3.1-small`。dogfoodログでモデル別のA/B集計ができる
+- 検証: ModelSelectionTests（選択・フォールバック・ラベル・チルダ展開）
