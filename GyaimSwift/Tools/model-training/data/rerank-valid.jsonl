@@ -76,3 +76,6 @@
 {"input": "シリタイ", "context": "といういう言語について", "candidates": ["知りたい", "しりたい"], "chosen": "知りたい"}
 {"input": "シリタイ", "context": "い関数型言語のよう要素要素について詳しく", "candidates": ["知りたい", "しりたい"], "chosen": "知りたい"}
 {"input": "ケッコウ", "context": "完全に同じ機能を目指してをまずは実装して", "candidates": ["結構", "決行", "けっこう"], "chosen": "結構"}
+{"input": "ミタ", "context": "パフォーマンス条件を", "candidates": ["観た", "見た", "満た", "みた"], "chosen": "満た"}
+{"input": "ミタ", "context": "この設計は適切だった？外から", "candidates": ["観た", "見た", "見たと", "みた"], "chosen": "見たと"}
+{"input": "ミタ", "context": "挙動を", "candidates": ["観た", "見た", "みた"], "chosen": "見た"}
