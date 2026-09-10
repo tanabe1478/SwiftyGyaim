@@ -63,6 +63,8 @@ KNOWN_TAGS = {
     "context-affinity",
     "model-required",
     "preference",
+    "affinity-poisoning",
+    "known-issue",
 }
 
 
