@@ -44,3 +44,4 @@ __pycache__/
 # diffai review state
 .diffai/
 GyaimSwift/Tools/model-training/.venv/
+GyaimSwift/dist/

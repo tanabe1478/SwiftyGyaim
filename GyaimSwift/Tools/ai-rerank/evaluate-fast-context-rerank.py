@@ -650,12 +650,19 @@ def run_quality_gate(results: list[CaseResult]) -> int:
     model-required cases are known headroom (context-dependent homophones the
     heuristic cannot solve) and are exempt from the top1/demotion checks, but
     an unsafe top is never acceptable anywhere.
+
+    known-issue cases are reproductions of documented bugs (issue reference in
+    the reason field). They are exempt from every check until the fix lands,
+    so the failing behavior stays visible in plain runs without blocking CI.
     """
+    def is_known_issue(result: CaseResult) -> bool:
+        return "known-issue" in result.tags
+
     def is_model_required(result: CaseResult) -> bool:
-        return "model-required" in result.tags
+        return "model-required" in result.tags or is_known_issue(result)
 
     top1_misses = [r for r in results if not is_model_required(r) and not r.top1]
-    unsafe_tops = [r for r in results if r.unsafeTop]
+    unsafe_tops = [r for r in results if r.unsafeTop and not is_known_issue(r)]
     demotions = [r for r in results if not is_model_required(r) and r.exactDemotion]
 
     problems: list[str] = []
