@@ -6,6 +6,8 @@
 	<string>English</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -15,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.6</string>
+	<string>1.7</string>
 	<key>CFBundleVersion</key>
-	<string>5</string>
+	<string>6</string>
 	<key>ComponentInputModeDict</key>
 	<dict>
 		<key>tsInputModeListKey</key>
@@ -60,8 +62,6 @@
 	<string>GyaimController</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
 	<key>LSBackgroundOnly</key>
 	<true/>
 	<key>tsInputMethodCharacterRepertoireKey</key>
