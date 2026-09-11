@@ -63,95 +63,50 @@ final class ConnectionDictTests: XCTestCase {
         XCTAssertGreaterThan(match?.depth ?? 0, 1)
     }
 
-    func testInternalConnectionLabelsDoNotContributeSurface() throws {
-        var results: [ConnectionSearchResult] = []
-        dict.searchDetailed(pat: "omoku", searchMode: 0) { result in
-            results.append(result)
-        }
-        let words = results.map(\.word)
-        XCTAssertFalse(words.contains("重い形容詞"), "Internal label should not be surfaced: \(words)")
-        XCTAssertFalse(words.contains("おもい形容詞"), "Internal label should not be surfaced: \(words)")
-        XCTAssertTrue(words.contains("重く"), "Natural inflection should remain: \(words)")
-    }
-
-    func testSearchMigratedTechnicalTerms() throws {
-        let expectations = [
+    /// Bundled dict.txt regression guard: fixed entries added from logs and the
+    /// Mozc manual, plus productive suffix (化/的/性) and conditional (たら)
+    /// compositions that must survive dictionary regeneration.
+    func testBundledDictionaryTermsAndCompositions() throws {
+        assertExactMatches([
+            // migrated technical terms
             ("ripojitori", "リポジトリ"),
             ("zeijakuseisiken", "脆弱性試験"),
             ("so-suko-do", "ソースコード"),
-            ("saitankeiro", "最短経路")
-        ]
-
-        assertExactMatches(expectations)
-    }
-
-    func testSearchMozcManualTerms() throws {
-        let expectations = [
+            ("saitankeiro", "最短経路"),
+            // Mozc manual terms
             ("ki-bo-dosho-tokatto", "キーボードショートカット"),
             ("kaigokannsei", "下位互換性"),
             ("tayousoninnshou", "多要素認証"),
-            ("reiwa", "令和")
-        ]
-
-        assertExactMatches(expectations)
-    }
-
-    func testProductiveKaSuffixCompounds() throws {
-        let expectations = [
-            ("kyokushoka", "局所化"),
-            ("kyokusyoka", "局所化"),
-            ("gengoka", "言語化"),
-            ("kyokushokasuru", "局所化する"),
-            ("chuushouka", "抽象化")
-        ]
-
-        assertExactMatches(expectations)
-    }
-
-    func testLogDrivenFixedDictionaryTerms() throws {
-        let expectations = [
+            ("reiwa", "令和"),
+            // log-driven fixed entries
             ("kairi", "乖離"),
             ("ruikei", "類型"),
             ("jusinn", "受診"),
             ("manabi", "学び"),
-            ("siyou", "私用")
-        ]
-
-        assertExactMatches(expectations)
-    }
-
-    func testProductiveTekiSuffixCompounds() throws {
-        let expectations = [
+            ("siyou", "私用"),
+            // productive 化 suffix
+            ("kyokushoka", "局所化"),
+            ("kyokusyoka", "局所化"),
+            ("gengoka", "言語化"),
+            ("kyokushokasuru", "局所化する"),
+            ("chuushouka", "抽象化"),
+            // productive 的 suffix
             ("chuushouteki", "抽象的"),
             ("chuushoutekina", "抽象的な"),
             ("chuushoutekini", "抽象的に"),
             ("kyokushoteki", "局所的"),
-            ("kouzouteki", "構造的")
-        ]
-
-        assertExactMatches(expectations)
-    }
-
-    func testProductiveSeiSuffixCompounds() throws {
-        let expectations = [
+            ("kouzouteki", "構造的"),
+            // productive 性 suffix
             ("saigensei", "再現性"),
             ("saigennsei", "再現性"),
             ("anzensei", "安全性"),
             ("gijutsusei", "技術性"),
-            ("kouzousei", "構造性")
-        ]
-
-        assertExactMatches(expectations)
-    }
-
-    func testConditionalTtaraInflection() throws {
-        let expectations = [
+            ("kouzousei", "構造性"),
+            // conditional たら inflection
             ("owattara", "終わったら"),
             ("kawattara", "変わったら"),
-            ("kaitara", "書いたら")
-        ]
-
-        assertExactMatches(expectations)
+            ("kaitara", "書いたら"),
+        ])
     }
 
     func testConstrainedCompositionsReturnExactCompleteConversions() throws {

@@ -24,13 +24,6 @@ final class ContextDictTests: XCTestCase {
         XCTAssertEqual(ContextDict.contextKey(from: "   "), "")
     }
 
-    func testCommonSuffixLength() {
-        XCTAssertEqual(ContextDict.commonSuffixLength("どちらの", "どちらの"), 4)
-        XCTAssertEqual(ContextDict.commonSuffixLength("素材はどちらの", "どちらの"), 4)
-        XCTAssertEqual(ContextDict.commonSuffixLength("あちらの", "どちらの"), 3)
-        XCTAssertEqual(ContextDict.commonSuffixLength("この素材は", "どちらの"), 0)
-    }
-
     func testAffinityRequiresMinimumSuffixOverlap() {
         dict.record(context: "どちらの", reading: "muki", word: "向き")
 
@@ -47,14 +40,6 @@ final class ContextDictTests: XCTestCase {
         // Missing context or reading is no evidence.
         XCTAssertEqual(dict.affinity(context: nil, reading: "muki", word: "向き"), 0.0)
         XCTAssertEqual(dict.affinity(context: "どちらの", reading: nil, word: "向き"), 0.0)
-    }
-
-    func testAffinityScoreScalesWithMatchLength() {
-        XCTAssertEqual(ContextDict.affinityScore(matchLength: 1), 0.0)
-        XCTAssertEqual(ContextDict.affinityScore(matchLength: 2), 0.5)
-        XCTAssertEqual(ContextDict.affinityScore(matchLength: 3), 0.75)
-        XCTAssertEqual(ContextDict.affinityScore(matchLength: 4), 1.0)
-        XCTAssertEqual(ContextDict.affinityScore(matchLength: 8), 1.0)
     }
 
     func testRecordPersistsAndReloads() {

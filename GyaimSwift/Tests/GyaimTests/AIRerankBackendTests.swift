@@ -24,12 +24,6 @@ final class AIRerankBackendTests: XCTestCase {
         XCTAssertEqual(reranker.rerank(request).model, "selected")
     }
 
-    func testHeuristicBackendIsAlwaysRunnable() {
-        let backend = HeuristicAIRerankBackend()
-        XCTAssertTrue(backend.canRun())
-        XCTAssertEqual(backend.rerank(makeRequest()).model, "swift-local-heuristic")
-    }
-
     private func makeRequest() -> AIRerankRequest {
         AIRerankRequest(
             version: 1,

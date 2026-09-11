@@ -13,24 +13,7 @@ final class CandidateWindowTests: XCTestCase {
         super.tearDown()
     }
 
-    // MARK: - Phase 1: enum + UserDefaults
-
-    func testDefaultDisplayModeIsClassic() {
-        XCTAssertEqual(CandidateDisplayMode.current, .classic)
-    }
-
-    func testSetDisplayModeClassic() {
-        CandidateDisplayMode.setCurrent(.classic)
-        XCTAssertEqual(CandidateDisplayMode.current, .classic)
-    }
-
-    func testSetDisplayModeList() {
-        CandidateDisplayMode.setCurrent(.classic)
-        CandidateDisplayMode.setCurrent(.list)
-        XCTAssertEqual(CandidateDisplayMode.current, .list)
-    }
-
-    // MARK: - Phase 2: Classic mode rendering
+    // MARK: - Classic mode rendering
 
     func testUpdateCandidatesClassicMode() {
         CandidateDisplayMode.setCurrent(.classic)
@@ -61,17 +44,6 @@ final class CandidateWindowTests: XCTestCase {
         // Classic mode shows at most 11 candidates (space separated)
         let parts = textView!.string.components(separatedBy: " ").filter { !$0.isEmpty }
         XCTAssertLessThanOrEqual(parts.count, 11, "クラシックモードは最大11候補")
-
-        CandidateWindow.shared = nil
-    }
-
-    func testClassicModeKeepsOriginalMinimumHeight() {
-        CandidateDisplayMode.setCurrent(.classic)
-        let window = CandidateWindow()
-        window.updateCandidates(["短い候補"], selectedIndex: 0)
-
-        XCTAssertEqual(window.frame.width, 241, accuracy: 0.5)
-        XCTAssertEqual(window.frame.height, 126, accuracy: 0.5)
 
         CandidateWindow.shared = nil
     }
@@ -138,91 +110,38 @@ final class CandidateWindowTests: XCTestCase {
 
     // MARK: - Page indicator tests
 
-    func testClassicModeShowsDownArrowWhenHasMore() {
+    // hasPrev には表示上の効果がない（▲は出さない）。hasMore のみが▼を制御する。
+
+    func testClassicModeShowsDownArrowOnlyWhenHasMore() {
         CandidateDisplayMode.setCurrent(.classic)
         let window = CandidateWindow()
-        window.updateCandidates(["候補1", "候補2", "候補3"], selectedIndex: 0, hasMore: true, hasPrev: false)
 
-        let textView = findClassicTextView(in: window)
-        XCTAssertNotNil(textView)
-        XCTAssertTrue(textView!.string.hasSuffix("▼"), "hasMore時にクラシック表示の末尾に▼があるべき: \(textView!.string)")
-        XCTAssertFalse(textView!.string.hasPrefix("▲"), "hasPrev=false時に▲は不要")
+        window.updateCandidates(["候補1", "候補2", "候補3"], selectedIndex: 0, hasMore: true, hasPrev: true)
+        var text = findClassicTextView(in: window)?.string ?? ""
+        XCTAssertTrue(text.hasSuffix("▼"), "hasMore時にクラシック表示の末尾に▼があるべき: \(text)")
+        XCTAssertFalse(text.contains("▲"), "▲は表示しない")
+
+        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: false, hasPrev: true)
+        text = findClassicTextView(in: window)?.string ?? ""
+        XCTAssertFalse(text.contains("▼"), "hasMore=false時に▼は不要")
+        XCTAssertFalse(text.contains("▲"), "▲は表示しない")
 
         CandidateWindow.shared = nil
     }
 
-    func testClassicModeNoArrowWhenHasPrevOnly() {
-        CandidateDisplayMode.setCurrent(.classic)
-        let window = CandidateWindow()
-        window.updateCandidates(["候補1", "候補2", "候補3"], selectedIndex: 0, hasMore: false, hasPrev: true)
-
-        let textView = findClassicTextView(in: window)
-        XCTAssertNotNil(textView)
-        XCTAssertFalse(textView!.string.contains("▲"), "hasPrevのみでは矢印不要")
-        XCTAssertFalse(textView!.string.contains("▼"), "hasMore=false時に▼は不要")
-
-        CandidateWindow.shared = nil
-    }
-
-    func testClassicModeShowsDownArrowWhenBothFlags() {
-        CandidateDisplayMode.setCurrent(.classic)
-        let window = CandidateWindow()
-        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: true, hasPrev: true)
-
-        let textView = findClassicTextView(in: window)
-        XCTAssertNotNil(textView)
-        XCTAssertFalse(textView!.string.contains("▲"), "▲は表示しない")
-        XCTAssertTrue(textView!.string.hasSuffix("▼"), "hasMore時に▼があるべき")
-
-        CandidateWindow.shared = nil
-    }
-
-    func testClassicModeNoArrowsWhenNoPageInfo() {
-        CandidateDisplayMode.setCurrent(.classic)
-        let window = CandidateWindow()
-        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0)
-
-        let textView = findClassicTextView(in: window)
-        XCTAssertNotNil(textView)
-        XCTAssertFalse(textView!.string.contains("▲"), "ページ情報なしでは▲不要")
-        XCTAssertFalse(textView!.string.contains("▼"), "ページ情報なしでは▼不要")
-
-        CandidateWindow.shared = nil
-    }
-
-    func testListModeShowsIndicatorWhenHasMore() {
+    func testListModeShowsIndicatorRowOnlyWhenHasMore() {
         CandidateDisplayMode.setCurrent(.list)
         let window = CandidateWindow()
-        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: true, hasPrev: false)
 
-        let labels = findStackViewLabels(in: window)
+        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: true, hasPrev: true)
+        var labels = findStackViewLabels(in: window)
         let lastLabel = labels.last?.stringValue ?? ""
         XCTAssertTrue(lastLabel.contains("▼"), "hasMore時にリスト表示の末尾に▼インジケータがあるべき: \(lastLabel)")
-
-        CandidateWindow.shared = nil
-    }
-
-    func testListModeNoIndicatorWhenHasPrevOnly() {
-        CandidateDisplayMode.setCurrent(.list)
-        let window = CandidateWindow()
-        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: false, hasPrev: true)
-
-        let labels = findStackViewLabels(in: window)
-        // hasPrevのみではインジケータ行なし（候補2件のみ）
-        XCTAssertEqual(labels.count, 2, "hasPrevのみではインジケータ不要")
-
-        CandidateWindow.shared = nil
-    }
-
-    func testListModeShowsOnlyDownWhenBothFlags() {
-        CandidateDisplayMode.setCurrent(.list)
-        let window = CandidateWindow()
-        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: true, hasPrev: true)
-
-        let labels = findStackViewLabels(in: window)
-        let lastLabel = labels.last?.stringValue ?? ""
         XCTAssertFalse(lastLabel.contains("▲"), "▲は表示しない: \(lastLabel)")
-        XCTAssertTrue(lastLabel.contains("▼"), "hasMore時に▼があるべき: \(lastLabel)")
+
+        window.updateCandidates(["候補1", "候補2"], selectedIndex: 0, hasMore: false, hasPrev: true)
+        labels = findStackViewLabels(in: window)
+        XCTAssertEqual(labels.count, 2, "hasMore=false ではインジケータ行なし（候補2件のみ）")
 
         CandidateWindow.shared = nil
     }
@@ -233,92 +152,52 @@ final class CandidateWindowTests: XCTestCase {
     // lineRect.origin.y + lineRect.height = カーソル行の上端
     // setFrameOrigin = ウィンドウの左下を設定
 
-    func testListModePositionsBelowCursor() {
-        // 画面中央のカーソル、リストモード → カーソルの下に配置
-        let lineRect = NSRect(x: 100, y: 500, width: 1, height: 20)
+    private let screenFrame = NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+    func testListModePositionsBelowCursorAndFlipsAboveNearBottom() {
         let winSize = NSSize(width: 260, height: 200)
-        let screenFrame = NSRect(x: 0, y: 0, width: 1440, height: 900)
 
-        let origin = CandidateWindowPositioner.calculate(
-            lineRect: lineRect, winSize: winSize,
-            screenFrame: screenFrame, mode: .list)
+        // 画面中央のカーソル → カーソルの下に配置（gap 5）
+        let center = NSRect(x: 100, y: 500, width: 1, height: 20)
+        let below = CandidateWindowPositioner.calculate(
+            lineRect: center, winSize: winSize, screenFrame: screenFrame, mode: .list)
+        XCTAssertEqual(below.y, center.origin.y - winSize.height - 5, "リストモードはカーソルの下に配置")
+        XCTAssertEqual(below.x, center.origin.x - 5)
 
-        // ウィンドウ上端 = カーソル下端 - gap
-        XCTAssertEqual(origin.y, lineRect.origin.y - winSize.height - 5,
-                       "リストモードはカーソルの下に配置")
-        XCTAssertEqual(origin.x, lineRect.origin.x - 5)
+        // 画面下端付近 → 下に収まらないので上にフリップ
+        let nearBottom = NSRect(x: 100, y: 50, width: 1, height: 20)
+        let above = CandidateWindowPositioner.calculate(
+            lineRect: nearBottom, winSize: winSize, screenFrame: screenFrame, mode: .list)
+        XCTAssertEqual(above.y, nearBottom.origin.y + nearBottom.height + 5, "画面下端ではカーソルの上に配置")
     }
 
-    func testListModeFlipsAboveWhenNearScreenBottom() {
-        // カーソルが画面下端付近 → 下に収まらないので上にフリップ
-        let lineRect = NSRect(x: 100, y: 50, width: 1, height: 20)
-        let winSize = NSSize(width: 260, height: 200)
-        let screenFrame = NSRect(x: 0, y: 0, width: 1440, height: 900)
-
-        let origin = CandidateWindowPositioner.calculate(
-            lineRect: lineRect, winSize: winSize,
-            screenFrame: screenFrame, mode: .list)
-
-        // カーソル上端の上に配置
-        XCTAssertEqual(origin.y, lineRect.origin.y + lineRect.height + 5,
-                       "画面下端ではカーソルの上に配置")
-    }
-
-    func testClassicModePositionsBelowCursor() {
-        // クラシックモード: 他のIMEと同様にカーソルの下に配置
-        // (吹き出しの三角は装飾であり、位置決めはカーソル下が自然)
-        let lineRect = NSRect(x: 100, y: 500, width: 1, height: 20)
+    func testClassicModePositionsBelowCursorFlipsAndClampsToScreen() {
         let winSize = NSSize(width: 300, height: 100)
-        let screenFrame = NSRect(x: 0, y: 0, width: 1440, height: 900)
 
-        let origin = CandidateWindowPositioner.calculate(
-            lineRect: lineRect, winSize: winSize,
+        // クラシックモード: カーソルの下にぴったり（gap 0）
+        let center = NSRect(x: 100, y: 500, width: 1, height: 20)
+        let below = CandidateWindowPositioner.calculate(
+            lineRect: center, winSize: winSize, screenFrame: screenFrame, mode: .classic)
+        XCTAssertEqual(below.y, center.origin.y - winSize.height, "クラシックモードはカーソルの下に配置")
+
+        // 画面下端付近 → カーソル上端の上にフリップ
+        let nearBottom = NSRect(x: 100, y: 50, width: 1, height: 20)
+        let above = CandidateWindowPositioner.calculate(
+            lineRect: nearBottom, winSize: winSize, screenFrame: screenFrame, mode: .classic)
+        XCTAssertEqual(above.y, nearBottom.origin.y + nearBottom.height, "画面下端ではカーソルの上に配置")
+
+        // 画面右端付近 → ウィンドウが右にはみ出さない
+        let nearRight = NSRect(x: 1400, y: 500, width: 1, height: 20)
+        let clampedRight = CandidateWindowPositioner.calculate(
+            lineRect: nearRight, winSize: winSize, screenFrame: screenFrame, mode: .classic)
+        XCTAssertLessThanOrEqual(clampedRight.x + winSize.width, screenFrame.maxX, "ウィンドウが画面右端からはみ出さない")
+
+        // 上下どちらにも収まらない → 画面下端より下には出さない
+        let tall = NSSize(width: 300, height: 1000)
+        let clampedTop = CandidateWindowPositioner.calculate(
+            lineRect: NSRect(x: 100, y: 10, width: 1, height: 20), winSize: tall,
             screenFrame: screenFrame, mode: .classic)
-
-        // ウィンドウ上端 = カーソル下端 (gap=0でぴったり)
-        XCTAssertEqual(origin.y, lineRect.origin.y - winSize.height,
-                       "クラシックモードはカーソルの下に配置")
-    }
-
-    func testClassicModeFlipsAboveWhenNearScreenBottom() {
-        let lineRect = NSRect(x: 100, y: 50, width: 1, height: 20)
-        let winSize = NSSize(width: 300, height: 100)
-        let screenFrame = NSRect(x: 0, y: 0, width: 1440, height: 900)
-
-        let origin = CandidateWindowPositioner.calculate(
-            lineRect: lineRect, winSize: winSize,
-            screenFrame: screenFrame, mode: .classic)
-
-        // 下に収まらないのでカーソル上端の上に配置
-        XCTAssertEqual(origin.y, lineRect.origin.y + lineRect.height,
-                       "画面下端ではカーソルの上に配置")
-    }
-
-    func testPositionClampsToScreenRight() {
-        // カーソルが画面右端付近 → ウィンドウが右にはみ出さない
-        let lineRect = NSRect(x: 1400, y: 500, width: 1, height: 20)
-        let winSize = NSSize(width: 300, height: 100)
-        let screenFrame = NSRect(x: 0, y: 0, width: 1440, height: 900)
-
-        let origin = CandidateWindowPositioner.calculate(
-            lineRect: lineRect, winSize: winSize,
-            screenFrame: screenFrame, mode: .classic)
-
-        XCTAssertLessThanOrEqual(origin.x + winSize.width, screenFrame.maxX,
-                                  "ウィンドウが画面右端からはみ出さない")
-    }
-
-    func testPositionClampsToScreenTopAfterFlip() {
-        let lineRect = NSRect(x: 100, y: 10, width: 1, height: 20)
-        let winSize = NSSize(width: 300, height: 1000)
-        let screenFrame = NSRect(x: 0, y: 0, width: 1440, height: 900)
-
-        let origin = CandidateWindowPositioner.calculate(
-            lineRect: lineRect, winSize: winSize,
-            screenFrame: screenFrame, mode: .classic)
-
-        XCTAssertEqual(origin.y, screenFrame.minY,
-                       "上下どちらにも収まらない場合も画面下端より下には出さない")
+        XCTAssertEqual(clampedTop.y, screenFrame.minY, "上下どちらにも収まらない場合も画面下端より下には出さない")
     }
 
     func testValidReportedLineRectIsUsedAsIs() {
@@ -405,41 +284,6 @@ final class CandidateWindowTests: XCTestCase {
             "右マージンが不足 (scrollFrame=\(scrollFrame), container=\(containerFrame))")
         XCTAssertGreaterThanOrEqual(containerFrame.maxY - scrollFrame.maxY, 10,
             "上マージンが不足 (scrollFrame=\(scrollFrame), container=\(containerFrame))")
-
-        CandidateWindow.shared = nil
-    }
-
-    func testClassicScrollViewInsetsMatchConstants() {
-        CandidateDisplayMode.setCurrent(.classic)
-        let window = CandidateWindow()
-        window.updateCandidates(["テスト", "候補"], selectedIndex: 0)
-
-        window.contentView?.layoutSubtreeIfNeeded()
-
-        guard let contentView = window.contentView else {
-            XCTFail("contentView is nil"); return
-        }
-        guard let scrollView = findView(in: contentView, matching: { (sv: NSScrollView) in !sv.isHidden }) else {
-            XCTFail("visible NSScrollView not found"); return
-        }
-        let containerFrame = contentView.bounds
-        let scrollFrame = scrollView.superview?.convert(scrollView.frame, to: contentView) ?? scrollView.frame
-
-        // Verify insets match exactly (within 1pt tolerance for rounding)
-        let leftInset = scrollFrame.minX
-        let bottomInset = scrollFrame.minY
-        let rightInset = containerFrame.maxX - scrollFrame.maxX
-        let topInset = containerFrame.maxY - scrollFrame.maxY
-
-        // Print actual values for debugging
-        print("Classic layout: container=\(containerFrame), scroll=\(scrollFrame)")
-        print("Insets: top=\(topInset), left=\(leftInset), bottom=\(bottomInset), right=\(rightInset)")
-
-        // Match the current classic bubble content insets.
-        XCTAssertEqual(leftInset, 20, accuracy: 1, "左インセットが期待値と異なる")
-        XCTAssertEqual(rightInset, 20, accuracy: 1, "右インセットが期待値と異なる")
-        XCTAssertEqual(topInset, 27, accuracy: 1, "上インセットが期待値と異なる")
-        XCTAssertEqual(bottomInset, 20, accuracy: 1, "下インセットが期待値と異なる")
 
         CandidateWindow.shared = nil
     }

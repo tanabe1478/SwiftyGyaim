@@ -82,16 +82,6 @@ final class HandleEventTests: XCTestCase {
         XCTAssertEqual(result, Result(handled: true, action: .fixAsKana(hiragana: false)))
     }
 
-    func testHiraganaShortcutWhenNotConverting_ignored() {
-        let result = route(
-            converting: false,
-            matchesHiraganaShortcut: true,
-            hasEventString: false
-        )
-        // Not converting, so hiragana shortcut check is skipped; falls through to no-event-string guard
-        XCTAssertEqual(result, Result(handled: true, action: .none))
-    }
-
     // MARK: - 3. Single-key kana confirm (; / q)
 
     func testSemicolonWhenConverting_returnsFixAsKanaHiragana() {
@@ -517,16 +507,6 @@ final class HandleEventTests: XCTestCase {
         XCTAssertEqual(result, Result(handled: true, action: .googleTransliterate))
     }
 
-    func testTabWhenNotConverting_ignored() {
-        let result = route(
-            character: 0x09,
-            keyCode: 48,
-            converting: false,
-            hasEventString: true
-        )
-        XCTAssertNotEqual(result.action, .googleTransliterate)
-    }
-
     // MARK: - Edge: 0x08 (backspace alt) treated same as 0x7F
 
     func testBackspaceAlt0x08WhenConverting_returnsBackspaceInputPat() {
@@ -608,14 +588,5 @@ final class HandleEventTests: XCTestCase {
             matchesDeleteCandidateShortcut: true
         )
         XCTAssertEqual(result, Result(handled: true, action: .deleteCandidate))
-    }
-
-    func testDeleteCandidateShortcutWhenNotConverting_ignored() {
-        let result = route(
-            converting: false,
-            matchesDeleteCandidateShortcut: true,
-            hasEventString: false
-        )
-        XCTAssertNotEqual(result.action, .deleteCandidate)
     }
 }

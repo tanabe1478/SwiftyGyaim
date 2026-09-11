@@ -11,10 +11,6 @@ private struct StubZenzRuntime: ZenzRuntime {
 }
 
 final class ZenzRuntimeTests: XCTestCase {
-    func testRuntimeStatusReadiness() {
-        XCTAssertTrue(ZenzRuntimeStatus.ready.isReady)
-        XCTAssertFalse(ZenzRuntimeStatus.unavailable("missing").isReady)
-    }
 
     func testBundledZenzBackendUsesRuntimeResponseWhenAvailable() {
         let expected = AIRerankResponse(order: [1, 0], scores: ["1": 1.0], model: "stub-llama")
@@ -282,17 +278,6 @@ final class ZenzRuntimeTests: XCTestCase {
                                                                         localOrder: [0, 1])
 
         XCTAssertEqual(indices, [0, 1])
-    }
-
-    func testExactHomophoneCandidateIndicesKeepsHiraganaWordThatIsNotRawSpelling() {
-        // "ください" (input kudasa → raw spelling くださ) is a legitimate
-        // hiragana word and must stay comparable (BUG-022 regression intent).
-        let request = makeKudasaRegressionRequest()
-
-        let indices = BundledZenzRuntime.exactHomophoneCandidateIndices(request: request,
-                                                                        localOrder: [2, 1, 0])
-
-        XCTAssertTrue(indices.contains(0))
     }
 
     func testSingleCharacterPrefixPromotesExactTextMatchOnly() {

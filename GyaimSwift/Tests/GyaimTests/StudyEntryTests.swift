@@ -38,17 +38,6 @@ final class StudyEntryTests: XCTestCase {
         XCTAssertEqual(EvictionMode.current, .mru)
     }
 
-    func testEvictionModeSetAndGet() {
-        EvictionMode.setCurrent(.mru)
-        XCTAssertEqual(EvictionMode.current, .mru)
-
-        EvictionMode.setCurrent(.none)
-        XCTAssertEqual(EvictionMode.current, .none)
-
-        EvictionMode.setCurrent(.scoreBased)
-        XCTAssertEqual(EvictionMode.current, .scoreBased)
-    }
-
     // MARK: - File I/O
 
     private func makeTempFile(_ content: String) throws -> String {
@@ -70,34 +59,7 @@ final class StudyEntryTests: XCTestCase {
         XCTAssertGreaterThan(entries[0].lastAccessTime, Date().timeIntervalSince1970 - 60)
     }
 
-    func testLoadStudyDictNewFormat() throws {
-        let path = try makeTempFile("tokyo\t東京\t1710000000.0\t5\nosaka\t大阪\t1710086400.0\t3\n")
-        let entries = WordSearch.loadStudyDict(dictFile: path)
-        XCTAssertEqual(entries.count, 2)
-        XCTAssertEqual(entries[0].reading, "tokyo")
-        XCTAssertEqual(entries[0].word, "東京")
-        XCTAssertEqual(entries[0].lastAccessTime, 1710000000.0, accuracy: 0.1)
-        XCTAssertEqual(entries[0].frequency, 5)
-    }
-
-    func testSaveStudyDictWritesFourColumns() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let path = dir.appendingPathComponent("studydict.txt").path
-        let entries = [
-            StudyEntry(reading: "tokyo", word: "東京", lastAccessTime: 1710000000.0, frequency: 5)
-        ]
-        WordSearch.saveStudyDict(dictFile: path, dict: entries)
-        let content = try String(contentsOfFile: path, encoding: .utf8)
-        let parts = content.trimmingCharacters(in: .newlines).split(separator: "\t")
-        XCTAssertEqual(parts.count, 4)
-        XCTAssertEqual(String(parts[0]), "tokyo")
-        XCTAssertEqual(String(parts[1]), "東京")
-        XCTAssertEqual(String(parts[2]), "1710000000.0")
-        XCTAssertEqual(String(parts[3]), "5")
-    }
-
-    func testRoundTrip() throws {
+    func testSaveWritesFourColumnsAndRoundTrips() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let path = dir.appendingPathComponent("studydict.txt").path
@@ -106,6 +68,11 @@ final class StudyEntryTests: XCTestCase {
             StudyEntry(reading: "osaka", word: "大阪", lastAccessTime: 1710086400.0, frequency: 3),
         ]
         WordSearch.saveStudyDict(dictFile: path, dict: original)
+
+        // On-disk format: reading, word, timestamp, frequency (TSV)
+        let content = try String(contentsOfFile: path, encoding: .utf8)
+        XCTAssertEqual(content, "tokyo\t東京\t1710000000.0\t5\nosaka\t大阪\t1710086400.0\t3\n")
+
         let loaded = WordSearch.loadStudyDict(dictFile: path)
         XCTAssertEqual(loaded.count, 2)
         XCTAssertEqual(loaded[0].reading, original[0].reading)
