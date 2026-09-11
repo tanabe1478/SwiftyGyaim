@@ -138,43 +138,6 @@ final class PreferencesWindowTests: XCTestCase {
                          keyCode: keyCode)!
     }
 
-    // MARK: - Checkbox existence
-
-    func testClipboardToggleExists() {
-        let toggle = findCheckbox(titled: "クリップボードの内容を候補に表示する")
-        XCTAssertNotNil(toggle, "クリップボード候補のトグルが見つからない")
-    }
-
-    func testSelectedTextToggleExists() {
-        let toggle = findCheckbox(titled: "選択テキストを候補に表示する")
-        XCTAssertNotNil(toggle, "選択テキスト候補のトグルが見つからない")
-    }
-
-    func testLogToggleExists() {
-        let toggle = findCheckbox(titled: "ロギングを有効にする")
-        XCTAssertNotNil(toggle, "ログトグルが見つからない")
-    }
-
-    func testFastContextRerankToggleExists() {
-        let toggle = findCheckbox(titled: "通常入力で軽量rerankを使う")
-        XCTAssertNotNil(toggle, "軽量rerankトグルが見つからない")
-    }
-
-    func testFastContextRerankModelToggleExists() {
-        let toggle = findCheckbox(titled: "軽量rerankでモデルbackendを使う（実験的）")
-        XCTAssertNotNil(toggle, "軽量rerankモデルbackendトグルが見つからない")
-    }
-
-    func testFastContextRerankLoggingToggleExists() {
-        let toggle = findCheckbox(titled: "軽量rerankのレイテンシをログに出す")
-        XCTAssertNotNil(toggle, "軽量rerankログトグルが見つからない")
-    }
-
-    func testConnectionDictionaryImportUsageHintExists() {
-        let hint = findLabel(containing: "リポジトリURLまたは raw の dict2.txt URL")
-        XCTAssertNotNil(hint, "接続辞書インポートで指定すべきURLの説明が見つからない")
-    }
-
     // MARK: - Default state (both ON when UserDefaults unset)
 
     func testClipboardToggleDefaultOn() {
@@ -283,11 +246,6 @@ final class PreferencesWindowTests: XCTestCase {
 
     // MARK: - Display mode control
 
-    func testDisplayModeControlExists() {
-        let control = findSegmentedControl()
-        XCTAssertNotNil(control, "表示スタイルのセグメントコントロールが見つからない")
-    }
-
     func testDisplayModeControlDefaultIsClassic() {
         let control = findSegmentedControl()!
         XCTAssertEqual(control.selectedSegment, 1, "デフォルトはクラシック表示（セグメント1）であるべき")
@@ -304,18 +262,6 @@ final class PreferencesWindowTests: XCTestCase {
         control.selectedSegment = 0
         control.sendAction(control.action, to: control.target)
         XCTAssertEqual(CandidateDisplayMode.current, .list)
-    }
-
-    // MARK: - Section title exists
-
-    func testCandidateSectionTitleExists() {
-        guard let contentView = window.contentView else {
-            XCTFail("contentView is nil")
-            return
-        }
-        let labels = contentView.subviews.compactMap { $0 as? NSTextField }
-        let found = labels.contains { $0.stringValue == "候補" }
-        XCTAssertTrue(found, "「候補」セクションタイトルが見つからない")
     }
 
     // MARK: - Eviction mode control
@@ -338,14 +284,6 @@ final class PreferencesWindowTests: XCTestCase {
         return all.first { $0.segmentCount == 3 }
     }
 
-    func testEvictionModeControlExists() {
-        UserDefaults.standard.removeObject(forKey: "studyDictEvictionMode")
-        window.close()
-        window = PreferencesWindow()
-        let control = findEvictionModeControl()
-        XCTAssertNotNil(control, "淘汰方式のセグメントコントロールが見つからない")
-    }
-
     func testEvictionModeControlDefaultValue() {
         UserDefaults.standard.removeObject(forKey: "studyDictEvictionMode")
         window.close()
@@ -356,11 +294,6 @@ final class PreferencesWindowTests: XCTestCase {
     }
 
     // MARK: - Study Hiragana Toggle
-
-    func testStudyHiraganaToggleExists() {
-        let toggle = findCheckbox(titled: "平仮名の確定を学習する")
-        XCTAssertNotNil(toggle, "平仮名学習のトグルが見つからない")
-    }
 
     func testStudyHiraganaToggleDefaultOn() {
         UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")

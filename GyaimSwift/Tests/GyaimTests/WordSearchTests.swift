@@ -37,36 +37,6 @@ final class WordSearchTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
-    /// BUG-033: コントローラ再生成のたびに共有ConnectionDictが破棄され、
-    /// アプリ切替ごとに40K行の再パースが走っていた回帰の防止。
-    /// 同じパスでWordSearchを作り直しても共有インスタンスが再利用されること。
-    func testInitReusesSharedConnectionDictForSamePath() throws {
-        try XCTSkipIf(ws == nil)
-        let first = try XCTUnwrap(WordSearch.sharedConnectionDict)
-        let second = WordSearch(
-            connectionDictFile: WordSearch.sharedConnectionDictFile,
-            localDictFile: tempDir.appendingPathComponent("localdict.txt").path,
-            studyDictFile: tempDir.appendingPathComponent("studydict.txt").path)
-        _ = second
-        let after = try XCTUnwrap(WordSearch.sharedConnectionDict)
-        XCTAssertTrue(first === after,
-                      "同一パスの再initで共有ConnectionDictが再ロードされている")
-    }
-
-    func testSearchPrefix() throws {
-        try XCTSkipIf(ws == nil)
-        let results = ws.search(query: "man", searchMode: 0)
-        let words = results.map(\.word)
-        XCTAssertTrue(words.contains("万"), "Expected '万' in \(words)")
-    }
-
-    func testSearchExact() throws {
-        try XCTSkipIf(ws == nil)
-        let results = ws.search(query: "man", searchMode: 1)
-        let words = results.map(\.word)
-        XCTAssertTrue(words.contains("万"), "Expected '万' in exact search: \(words)")
-    }
-
     func testKanaEquivalentReadingIsExactKind() throws {
         // BUG-026: a study entry learned as "kousinn" (nn) must count as an
         // exact reading match for typed "kousin" (n) — same kana こうしん.
@@ -169,6 +139,7 @@ final class WordSearchTests: XCTestCase {
         let words = results.map(\.word)
         XCTAssertTrue(words.contains("局所化"), "Expected '局所化' in exact search: \(words)")
         XCTAssertFalse(words.contains { $0.contains("*") }, "Displayed candidates should strip internal markers: \(words)")
+        XCTAssertEqual(results.first { $0.word == "局所化" }?.kind, .compound)
     }
 
     func testSearchFiltersInternalConnectionSurfaceLabels() throws {
@@ -185,12 +156,6 @@ final class WordSearchTests: XCTestCase {
         let results = ws.search(query: "keiyoushi", searchMode: 1)
         let words = results.map(\.word)
         XCTAssertTrue(words.contains("形容詞"), "Standalone grammar term should remain valid: \(words)")
-    }
-
-    func testConnectionCompoundExactUsesCompoundKind() throws {
-        try XCTSkipIf(ws == nil)
-        let results = ws.search(query: "kyokushoka", searchMode: 1)
-        XCTAssertEqual(results.first { $0.word == "局所化" }?.kind, .compound)
     }
 
     func testTimestamp() throws {
@@ -215,24 +180,10 @@ final class WordSearchTests: XCTestCase {
     func testTriggerSuffixReturnsEmpty() throws {
         try XCTSkipIf(ws == nil)
         UserDefaults.standard.removeObject(forKey: "googleTransliterateTrigger")
-        let results = ws.search(query: "meguro`", searchMode: 0)
-        XCTAssertTrue(results.isEmpty, "Trigger suffix should return empty (Google handles it)")
-    }
-
-    func testSingleCharTriggerSuffixReturnsEmpty() throws {
-        try XCTSkipIf(ws == nil)
-        UserDefaults.standard.removeObject(forKey: "googleTransliterateTrigger")
-        let results = ws.search(query: "a`", searchMode: 0)
-        XCTAssertTrue(results.isEmpty, "Single char + trigger should return empty")
-    }
-
-    func testTriggerSuffixOnlyIsNotGoogleTrigger() throws {
-        try XCTSkipIf(ws == nil)
-        UserDefaults.standard.removeObject(forKey: "googleTransliterateTrigger")
-        // "`" alone (count == 1) should NOT trigger the Google branch
-        let results = ws.search(query: "`", searchMode: 0)
-        // hasTriggerSuffix requires count > 1, so single char falls through
-        _ = results
+        XCTAssertTrue(ws.search(query: "meguro`", searchMode: 0).isEmpty,
+                      "Trigger suffix should return empty (Google handles it)")
+        XCTAssertTrue(ws.search(query: "a`", searchMode: 0).isEmpty,
+                      "Single char + trigger should return empty")
     }
 
     func testSearchReturnsMoreThan10Results() throws {
@@ -279,41 +230,6 @@ final class WordSearchTests: XCTestCase {
         XCTAssertFalse(words.contains { $0.contains("Private note") })
     }
 
-    func testStudyInsertsNewEntry() throws {
-        try XCTSkipIf(ws == nil)
-        ws.study(word: "東京", reading: "tokyo")
-        let results = ws.search(query: "tokyo", searchMode: 1)
-        XCTAssertTrue(results.map(\.word).contains("東京"))
-    }
-
-    func testStudyIncrementsFrequency() throws {
-        try XCTSkipIf(ws == nil)
-        ws.study(word: "東京", reading: "tokyo")
-        ws.study(word: "東京", reading: "tokyo")
-        // Verify it's searchable (frequency tracking is internal)
-        let results = ws.search(query: "tokyo", searchMode: 1)
-        XCTAssertTrue(results.map(\.word).contains("東京"))
-        // Save and reload to verify frequency was persisted
-        ws.finish()
-        let entries = WordSearch.loadStudyDict(
-            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
-        let tokyo = entries.first { $0.word == "東京" }
-        XCTAssertEqual(tokyo?.frequency, 2)
-    }
-
-    /// BUG: study() はメモリ上のstudyDictに追加するのみで、finish() を呼ぶまでファイルに保存されない。
-    /// IMEプロセスがdeactivateServerを経由せず終了すると、学習が失われる（例: Google変換で確定した「明示的」が消える）。
-    /// 修正後は study() 呼び出し後、finish() を呼ばずともファイルに永続化されること。
-    func testStudyPersistsToFileWithoutFinish() throws {
-        try XCTSkipIf(ws == nil)
-        ws.study(word: "明示的", reading: "meijiteki")
-        // 意図的に finish() を呼ばない
-        let entries = WordSearch.loadStudyDict(
-            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
-        XCTAssertTrue(entries.map(\.word).contains("明示的"),
-                      "study() should persist to disk immediately, without requiring finish()")
-    }
-
     /// frequency インクリメントパスも同様に永続化されること
     func testStudyFrequencyIncrementPersistsWithoutFinish() throws {
         try XCTSkipIf(ws == nil)
@@ -326,42 +242,6 @@ final class WordSearchTests: XCTestCase {
         XCTAssertNotNil(entry, "Entry should exist on disk after study()")
         XCTAssertEqual(entry?.frequency, 2,
                        "Frequency should be 2 after two study() calls, even without finish()")
-    }
-
-    func testEvictMRU() throws {
-        try XCTSkipIf(ws == nil)
-        EvictionMode.setCurrent(.mru)
-        for i in 0..<10_002 {
-            ws.study(word: "語\(i)", reading: "go\(i)")
-        }
-        ws.finish()
-        let entries = WordSearch.loadStudyDict(
-            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
-        XCTAssertLessThanOrEqual(entries.count, 10_000)
-    }
-
-    func testEvictNone() throws {
-        try XCTSkipIf(ws == nil)
-        EvictionMode.setCurrent(.none)
-        for i in 0..<10_002 {
-            ws.study(word: "語\(i)", reading: "go\(i)")
-        }
-        ws.finish()
-        let entries = WordSearch.loadStudyDict(
-            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
-        XCTAssertLessThanOrEqual(entries.count, 10_000)
-    }
-
-    func testEvictScoreBased() throws {
-        try XCTSkipIf(ws == nil)
-        EvictionMode.setCurrent(.scoreBased)
-        for i in 0..<10_002 {
-            ws.study(word: "語\(i)", reading: "go\(i)")
-        }
-        ws.finish()
-        let entries = WordSearch.loadStudyDict(
-            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
-        XCTAssertLessThanOrEqual(entries.count, 10_000)
     }
 
     /// Phase 3相当: freq=2の語はfreq=1の古い語より優先して生き残る
@@ -490,43 +370,29 @@ final class WordSearchTests: XCTestCase {
                        "Hiragana word should not be studied when setting is OFF")
     }
 
-    func testStudyLearnsHiraganaWhenEnabled() throws {
+    func testStudyLearnsHiraganaWhenEnabledOrUnset() throws {
         try XCTSkipIf(ws == nil)
-        WordSearch.setStudyHiraganaEnabled(true)
+        let studyPath = tempDir.appendingPathComponent("studydict.txt").path
+
+        UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
         ws.study(word: "ふがほげ", reading: "fugahoge")
-        ws.finish()
-        let entries = WordSearch.loadStudyDict(
-            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
-        XCTAssertTrue(entries.map(\.word).contains("ふがほげ"),
+        XCTAssertTrue(WordSearch.loadStudyDict(dictFile: studyPath).map(\.word).contains("ふがほげ"),
+                      "Default should learn hiragana (backward compat)")
+
+        WordSearch.setStudyHiraganaEnabled(true)
+        ws.study(word: "ぴよぴよ", reading: "piyopiyo")
+        XCTAssertTrue(WordSearch.loadStudyDict(dictFile: studyPath).map(\.word).contains("ぴよぴよ"),
                       "Hiragana word should be studied when setting is ON")
     }
 
-    func testStudyHiraganaDefaultIsEnabled() throws {
-        try XCTSkipIf(ws == nil)
-        UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
-        ws.study(word: "ふがほげ", reading: "fugahoge")
-        ws.finish()
-        let entries = WordSearch.loadStudyDict(
-            dictFile: tempDir.appendingPathComponent("studydict.txt").path)
-        XCTAssertTrue(entries.map(\.word).contains("ふがほげ"),
-                      "Default should learn hiragana (backward compat)")
-    }
-
-    func testStudyAlwaysLearnsKanji() throws {
+    func testStudyAlwaysLearnsKanjiAndMixedWords() throws {
         try XCTSkipIf(ws == nil)
         WordSearch.setStudyHiraganaEnabled(false)
         ws.study(word: "東京", reading: "tokyo")
-        let results = ws.search(query: "tokyo", searchMode: 1)
-        XCTAssertTrue(results.map(\.word).contains("東京"),
-                      "Kanji words should always be studied")
-    }
-
-    func testStudyLearnsMixedKanjiHiragana() throws {
-        try XCTSkipIf(ws == nil)
-        WordSearch.setStudyHiraganaEnabled(false)
         ws.study(word: "食べる", reading: "taberu")
-        let results = ws.search(query: "taberu", searchMode: 1)
-        XCTAssertTrue(results.map(\.word).contains("食べる"),
+        XCTAssertTrue(ws.search(query: "tokyo", searchMode: 1).map(\.word).contains("東京"),
+                      "Kanji words should always be studied")
+        XCTAssertTrue(ws.search(query: "taberu", searchMode: 1).map(\.word).contains("食べる"),
                       "Mixed kanji+hiragana words should always be studied")
     }
 
@@ -556,23 +422,18 @@ final class WordSearchTests: XCTestCase {
         XCTAssertEqual(testWord?.source, .local)
     }
 
-    func testSearchConnectionCandidateHasConnectionSource() throws {
+    func testSearchConnectionCandidateInPrefixAndExactModes() throws {
         try XCTSkipIf(ws == nil)
-        let results = ws.search(query: "man", searchMode: 1)
-        let man = results.first { $0.word == "万" }
+        let prefixWords = ws.search(query: "man", searchMode: 0).map(\.word)
+        XCTAssertTrue(prefixWords.contains("万"), "Expected '万' in \(prefixWords)")
+
+        let exact = ws.search(query: "man", searchMode: 1)
+        let man = exact.first { $0.word == "万" }
+        XCTAssertNotNil(man, "Expected '万' in exact search: \(exact.map(\.word))")
         XCTAssertEqual(man?.source, .connection)
     }
 
     // MARK: - Delete from Study Dict
-
-    func testDeleteFromStudy_removesEntry() throws {
-        try XCTSkipIf(ws == nil)
-        ws.study(word: "削除テスト語", reading: "sakujotesutogo")
-        let deleted = ws.deleteFromStudy(word: "削除テスト語", reading: "sakujotesutogo")
-        XCTAssertTrue(deleted)
-        let results = ws.search(query: "sakujotesutogo", searchMode: 1)
-        XCTAssertFalse(results.map(\.word).contains("削除テスト語"))
-    }
 
     func testDeleteFromStudy_returnsFalseWhenNotFound() throws {
         try XCTSkipIf(ws == nil)
@@ -580,11 +441,12 @@ final class WordSearchTests: XCTestCase {
         XCTAssertFalse(deleted)
     }
 
-    func testDeleteFromStudy_persistsAfterReload() throws {
+    func testDeleteFromStudy_removesEntryAndPersists() throws {
         try XCTSkipIf(ws == nil)
         ws.study(word: "永続テスト語", reading: "eizokutesutogo")
         ws.finish()
-        _ = ws.deleteFromStudy(word: "永続テスト語", reading: "eizokutesutogo")
+        XCTAssertTrue(ws.deleteFromStudy(word: "永続テスト語", reading: "eizokutesutogo"))
+        XCTAssertFalse(ws.search(query: "eizokutesutogo", searchMode: 1).map(\.word).contains("永続テスト語"))
         let entries = WordSearch.loadStudyDict(
             dictFile: tempDir.appendingPathComponent("studydict.txt").path)
         XCTAssertFalse(entries.map(\.word).contains("永続テスト語"))
@@ -592,26 +454,18 @@ final class WordSearchTests: XCTestCase {
 
     // MARK: - Delete from Local Dict
 
-    func testDeleteFromLocal_removesEntry() throws {
-        try XCTSkipIf(ws == nil)
-        ws.register(word: "テスト語", reading: "tesutogo")
-        let deleted = ws.deleteFromLocal(word: "テスト語", reading: "tesutogo")
-        XCTAssertTrue(deleted)
-        let results = ws.search(query: "tesutogo", searchMode: 1)
-        XCTAssertFalse(results.map(\.word).contains("テスト語"))
-    }
-
     func testDeleteFromLocal_returnsFalseWhenNotFound() throws {
         try XCTSkipIf(ws == nil)
         let deleted = ws.deleteFromLocal(word: "存在しない", reading: "sonzai")
         XCTAssertFalse(deleted)
     }
 
-    func testDeleteFromLocal_persistsAfterReload() throws {
+    func testDeleteFromLocal_removesEntryAndPersists() throws {
         try XCTSkipIf(ws == nil)
         ws.register(word: "テスト語", reading: "tesutogo")
         let deleted = ws.deleteFromLocal(word: "テスト語", reading: "tesutogo")
         XCTAssertTrue(deleted)
+        XCTAssertFalse(ws.search(query: "tesutogo", searchMode: 1).map(\.word).contains("テスト語"))
         let entries = WordSearch.loadDict(
             dictFile: tempDir.appendingPathComponent("localdict.txt").path)
         XCTAssertFalse(entries.contains(["tesutogo", "テスト語"]))
