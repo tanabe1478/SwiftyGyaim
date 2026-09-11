@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-08-11 (BUG-032追加)
+> Last updated: 2026-09-11 (BUG-035追加)
 
 ## 概要
 
@@ -413,6 +413,15 @@
 - **修正**: streaming時に限り、Transformersのデータ終端固有メッセージと一致するValueErrorを正常完了として扱い、その時点のモデルを`final/`へ保存する。期待行数より短いファイルはdataset側が別のValueErrorを出すため、誤って完了扱いしない。非streamingと無関係なValueErrorも従来どおり再送出する。
 - **検証**: `StreamingCompletionTests`に、streaming終端だけを完了扱いするケース、非streamingでは同じエラーを再送出するケース、無関係なValueErrorを再送出するケースを追加。
 - **教訓**: 大規模IterableDatasetの完了条件をstep数だけに置かない。入力側で期待行数とファイル終端を検証したうえで、「検証済みデータを使い切った」ことを正常完了として扱う。また例外を完了へ変換するときは型だけで広く捕捉せず、発生源とメッセージを限定する。
+
+### BUG-035: 淘汰方式「淘汰なし」が MRU と同じ10,000件切り詰めをしていた
+
+- **日付**: 2026-09-11
+- **症状**: 設定画面で「淘汰なし」を選んでも、学習語が10,000件を超えると末尾から消える。enum コメントは `No eviction (unlimited)`。
+- **原因**: `WordSearch.evict()` が `.mru, .none` を同じ case で扱い、両方とも `prefix(maxStudyEntries)` で切り詰めていた。ADR-014 が「全モード共通で上限10,000件」と定めたまま、ラベルとコメントだけが「無制限」を名乗っていた。
+- **修正**: `.none` では `evict()` を no-op にし、ADR-025 で決定を改めた。設定画面のヒント文も「上限なしで全件保持」に変更。
+- **検証**: `WordSearchTests.testEvictNoneKeepsEntriesBeyondCap` / `testEvictMRUTruncatesAtCap`（10,000件を事前生成したファイルを読み込み、追加学習後の件数を確認）。
+- **教訓**: 設定の選択肢を追加するときは、各選択肢が実装上も異なる挙動を持つことをテストで示す。同じ case に並べた時点で選択肢の意味が消える。
 
 ## パターン集
 
