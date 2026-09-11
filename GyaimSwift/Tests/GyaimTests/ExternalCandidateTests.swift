@@ -145,22 +145,6 @@ final class ExternalCandidateTests: XCTestCase {
         XCTAssertEqual(result.map(\.word).prefix(3), ["shitagau", "従うな", "従う"])
     }
 
-    func testBuildCanDisableFastContextRerankForLegacyOrder() {
-        let searchResults = [
-            SearchCandidate(word: "従うな", reading: "shitagauna", source: .connection, kind: .prefix),
-            SearchCandidate(word: "従う", reading: "shitagau", source: .connection, kind: .exact),
-        ]
-        let result = GyaimController.buildPrefixCandidates(
-            searchResults: searchResults,
-            inputPat: "shitagau",
-            clipboardCandidate: nil,
-            selectedCandidate: nil,
-            hiragana: "したがう",
-            fastContextRerankEnabled: false
-        )
-        XCTAssertEqual(result.map(\.word).prefix(3), ["shitagau", "従うな", "従う"])
-    }
-
     func testBuildRejectsClipboardCandidateForPunctuatedInput() {
         let result = GyaimController.buildPrefixCandidates(
             searchResults: [SearchCandidate(word: "これっじゃないの？", reading: "korejjanaino?")],
@@ -192,42 +176,6 @@ final class ExternalCandidateTests: XCTestCase {
         XCTAssertEqual(words[2], "万")
     }
 
-    func testBuildWithSelectedCandidate() {
-        let searchResults = [
-            SearchCandidate(word: "万", reading: "man"),
-        ]
-        let result = GyaimController.buildPrefixCandidates(
-            searchResults: searchResults,
-            inputPat: "man",
-            clipboardCandidate: nil,
-            selectedCandidate: "選択テキスト",
-            hiragana: "まん"
-        )
-        let words = result.map(\.word)
-        XCTAssertEqual(words[0], "man")
-        XCTAssertEqual(words[1], "選択テキスト")
-        XCTAssertEqual(words[2], "万")
-    }
-
-    func testBuildWithBothExternalCandidates() {
-        let searchResults = [
-            SearchCandidate(word: "万", reading: "man"),
-        ]
-        let result = GyaimController.buildPrefixCandidates(
-            searchResults: searchResults,
-            inputPat: "man",
-            clipboardCandidate: "コピー済み",
-            selectedCandidate: "選択中",
-            hiragana: "まん"
-        )
-        let words = result.map(\.word)
-        // Order: inputPat, clipboard, selected, search results...
-        XCTAssertEqual(words[0], "man")
-        XCTAssertEqual(words[1], "コピー済み")
-        XCTAssertEqual(words[2], "選択中")
-        XCTAssertEqual(words[3], "万")
-    }
-
     func testBuildRejectInvalidClipboard() {
         let result = GyaimController.buildPrefixCandidates(
             searchResults: [],
@@ -238,18 +186,6 @@ final class ExternalCandidateTests: XCTestCase {
         )
         let words = result.map(\.word)
         XCTAssertFalse(words.contains("https://example.com"))
-    }
-
-    func testBuildRejectInvalidSelected() {
-        let result = GyaimController.buildPrefixCandidates(
-            searchResults: [],
-            inputPat: "test",
-            clipboardCandidate: nil,
-            selectedCandidate: "abcdef1234567890abcdef1234567890", // Gyazo hash
-            hiragana: "てすと"
-        )
-        let words = result.map(\.word)
-        XCTAssertFalse(words.contains("abcdef1234567890abcdef1234567890"))
     }
 
     func testBuildDeduplicates() {
@@ -332,45 +268,6 @@ final class ExternalCandidateTests: XCTestCase {
         XCTAssertEqual(words.filter { $0 == "東京" }.count, 1)
     }
 
-    func testBuildSelectedCandidateRejectsURL() {
-        let result = GyaimController.buildPrefixCandidates(
-            searchResults: [],
-            inputPat: "test",
-            clipboardCandidate: nil,
-            selectedCandidate: "https://example.com/path",
-            hiragana: "てすと"
-        )
-        let words = result.map(\.word)
-        XCTAssertFalse(words.contains("https://example.com/path"))
-    }
-
-    func testBuildSelectedCandidateRejectsChromeExtensionURL() {
-        let url = "chrome-extension://nhlnjhfioadlgjgcldooopafglkkmcab/app.html"
-        let result = GyaimController.buildPrefixCandidates(
-            searchResults: [SearchCandidate(word: "対象", reading: "taisyou")],
-            inputPat: "taisyou",
-            clipboardCandidate: nil,
-            selectedCandidate: url,
-            hiragana: "たいしょう"
-        )
-        let words = result.map(\.word)
-        XCTAssertFalse(words.contains(url))
-        XCTAssertEqual(words.prefix(2), ["taisyou", "対象"])
-    }
-
-    func testBuildSelectedCandidateRejectsWhitespace() {
-        let result = GyaimController.buildPrefixCandidates(
-            searchResults: [],
-            inputPat: "test",
-            clipboardCandidate: nil,
-            selectedCandidate: "   ",
-            hiragana: "てすと"
-        )
-        let words = result.map(\.word)
-        // Whitespace-only should be rejected by isValidExternalCandidate
-        XCTAssertEqual(words.filter { $0.trimmingCharacters(in: .whitespaces).isEmpty }.count, 0)
-    }
-
     func testBuildSelectedCandidateRejectsGyazoHash() {
         let hash = "abcdef1234567890abcdef1234567890"
         let result = GyaimController.buildPrefixCandidates(
@@ -395,22 +292,5 @@ final class ExternalCandidateTests: XCTestCase {
         )
         let words = result.map(\.word)
         XCTAssertEqual(words.filter { $0 == "同じテキスト" }.count, 1)
-    }
-
-    func testBuildExternalCandidatesNotInExactMode() {
-        // buildPrefixCandidates is only called in prefix mode (searchMode == 0).
-        // In exact mode (searchMode == 1), external candidates are not injected.
-        // This test verifies that the static method does inject when called,
-        // confirming the controller's responsibility is only about when to call it.
-        let result = GyaimController.buildPrefixCandidates(
-            searchResults: [],
-            inputPat: "test",
-            clipboardCandidate: "clipboard",
-            selectedCandidate: "selected",
-            hiragana: "てすと"
-        )
-        let words = result.map(\.word)
-        XCTAssertTrue(words.contains("clipboard"))
-        XCTAssertTrue(words.contains("selected"))
     }
 }

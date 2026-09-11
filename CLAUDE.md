@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（398テスト）
+# ユニットテスト（270テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -110,23 +110,25 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 
 | スイート | ファイル | テスト数 | 内容 |
 |---------|---------|---------|------|
-| HandleEventTests | Tests/GyaimTests/ | 45 | `routeEvent` 静的メソッドによるキー入力分岐の全網羅 |
-| InputModeTests | Tests/GyaimTests/ | 5 | TISモードID→InputModeマッピング（非表示英数モード、ADR-023） |
-| ModelSelectionTests | Tests/GyaimTests/ | 4 | customModelPathによるGGUF選択・ラベル導出・フォールバック |
-| SecureInputDiagnosticsTests | Tests/GyaimTests/ | 9 | Secure Input残留診断（メッセージ組立・再ログ判定・プロセス名解決） |
-| GoogleTransliterateTests | Tests/GyaimTests/ | 20 | フィルタ・候補ビルド・セグメント結合・トリガー設定・タイムアウト |
-| ExternalCandidateTests | Tests/GyaimTests/ | 22 | `isValidExternalCandidate` + `buildPrefixCandidates` |
-| PreferencesWindowTests | Tests/GyaimTests/ | 18 | 設定画面UIテスト（トグル存在・初期状態・クリック操作・表示モード切替・淘汰方式） |
-| CandidateWindowTests | Tests/GyaimTests/ | 26 | 表示モード（リスト/クラシック）の切替・描画・最大候補数・位置計算 |
-| CopyTextTests | Tests/GyaimTests/ | 7 | CopyText ファイルI/O + NSPasteboard.changeCount |
-| RomaKanaTests | Tests/GyaimTests/ | 18 | ローマ字⇔かな変換の双方向テスト |
-| WordSearchTests | Tests/GyaimTests/ | 49 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
-| ContextDictTests | Tests/GyaimTests/ | 8 | 文脈条件付き学習（contextKey・suffix一致・affinity・永続化・削除・上限） |
-| StudyEntryTests | Tests/GyaimTests/ | 9 | StudyEntryスコア計算・EvictionMode・ファイルI/O |
-| CryptTests | Tests/GyaimTests/ | 6 | 暗号化/復号のラウンドトリップ |
-| ConnectionDictTests | Tests/GyaimTests/ | 3 | 連接辞書の検索 |
-| プロパティテスト（3スイート） | Tests/GyaimTests/ | 6 | PropertyTesting.swiftハーネスによる不変条件検査（validatedOrderの順列性・学習マージの頻度保存・combineScoresのzero-sum性）。seed再現可能 |
-| GyaimE2ETests | Tests/E2ETests/ | 8 | CGEventによるIME統合テスト（TextEdit上で実操作） |
+| HandleEventTests | Tests/GyaimTests/ | 46 | `routeEvent` 静的メソッドによるキー入力分岐の全網羅 |
+| InputModeTests | Tests/GyaimTests/ | 1 | TISモードID→InputModeマッピング（非表示英数モード、ADR-023） |
+| ModelSelectionTests | Tests/GyaimTests/ | 3 | customModelPathによるGGUF選択・ラベル導出・フォールバック |
+| SecureInputDiagnosticsTests | Tests/GyaimTests/ | 2 | Secure Input残留診断（メッセージ組立・再ログ判定） |
+| GoogleTransliterateTests | Tests/GyaimTests/ | 12 | フィルタ・候補ビルド・セグメント結合・トリガー設定 |
+| ExternalCandidateTests | Tests/GyaimTests/ | 23 | `isValidExternalCandidate` + `buildPrefixCandidates` |
+| PreferencesWindowTests | Tests/GyaimTests/ | 22 | 設定画面UIテスト（初期状態・クリック操作・表示モード切替・淘汰方式・Cmd+W/Cmd+V） |
+| CandidateWindowTests | Tests/GyaimTests/ | 13 | 表示モード（リスト/クラシック）の切替・描画・最大候補数・ページ指標・位置計算 |
+| CopyTextTests | Tests/GyaimTests/ | 1 | CopyText ファイルI/Oとタイムスタンプ更新条件 |
+| RomaKanaTests | Tests/GyaimTests/ | 8 | ローマ字⇔かな変換の双方向テスト |
+| WordSearchTests | Tests/GyaimTests/ | 47 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
+| ContextDictTests | Tests/GyaimTests/ | 9 | 文脈条件付き学習（contextKey・affinity・永続化・削除・減衰・上限） |
+| StudyEntryTests | Tests/GyaimTests/ | 6 | StudyEntryスコア計算・EvictionMode既定値・ファイルI/O |
+| ConnectionDictTests | Tests/GyaimTests/ | 9 | 連接辞書の検索・同梱辞書の語彙回帰・制約付き合成 |
+| ConnectionDictSharingTests | Tests/GyaimTests/ | 3 | 連接辞書のプロセス内共有（同一パス再利用・パス切替・reset） |
+| GyaimSettingsTests | Tests/GyaimTests/ | 7 | settings.json 永続化・mtimeキャッシュ・UserDefaults移行 |
+| AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests | Tests/GyaimTests/ | 41 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択 |
+| プロパティテスト（3スイート） | Tests/GyaimTests/ | 5 | PropertyTesting.swiftハーネスによる不変条件検査（validatedOrderの順列性・学習マージの頻度保存と冪等性・combineScoresのzero-sum性）。seed再現可能 |
+| GyaimE2ETests | Tests/E2ETests/ | 3 | CGEventによるIME統合テスト（TextEdit上で実操作） |
 
 ### テストインフラ
 

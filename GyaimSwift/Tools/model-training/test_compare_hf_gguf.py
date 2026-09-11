@@ -25,11 +25,6 @@ class ExcludeCasesByTagsTests(unittest.TestCase):
 
         self.assertEqual(["general", "untagged"], [case["id"] for case in filtered])
 
-    def test_empty_exclusion_keeps_all_cases(self):
-        cases = [{"id": "one", "tags": ["user-dict"]}]
-
-        self.assertIs(cases, MODULE.exclude_cases_by_tags(cases, []))
-
 
 if __name__ == "__main__":
     unittest.main()

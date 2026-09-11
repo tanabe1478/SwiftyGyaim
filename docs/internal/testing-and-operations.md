@@ -65,10 +65,9 @@ GyaimSwift/.build/Build/Products/Debug/SwiftyGyaim.app
 | `RomaKanaTests` | ローマ字かな変換 |
 | `WordSearchTests` | 辞書検索・学習・削除 |
 | `StudyEntryTests` | 学習辞書entry・score |
-| `CryptTests` | 暗号化/復号 |
 | `ConnectionDictTests` | 連接辞書 |
 
-現在のユニットテストは 222 tests です。
+現在のユニットテストは 270 tests です（2026-09-11 時点、約 5 秒で完走）。
 
 ## E2Eテスト
 

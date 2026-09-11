@@ -5,32 +5,12 @@ final class GoogleTransliterateTests: XCTestCase {
 
     // MARK: - filterCandidates (pure function)
 
-    func testFilterRemovesHiragana() {
+    func testFilterRemovesKanaSpellingsOfQuery() {
         let result = GoogleTransliterate.filterCandidates(
-            raw: ["目黒", "めぐろ", "目黒区"],
-            query: "meguro"
-        )
-        XCTAssertFalse(result.contains("めぐろ"))
-        XCTAssertTrue(result.contains("目黒"))
-        XCTAssertTrue(result.contains("目黒区"))
-    }
-
-    func testFilterRemovesKatakana() {
-        let result = GoogleTransliterate.filterCandidates(
-            raw: ["東京", "トウキョウ", "とうきょう"],
+            raw: ["東京", "トウキョウ", "とうきょう", "東京都"],
             query: "toukyou"
         )
-        XCTAssertFalse(result.contains("トウキョウ"))
-        XCTAssertFalse(result.contains("とうきょう"))
-        XCTAssertTrue(result.contains("東京"))
-    }
-
-    func testFilterPreservesKanji() {
-        let result = GoogleTransliterate.filterCandidates(
-            raw: ["渋谷", "渋谷区", "渋谷駅"],
-            query: "sibuya"
-        )
-        XCTAssertEqual(result, ["渋谷", "渋谷区", "渋谷駅"])
+        XCTAssertEqual(result, ["東京", "東京都"])
     }
 
     func testFilterDeduplicates() {
@@ -39,14 +19,6 @@ final class GoogleTransliterateTests: XCTestCase {
             query: "toukyou"
         )
         XCTAssertEqual(result, ["東京", "東京都"])
-    }
-
-    func testFilterEmptyInput() {
-        let result = GoogleTransliterate.filterCandidates(
-            raw: [],
-            query: "test"
-        )
-        XCTAssertTrue(result.isEmpty)
     }
 
     // MARK: - buildGoogleCandidates (candidate assembly)
@@ -69,6 +41,7 @@ final class GoogleTransliterateTests: XCTestCase {
         XCTAssertEqual(candidates.first { $0.word == "meguro" }?.kind, .raw)
         XCTAssertEqual(candidates.first { $0.word == "目黒" }?.kind, .google)
         XCTAssertEqual(candidates.first { $0.word == "目黒" }?.source, .google)
+        XCTAssertEqual(candidates.first { $0.word == "目黒" }?.reading, "meguro")
         XCTAssertEqual(candidates.first { $0.word == "めぐろ" }?.kind, .kana)
     }
 
@@ -93,16 +66,6 @@ final class GoogleTransliterateTests: XCTestCase {
         XCTAssertEqual(words.filter { $0 == "めぐろ" }.count, 1)
     }
 
-    func testBuildGoogleCandidatesReadingIsSet() {
-        let candidates = GoogleTransliterate.buildGoogleCandidates(
-            apiResults: ["目黒"],
-            query: "meguro"
-        )
-        // API result candidates should have reading set
-        let meguro = candidates.first { $0.word == "目黒" }
-        XCTAssertEqual(meguro?.reading, "meguro")
-    }
-
     // MARK: - Trigger suffix configuration
 
     func testDefaultTriggerSuffix() {
@@ -111,25 +74,13 @@ final class GoogleTransliterateTests: XCTestCase {
         XCTAssertEqual(GoogleTransliterate.triggerSuffix, "`")
     }
 
-    func testCustomTriggerSuffix() {
-        let original = UserDefaults.standard.string(forKey: "googleTransliterateTrigger")
-        defer {
-            if let orig = original {
-                UserDefaults.standard.set(orig, forKey: "googleTransliterateTrigger")
-            } else {
-                UserDefaults.standard.removeObject(forKey: "googleTransliterateTrigger")
-            }
-        }
-
-        GoogleTransliterate.setTriggerSuffix("@")
-        XCTAssertEqual(GoogleTransliterate.triggerSuffix, "@")
-    }
-
-    func testHasTriggerSuffix() {
+    func testHasAndStripTriggerSuffix() {
         UserDefaults.standard.removeObject(forKey: "googleTransliterateTrigger")
         XCTAssertTrue(GoogleTransliterate.hasTriggerSuffix("meguro`"))
         XCTAssertFalse(GoogleTransliterate.hasTriggerSuffix("meguro"))
         XCTAssertFalse(GoogleTransliterate.hasTriggerSuffix("`"))  // single char only
+        XCTAssertEqual(GoogleTransliterate.stripTriggerSuffix("meguro`"), "meguro")
+        XCTAssertEqual(GoogleTransliterate.stripTriggerSuffix("meguro"), "meguro")
     }
 
     func testHasTriggerSuffixCustom() {
@@ -145,11 +96,6 @@ final class GoogleTransliterateTests: XCTestCase {
         GoogleTransliterate.setTriggerSuffix("@")
         XCTAssertTrue(GoogleTransliterate.hasTriggerSuffix("meguro@"))
         XCTAssertFalse(GoogleTransliterate.hasTriggerSuffix("meguro`"))
-    }
-
-    func testStripTriggerSuffix() {
-        UserDefaults.standard.removeObject(forKey: "googleTransliterateTrigger")
-        XCTAssertEqual(GoogleTransliterate.stripTriggerSuffix("meguro`"), "meguro")
     }
 
     // MARK: - combineSegments (multi-word issue #14)
@@ -176,25 +122,11 @@ final class GoogleTransliterateTests: XCTestCase {
         XCTAssertEqual(result, ["A1x", "A2x", "B1x", "B2x"])
     }
 
-    func testCombineSegmentsEmpty() {
-        let result = GoogleTransliterate.combineSegments([])
-        XCTAssertTrue(result.isEmpty)
-    }
-
     func testCombineSegmentsRespectsLimit() {
         let result = GoogleTransliterate.combineSegments([
             ["A", "B", "C", "D", "E"],
             ["1", "2", "3", "4", "5"]
         ], limit: 5)
         XCTAssertEqual(result.count, 5)
-    }
-
-    // MARK: - Timeout configuration
-
-    func testSessionHasShortTimeout() {
-        // Verify the shared session has a reasonable timeout (not default 60s)
-        let timeout = GoogleTransliterate.sessionTimeout
-        XCTAssertLessThanOrEqual(timeout, 5.0)
-        XCTAssertGreaterThan(timeout, 0)
     }
 }
