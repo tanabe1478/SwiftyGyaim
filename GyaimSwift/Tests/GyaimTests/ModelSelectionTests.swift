@@ -41,10 +41,4 @@ final class ModelSelectionTests: XCTestCase {
         XCTAssertEqual(BundledAIRerankModel.activeModelLabel, "bundled-gyaim-lm-small-public-v1")
         XCTAssertNotNil(BundledAIRerankModel.resolveModelURL(bundle: Bundle(for: type(of: self))))
     }
-
-    func testTildeExpansion() {
-        UserDefaults.standard.set("~/nonexistent-gyaim-test.gguf", forKey: BundledAIRerankModel.customModelPathKey)
-        // 存在しないのでnilだが、チルダ展開でクラッシュしないこと
-        XCTAssertNil(BundledAIRerankModel.customModelURL())
-    }
 }

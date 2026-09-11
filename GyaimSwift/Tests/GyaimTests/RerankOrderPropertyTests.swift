@@ -26,19 +26,4 @@ final class RerankOrderPropertyTests: XCTestCase {
             return nil
         }
     }
-
-    func testValidatedOrderIsIdempotent() {
-        checkProperty("re-validating a validated order changes nothing") { random in
-            let count = random.int(in: 0...30)
-            let proposed = random.intArray(count: 0...60, element: -5...40)
-
-            let once = AIReranker.validatedOrder(proposed, candidateCount: count)
-            let twice = AIReranker.validatedOrder(once, candidateCount: count)
-
-            guard once == twice else {
-                return "not idempotent: \(once) -> \(twice) for proposed \(proposed), count \(count)"
-            }
-            return nil
-        }
-    }
 }

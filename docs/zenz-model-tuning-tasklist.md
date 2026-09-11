@@ -357,7 +357,7 @@ Definition of done:
 - [x] azooKey/llama.cpp converter で GGUF 化する
 - [x] Q5_K_M quantize する（70.26 MiB）
 - [ ] SwiftyGyaim app bundle に差し替える
-- [ ] `run-fast-context-rerank-emulation.sh` で smoke test する
+- [ ] `./Scripts/run-unit-tests.sh`（`evaluate-fast-context-rerank.py --gate` を含む）で smoke test する
 
 Definition of done:
 
