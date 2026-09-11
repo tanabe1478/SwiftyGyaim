@@ -59,7 +59,7 @@ Working directory for build commands: `GyaimSwift/`
 
 1. **Connection Dictionary** (`resources/dict.txt`) — Fixed morphological dictionary with conjugation support. Tab-separated format: `romaji[TAB]surface[TAB]input_connection[TAB]output_connection`.
 2. **Local Dictionary** (`~/.gyaim/localdict.txt`) — User-registered words, highest priority. Hot reload via mtime check.
-3. **Study Dictionary** (`~/.gyaim/studydict.txt`) — Score-based learning (max 10,000 entries). 4-column TSV: `reading[TAB]word[TAB]timestamp[TAB]frequency`. Eviction mode selectable in Preferences (MRU / None / Score-based). Default: score-based (Mozc-style). See ADR-014.
+3. **Study Dictionary** (`~/.gyaim/studydict.txt`) — Score-based learning (max 10,000 entries; 「淘汰なし」mode is uncapped, ADR-025). 4-column TSV: `reading[TAB]word[TAB]timestamp[TAB]frequency`. Eviction mode selectable in Preferences (MRU / None / Score-based). Default: score-based (Mozc-style). See ADR-014.
 
 Search modes: 0 = prefix matching (incremental), 1 = exact matching + auto-add kana variants, 2 = Google Transliterate async results.
 
@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（270テスト）
+# ユニットテスト（272テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -120,7 +120,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | CandidateWindowTests | Tests/GyaimTests/ | 13 | 表示モード（リスト/クラシック）の切替・描画・最大候補数・ページ指標・位置計算 |
 | CopyTextTests | Tests/GyaimTests/ | 1 | CopyText ファイルI/Oとタイムスタンプ更新条件 |
 | RomaKanaTests | Tests/GyaimTests/ | 8 | ローマ字⇔かな変換の双方向テスト |
-| WordSearchTests | Tests/GyaimTests/ | 47 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
+| WordSearchTests | Tests/GyaimTests/ | 49 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
 | ContextDictTests | Tests/GyaimTests/ | 9 | 文脈条件付き学習（contextKey・affinity・永続化・削除・減衰・上限） |
 | StudyEntryTests | Tests/GyaimTests/ | 6 | StudyEntryスコア計算・EvictionMode既定値・ファイルI/O |
 | ConnectionDictTests | Tests/GyaimTests/ | 9 | 連接辞書の検索・同梱辞書の語彙回帰・制約付き合成 |
@@ -176,7 +176,8 @@ docs/adr/
 ├── 021-exact-homophone-direct-logprob.md
 ├── 022-dictionary-constrained-generation.md (Superseded by ADR-024)
 ├── 023-hidden-ascii-roman-input-mode.md
-└── 024-remove-tab-ai-pipeline.md
+├── 024-remove-tab-ai-pipeline.md
+└── 025-eviction-mode-none-is-unlimited.md
 ```
 
 ## Logging & Monitoring
@@ -245,7 +246,7 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-024）
+- `docs/adr/` — 設計判断の経緯（000-025）
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 

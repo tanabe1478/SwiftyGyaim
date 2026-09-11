@@ -67,7 +67,7 @@ GyaimSwift/.build/Build/Products/Debug/SwiftyGyaim.app
 | `StudyEntryTests` | 学習辞書entry・score |
 | `ConnectionDictTests` | 連接辞書 |
 
-現在のユニットテストは 270 tests です（2026-09-11 時点、約 5 秒で完走）。
+現在のユニットテストは 272 tests です（2026-09-11 時点、約 5 秒で完走）。
 
 ## E2Eテスト
 
