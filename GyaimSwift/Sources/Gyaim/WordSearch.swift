@@ -450,7 +450,10 @@ class WordSearch {
 
     private func evict() {
         switch EvictionMode.current {
-        case .mru, .none:
+        case .none:
+            // 淘汰なし: 上限を設けず全件保持する（ADR-025）。
+            return
+        case .mru:
             if Self.studyDict.count > Self.maxStudyEntries {
                 Self.studyDict = Array(Self.studyDict.prefix(Self.maxStudyEntries))
             }

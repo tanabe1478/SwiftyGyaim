@@ -2,21 +2,25 @@
 import XCTest
 
 final class CopyTextTests: XCTestCase {
+    private var tempDir: URL!
 
-    /// CI環境では ~/.gyaim/ が存在せず CopyText.set() がファイル書き込みに失敗する。
-    /// ローカル開発環境では既にあるので影響なし。createDirectory は冪等。
-    override func setUp() {
-        super.setUp()
-        try? FileManager.default.createDirectory(
-            atPath: Config.gyaimDir,
-            withIntermediateDirectories: true
-        )
+    override func setUpWithError() throws {
+        tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        // Never touch the real ~/.gyaim/copytext from tests.
+        CopyText.fileOverride = tempDir.appendingPathComponent("copytext").path
+    }
+
+    override func tearDownWithError() throws {
+        CopyText.fileOverride = nil
+        try? FileManager.default.removeItem(at: tempDir)
     }
 
     func testSetPersistsContentAndUpdatesTimestampOnlyOnChange() {
         let content = "copytext-\(UUID().uuidString)"
         CopyText.set(content)
         XCTAssertEqual(CopyText.get(), content)
+        XCTAssertEqual(try? String(contentsOfFile: CopyText.file, encoding: .utf8), content)
         let timeAfterSet = CopyText.time
 
         Thread.sleep(forTimeInterval: 0.05)

@@ -6,7 +6,10 @@ enum CopyText {
     private static let lock = NSLock()
     private static var lastSetTime: Date = .distantPast
 
-    static var file: String { Config.copyTextFile }
+    /// Test hook: redirect the cache file so tests never touch ~/.gyaim/copytext.
+    static var fileOverride: String?
+
+    static var file: String { fileOverride ?? Config.copyTextFile }
 
     static func set(_ text: String?) {
         lock.lock()

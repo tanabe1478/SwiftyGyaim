@@ -24,6 +24,14 @@ compare-hf-gguf.py     eval fixtureでHF/GGUFスコアリング品質を比較�
 公開データから再生成するsplitとcheckpointは `data/` と `runs/` でgitignoreする。
 redaction済みの `data/domain.jsonl` だけは、学習マシンへ安全に引き継ぐため追跡する。
 
+## テスト
+
+`test_compare_hf_gguf.py` は標準ライブラリのみで動き、`Scripts/run-unit-tests.sh`（CI）で常に実行される。`test_train_zenz.py` は torch/transformers が必要なので、同スクリプトは `.venv` にそれらが入っている場合だけ実行し、無ければ skip を表示する。手動実行:
+
+```bash
+./.venv/bin/python -m unittest test_train_zenz.py
+```
+
 ## リポジトリ方針
 
 学習コードは**本リポジトリ内**（このディレクトリ）で管理する。理由:

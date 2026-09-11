@@ -22,7 +22,7 @@ struct StudyEntry: Equatable {
 /// Study dictionary eviction mode.
 enum EvictionMode: Int, CaseIterable {
     case mru = 0        // Gyaim traditional: MRU tail truncation
-    case none = 1       // No eviction (unlimited)
+    case none = 1       // No eviction: keeps every entry, no cap (ADR-025)
     case scoreBased = 2 // Mozc-style score-based eviction
 
     static let defaultMode: EvictionMode = .mru

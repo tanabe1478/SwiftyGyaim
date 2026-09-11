@@ -244,6 +244,48 @@ final class WordSearchTests: XCTestCase {
                        "Frequency should be 2 after two study() calls, even without finish()")
     }
 
+    /// 10,000件を事前配置した studydict を読み込んだ WordSearch を返す。
+    private func makeWordSearchWithFullStudyDict() throws -> (WordSearch, String) {
+        let studyPath = tempDir.appendingPathComponent("studydict.txt").path
+        let now = Date().timeIntervalSince1970
+        let entries: [StudyEntry] = (0..<10_000).map { i in
+            StudyEntry(reading: "go\(i)", word: "語\(i)", lastAccessTime: now - Double(i), frequency: 1)
+        }
+        WordSearch.saveStudyDict(dictFile: studyPath, dict: entries)
+        WordSearch.resetStudyDict()
+        let ws2 = WordSearch(connectionDictFile: WordSearch.sharedConnectionDictFile,
+                             localDictFile: tempDir.appendingPathComponent("localdict.txt").path,
+                             studyDictFile: studyPath)
+        return (ws2, studyPath)
+    }
+
+    /// ADR-025 / BUG-035: 「淘汰なし」は上限を適用しない。
+    func testEvictNoneKeepsEntriesBeyondCap() throws {
+        try XCTSkipIf(ws == nil)
+        EvictionMode.setCurrent(.none)
+        let (ws2, studyPath) = try makeWordSearchWithFullStudyDict()
+
+        ws2.study(word: "沖縄", reading: "okinawa")
+        ws2.study(word: "函館", reading: "hakodate")
+
+        let result = WordSearch.loadStudyDict(dictFile: studyPath)
+        XCTAssertEqual(result.count, 10_002)
+        XCTAssertTrue(result.map(\.word).contains("語9999"), "oldest entry must survive in none mode")
+    }
+
+    func testEvictMRUTruncatesAtCap() throws {
+        try XCTSkipIf(ws == nil)
+        EvictionMode.setCurrent(.mru)
+        let (ws2, studyPath) = try makeWordSearchWithFullStudyDict()
+
+        ws2.study(word: "沖縄", reading: "okinawa")
+
+        let result = WordSearch.loadStudyDict(dictFile: studyPath)
+        XCTAssertEqual(result.count, 10_000)
+        XCTAssertEqual(result.first?.word, "沖縄")
+        XCTAssertFalse(result.map(\.word).contains("語9999"), "MRU drops the tail entry")
+    }
+
     /// Phase 3相当: freq=2の語はfreq=1の古い語より優先して生き残る
     func testScoreBasedEvictsLowFreqOldEntries() throws {
         try XCTSkipIf(ws == nil)
