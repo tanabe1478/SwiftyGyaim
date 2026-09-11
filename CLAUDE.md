@@ -34,10 +34,17 @@ xcodegen generate
 # Build（インストール用は必ずRelease。Debugは辞書検索が3〜4倍遅く体感退行する）
 xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Release -derivedDataPath .build build
 
-# Install
+# Install（開発イテレーション用: per-userコピー）
 killall SwiftyGyaim
 rm -rf ~/Library/Input\ Methods/SwiftyGyaim.app
 cp -r .build/Build/Products/Release/SwiftyGyaim.app ~/Library/Input\ Methods/
+
+# 配布用インストーラ（.pkg → /Library/Input Methods、Google日本語入力方式）
+./Scripts/build-pkg.sh          # dist/SwiftyGyaim-<version>.pkg を生成
+# インストール/アップデートはpkgをダブルクリックするだけ（postinstallが旧プロセス
+# 終了と旧per-userコピーの掃除を行う）。初回のみシステム設定で入力ソース追加が必要。
+# 署名はad-hoc。他のMacへ配る場合は 右クリック→開く（Developer ID署名は
+# APP_IDENTITY / INSTALLER_IDENTITY 環境変数で対応可能）
 ```
 
 Working directory for build commands: `GyaimSwift/`

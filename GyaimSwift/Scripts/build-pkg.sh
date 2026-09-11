@@ -1,107 +1,107 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# SwiftyGyaim インストーラ (.pkg) ビルダー
+#
+# Google日本語入力等と同様に /Library/Input Methods へ配置するインストーラを作る。
+# アップデートは新しいpkgを開いてインストールするだけ（postinstallが旧プロセスを
+# 終了し、次回のIME利用時に新バイナリで自動再起動される）。
+#
+# 使い方:
+#   ./Scripts/build-pkg.sh [出力ディレクトリ]   # 既定: dist/
+#
+# 署名（任意。Apple Developer Program加入時のみ）:
+#   APP_IDENTITY="Developer ID Application: ..." \
+#   INSTALLER_IDENTITY="Developer ID Installer: ..." ./Scripts/build-pkg.sh
+#   未指定時は ad-hoc 署名のまま（配布先では 右クリック→開く が必要）。
 
-APP_NAME="${APP_NAME:-SwiftyGyaim}"
-SCHEME="${SCHEME:-Gyaim}"
-CONFIGURATION="${CONFIGURATION:-Release}"
-DERIVED_DATA="${DERIVED_DATA:-$PROJECT_DIR/.build}"
-DIST_DIR="${DIST_DIR:-$PROJECT_DIR/dist}"
-INSTALL_LOCATION="${INSTALL_LOCATION:-/Library/Input Methods}"
-PACKAGE_IDENTIFIER="${PACKAGE_IDENTIFIER:-com.pitecan.inputmethod.SwiftyGyaim.pkg}"
-APP_SIGN_IDENTITY="${APP_SIGN_IDENTITY:--}"
-INSTALLER_SIGN_IDENTITY="${INSTALLER_SIGN_IDENTITY:-}"
-PKG_SCRIPTS_DIR="${PKG_SCRIPTS_DIR:-$SCRIPT_DIR/Packaging/pkg-scripts}"
+PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+OUT_DIR="${1:-$PROJECT_DIR/dist}"
+DERIVED_DATA_PATH="$PROJECT_DIR/.build"
+APP="$DERIVED_DATA_PATH/Build/Products/Release/SwiftyGyaim.app"
+IDENTIFIER="com.pitecan.inputmethod.SwiftyGyaim"
 
-cd "$PROJECT_DIR"
+echo "==> Release ビルド"
+xcodebuild -project "$PROJECT_DIR/Gyaim.xcodeproj" -scheme Gyaim \
+  -configuration Release -derivedDataPath "$DERIVED_DATA_PATH" build | tail -1
 
-xcodegen generate
-xcodebuild build \
-  -project Gyaim.xcodeproj \
-  -scheme "$SCHEME" \
-  -configuration "$CONFIGURATION" \
-  -derivedDataPath "$DERIVED_DATA"
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Contents/Info.plist")
+echo "==> version $VERSION ($BUILD)"
 
-APP_PATH="$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
-if [[ ! -d "$APP_PATH" ]]; then
-  echo "error: app bundle not found: $APP_PATH" >&2
-  exit 1
+STAGE=$(mktemp -d)
+trap 'rm -rf "$STAGE"' EXIT
+mkdir -p "$STAGE/root/Library/Input Methods" "$STAGE/scripts" "$OUT_DIR"
+cp -R "$APP" "$STAGE/root/Library/Input Methods/"
+# 拡張属性を除去（quarantine等がpayloadに混入するのを防ぐ）。
+# com.apple.provenance はSIP保護で除去不可だが、インストール先では不可視の
+# メタデータとして復元されるだけで実害はない
+xattr -cr "$STAGE/root" 2>/dev/null || true
+
+if [ -n "${APP_IDENTITY:-}" ]; then
+  echo "==> アプリ署名: $APP_IDENTITY"
+  codesign --force --deep --options runtime \
+    --sign "$APP_IDENTITY" "$STAGE/root/Library/Input Methods/SwiftyGyaim.app"
 fi
 
-VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
-BUILD_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist")"
-PKG_VERSION="${PKG_VERSION:-$VERSION}"
-PKG_DIR="$DIST_DIR/pkg"
-PKG_PATH="$PKG_DIR/$APP_NAME-$VERSION.pkg"
-STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/swiftygyaim-pkg.XXXXXX")"
-SCRIPTS_STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/swiftygyaim-pkg-scripts.XXXXXX")"
-COMPONENT_PLIST="$(mktemp "${TMPDIR:-/tmp}/swiftygyaim-components.XXXXXX")"
-cleanup() {
-  rm -rf "$STAGING_DIR" "$SCRIPTS_STAGING_DIR"
-  rm -f "$COMPONENT_PLIST"
-}
-trap cleanup EXIT
+cat > "$STAGE/scripts/postinstall" << 'POSTINSTALL'
+#!/bin/bash
+# 旧プロセスを終了（次回のIME利用時にmacOSが新バイナリで自動起動する）
+killall SwiftyGyaim 2>/dev/null || true
 
-mkdir -p "$STAGING_DIR$INSTALL_LOCATION" "$PKG_DIR"
-/usr/bin/ditto --norsrc --noextattr "$APP_PATH" "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app"
-/usr/bin/ditto --norsrc --noextattr "$PKG_SCRIPTS_DIR" "$SCRIPTS_STAGING_DIR"
-/usr/bin/sed -i '' \
-  -e "s/__SWIFTGYAIM_EXPECTED_SHORT_VERSION__/$VERSION/g" \
-  -e "s/__SWIFTGYAIM_EXPECTED_BUNDLE_VERSION__/$BUILD_VERSION/g" \
-  "$SCRIPTS_STAGING_DIR/postinstall"
-/usr/bin/xattr -cr "$SCRIPTS_STAGING_DIR" 2>/dev/null || true
-/usr/bin/find "$SCRIPTS_STAGING_DIR" \
-  \( -name '.DS_Store' -o -name '._*' -o -name '.__*' \) -delete
-/usr/bin/xattr -cr "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app" 2>/dev/null || true
-/usr/bin/find "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app" \
-  \( -name '.DS_Store' -o -name '._*' -o -name '.__*' \) -delete
-
-# Default to ad-hoc app signing for local/general unsigned builds. Set
-# APP_SIGN_IDENTITY="Developer ID Application: ..." for signed releases.
-/usr/bin/codesign --force --deep --sign "$APP_SIGN_IDENTITY" "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app"
-/usr/bin/codesign --verify --deep --strict "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app"
-/usr/bin/xattr -cr "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app" 2>/dev/null || true
-/usr/bin/find "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app" \
-  \( -name '.DS_Store' -o -name '._*' -o -name '.__*' \) -delete
-/usr/bin/codesign --verify --deep --strict "$STAGING_DIR$INSTALL_LOCATION/$APP_NAME.app"
-
-/usr/bin/pkgbuild --analyze --root "$STAGING_DIR" "$COMPONENT_PLIST"
-/usr/bin/python3 - "$COMPONENT_PLIST" <<'PY'
-import plistlib
-import sys
-
-path = sys.argv[1]
-with open(path, "rb") as file:
-    components = plistlib.load(file)
-for component in components:
-    component["BundleIsRelocatable"] = False
-with open(path, "wb") as file:
-    plistlib.dump(components, file)
-PY
-
-PKGBUILD_ARGS=(
-  --root "$STAGING_DIR"
-  --component-plist "$COMPONENT_PLIST"
-  --identifier "$PACKAGE_IDENTIFIER"
-  --version "$PKG_VERSION"
-  --install-location "/"
-  --ownership recommended
-  --scripts "$SCRIPTS_STAGING_DIR"
-)
-if [[ -n "$INSTALLER_SIGN_IDENTITY" ]]; then
-  PKGBUILD_ARGS+=(--sign "$INSTALLER_SIGN_IDENTITY")
+# 開発時代の per-user コピーが残っていると /Library 側と二重登録になるため掃除
+CONSOLE_USER=$(stat -f%Su /dev/console 2>/dev/null || echo "")
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+  USER_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+  if [ -n "$USER_HOME" ] && [ -d "$USER_HOME/Library/Input Methods/SwiftyGyaim.app" ]; then
+    rm -rf "$USER_HOME/Library/Input Methods/SwiftyGyaim.app"
+  fi
 fi
-PKGBUILD_ARGS+=("$PKG_PATH")
+exit 0
+POSTINSTALL
+chmod +x "$STAGE/scripts/postinstall"
 
-rm -f "$PKG_PATH"
-export COPYFILE_DISABLE=1
-/usr/bin/pkgbuild "${PKGBUILD_ARGS[@]}"
+COMPONENT="$STAGE/SwiftyGyaim-component.pkg"
+pkgbuild --root "$STAGE/root" \
+  --scripts "$STAGE/scripts" \
+  --identifier "$IDENTIFIER" \
+  --version "$VERSION" \
+  --install-location / \
+  "$COMPONENT" > /dev/null
 
-echo "Built package: $PKG_PATH"
-if [[ -n "$INSTALLER_SIGN_IDENTITY" ]]; then
-  /usr/sbin/pkgutil --check-signature "$PKG_PATH"
-else
-  echo "Package is unsigned. Set INSTALLER_SIGN_IDENTITY for Developer ID Installer signing."
+DIST="$STAGE/distribution.xml"
+cat > "$DIST" << XML
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>SwiftyGyaim $VERSION</title>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
+    <domains enable_localSystem="true"/>
+    <welcome mime-type="text/plain"><![CDATA[SwiftyGyaim をインストールします。
+
+インストール後の手順:
+1. システム設定 > キーボード > 入力ソース > 編集 で「+」から
+   「日本語」内の Gyaim を追加（初回のみ）
+2. 入力メニューから Gyaim を選択
+
+アップデートの場合は追加の操作は不要です。]]></welcome>
+    <pkg-ref id="$IDENTIFIER"/>
+    <choices-outline><line choice="default"><line choice="$IDENTIFIER"/></line></choices-outline>
+    <choice id="default"/>
+    <choice id="$IDENTIFIER" visible="false"><pkg-ref id="$IDENTIFIER"/></choice>
+    <pkg-ref id="$IDENTIFIER" version="$VERSION" onConclusion="none">SwiftyGyaim-component.pkg</pkg-ref>
+</installer-gui-script>
+XML
+
+PKG="$OUT_DIR/SwiftyGyaim-$VERSION.pkg"
+SIGN_ARGS=()
+if [ -n "${INSTALLER_IDENTITY:-}" ]; then
+  echo "==> インストーラ署名: $INSTALLER_IDENTITY"
+  SIGN_ARGS=(--sign "$INSTALLER_IDENTITY")
 fi
+productbuild --distribution "$DIST" \
+  --package-path "$STAGE" \
+  "${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}" \
+  "$PKG" > /dev/null
+
+echo "==> 完成: $PKG"
+ls -lh "$PKG"
