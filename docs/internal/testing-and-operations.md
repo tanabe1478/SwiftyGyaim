@@ -109,9 +109,10 @@ workflow内容:
 2. XcodeGen install
 3. `xcodegen generate`
 4. `./Scripts/run-unit-tests.sh`
-5. Debug build
-6. DMG作成
-7. GitHub Release作成
+5. `./Scripts/build-pkg.sh`（Release build + `dist/SwiftyGyaim-<version>.pkg`）
+6. GitHub Release作成（pkg を添付）
+
+配布物は pkg 単体です。dmg での配布は v1.7 で廃止しました（`build-dmg.sh` は #96 以降の `build-pkg.sh` の出力先と食い違い、v1.6 / v1.7 の workflow が失敗していたため削除）。
 
 ## ログ確認
 

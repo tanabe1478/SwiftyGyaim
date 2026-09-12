@@ -2,7 +2,7 @@ DERIVED_DATA = $(PWD)/.build
 CONFIGURATION ?= Debug
 APP_NAME = SwiftyGyaim
 
-.PHONY: generate build install kill update test clean pkg dmg
+.PHONY: generate build install kill update test clean pkg
 
 generate:
 	xcodegen generate
@@ -34,6 +34,3 @@ clean:
 
 pkg:
 	Scripts/build-pkg.sh
-
-dmg:
-	Scripts/build-dmg.sh
