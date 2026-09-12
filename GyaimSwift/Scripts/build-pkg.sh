@@ -61,8 +61,16 @@ exit 0
 POSTINSTALL
 chmod +x "$STAGE/scripts/postinstall"
 
+# リロケーション無効化: これを怠ると、同じバンドルIDのアプリ（開発ディレクトリの
+# ビルド産物等）がディスク上にある場合、インストーラがそちらを「更新」して
+# /Library/Input Methods に配置されない（v1.7初版で実際に発生）
+COMPONENT_PLIST="$STAGE/component.plist"
+pkgbuild --analyze --root "$STAGE/root" "$COMPONENT_PLIST" > /dev/null
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST"
+
 COMPONENT="$STAGE/SwiftyGyaim-component.pkg"
 pkgbuild --root "$STAGE/root" \
+  --component-plist "$COMPONENT_PLIST" \
   --scripts "$STAGE/scripts" \
   --identifier "$IDENTIFIER" \
   --version "$VERSION" \
