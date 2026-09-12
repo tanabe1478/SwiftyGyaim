@@ -246,6 +246,18 @@ class PreferencesWindow: NSWindow {
         erHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
         contentBox.addSubview(erHint)
 
+        y -= 30
+        let suspectsButton = NSButton(title: "疑わしい学習エントリを確認...",
+                                      target: self, action: #selector(showStudySuspects))
+        suspectsButton.frame = NSRect(x: 20, y: y, width: 220, height: 24)
+        suspectsButton.bezelStyle = .rounded
+        contentBox.addSubview(suspectsButton)
+        let suspectsHint = makeLabel("typo確定や長期未使用の学習語を一覧し、選んで削除できます")
+        suspectsHint.font = NSFont.systemFont(ofSize: 11)
+        suspectsHint.textColor = .secondaryLabelColor
+        suspectsHint.frame = NSRect(x: 248, y: y + 2, width: 220, height: 20)
+        contentBox.addSubview(suspectsHint)
+
         addFastContextRerankControls(y: &y)
         addAIModelControls(y: &y)
 
@@ -638,6 +650,18 @@ class PreferencesWindow: NSWindow {
         erHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
         contentBox.addSubview(erHint)
 
+        y -= 30
+        let suspectsButton = NSButton(title: "疑わしい学習エントリを確認...",
+                                      target: self, action: #selector(showStudySuspects))
+        suspectsButton.frame = NSRect(x: 20, y: y, width: 220, height: 24)
+        suspectsButton.bezelStyle = .rounded
+        contentBox.addSubview(suspectsButton)
+        let suspectsHint = makeLabel("typo確定や長期未使用の学習語を一覧し、選んで削除できます")
+        suspectsHint.font = NSFont.systemFont(ofSize: 11)
+        suspectsHint.textColor = .secondaryLabelColor
+        suspectsHint.frame = NSRect(x: 248, y: y + 2, width: 220, height: 20)
+        contentBox.addSubview(suspectsHint)
+
         addFastContextRerankControls(y: &y)
         addAIModelControls(y: &y)
 
@@ -852,6 +876,10 @@ class PreferencesWindow: NSWindow {
     @objc private func changeEvictionMode(_ sender: NSSegmentedControl) {
         let mode = EvictionMode(rawValue: sender.selectedSegment) ?? .mru
         EvictionMode.setCurrent(mode)
+    }
+
+    @objc private func showStudySuspects() {
+        StudySuspectsWindow.show()
     }
 
     @objc private func toggleStudyHiragana(_ sender: NSButton) {

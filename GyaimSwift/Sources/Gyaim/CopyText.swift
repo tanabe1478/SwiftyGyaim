@@ -30,7 +30,10 @@ enum CopyText {
             }
             // Only update timestamp when clipboard content actually changed
             lastSetTime = Date()
-            Log.config.info("Clipboard updated: \"\(text.prefix(50))\"")
+            // Clipboard contents are user data (passwords, code, chat text) and
+            // may contain newlines that break the one-line log format; log
+            // only the size (BUG-037).
+            Log.config.info("Clipboard updated: \(text.count) chars")
         }
     }
 

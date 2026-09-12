@@ -548,6 +548,26 @@ class WordSearch {
         return false
     }
 
+    /// Remove the given study entries (exact reading + word) from the shared
+    /// study dictionary and persist. Used by the study-suspects window where no
+    /// WordSearch instance is at hand. Returns the number of removed entries.
+    @discardableResult
+    static func deleteStudyEntries(_ targets: [StudyEntry]) -> Int {
+        guard !targets.isEmpty else { return 0 }
+        let keys = Set(targets.map { "\($0.reading)\t\($0.word)" })
+        let before = studyDict.count
+        studyDict.removeAll { keys.contains("\($0.reading)\t\($0.word)") }
+        let removed = before - studyDict.count
+        if removed > 0 {
+            saveStudyDict(dictFile: studyDictFile, dict: studyDict)
+            for target in targets {
+                ContextDict.shared.deleteEntries(word: target.word, reading: target.reading)
+            }
+            Log.dict.info("Deleted \(removed) study entries via suspects review")
+        }
+        return removed
+    }
+
     /// Connection-grammatical compositions of the full reading, bounded
     /// (issue #59). Used as the constraint set for dictionary-constrained
     /// Zenz candidate selection; safety filters match the normal search path.

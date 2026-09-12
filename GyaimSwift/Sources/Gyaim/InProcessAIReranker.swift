@@ -26,11 +26,29 @@ final class InProcessAIReranker {
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse {
         let backend = backends.first { $0.canRun() } ?? HeuristicAIRerankBackend()
         let start = CFAbsoluteTimeGetCurrent()
-        Log.input.info("AI rerank backend selected: provider=in-process backend=\(backend.identifier) candidates=\(request.candidates.count)")
+        Log.input.debug("AI rerank backend selected: provider=in-process backend=\(backend.identifier) candidates=\(request.candidates.count)")
         let response = backend.rerank(request)
         let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
-        Log.input.info("AI rerank backend finished: provider=in-process backend=\(backend.identifier) model=\(response.model ?? "unknown") latency=\(String(format: "%.1f", elapsed))ms")
+        Log.input.debug("AI rerank backend finished: provider=in-process backend=\(backend.identifier) model=\(response.model ?? "unknown") latency=\(String(format: "%.1f", elapsed))ms")
         return response
+    }
+
+    private static var warmUpStarted = false
+
+    /// Load the model off the main thread ahead of the first review, so the
+    /// first keystroke that needs it does not pay the load cost (dogfood
+    /// 2026-09-11: a single 1.9s stall on the first model call of the day).
+    /// Runs once per process; the runtime lock serializes it against any
+    /// concurrent rerank.
+    func warmUp() {
+        guard !Self.warmUpStarted else { return }
+        Self.warmUpStarted = true
+        DispatchQueue.global(qos: .utility).async { [backends] in
+            let start = CFAbsoluteTimeGetCurrent()
+            let ready = backends.first { $0.canRun() }?.identifier ?? "none"
+            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
+            Log.input.info("AI rerank warm-up finished: backend=\(ready) latency=\(String(format: "%.1f", elapsed))ms")
+        }
     }
 
     func generateCandidates(inputPat: String,

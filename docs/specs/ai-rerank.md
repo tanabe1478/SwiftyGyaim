@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-09-05 (customModelPathによるモデル選択を追加)
+> Last updated: 2026-09-12 (同音異義語上書きの頻度ガード BUG-036・遅延レビュー ADR-026)
 
 ## 概要
 
@@ -40,6 +40,8 @@ Google Input Tools は後追い補助として optional に使う。Google込み
 - exact同音異義語margin: `aiRerankExactHomophoneMargin`（未設定時 0.10、平均logprob単位）
 - exact同音異義語比較候補数: `aiRerankExactHomophoneMaxCandidates`（未設定時 3、最大 6）
 - affinityスキップ閾値: `aiRerankExactHomophoneAffinityThreshold`（未設定時 0.75、上限 1.0）
+- exact同音異義語の頻度ガード重み: `aiRerankExactHomophoneFrequencyMarginWeight`（未設定時 2.0、bestのstudy頻度が挑戦者の2倍になるごとに要求marginへ加算するlogprob単位）
+- モデルレビューの遅延: `aiRerankFastContextReviewDelayMs`（未設定時 80、0で打鍵同期、上限 1000。ADR-026）
 - 制約付き選択の候補数: `aiRerankZenzGenerationLimit`（未設定時 3、最大 6）
 - 制約付き選択のスコア対象上限: `aiRerankConstrainedSelectionMaxSurfaces`（未設定時 12、最大 24）
 - 自由生成のopt-in: `aiRerankUseZenzFreeGeneration`（未設定時 false）
@@ -152,7 +154,7 @@ SwiftyGyaim ではまず Swift local rerank の順で上位候補を評価し、
 
 fast-context rerank の model opt-in 経路では latency と安全性を優先し、Swift heuristic の最上位候補だけを1回 review する。`fixRequiredPrefix` は既存候補に prefix 一致する場合だけ先頭移動に使うが、通常のprefix予測では1文字 prefix を採用しない（`こうほ -> 高品質` や `つか... -> つかっちゃ` のような広すぎる置換を誘発しやすいため）。また現在の最上位候補自身に一致する prefix は順位変更として扱わず、local order を維持する。
 
-読み完全一致の `.exact` / `.compound` 最上位候補は、原則として model review で prefix 予測候補へ沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`、`kinou` の `機能` / `昨日`）は exact 同音異義語レビューとして扱う（ADR-021）。この場合は `fixRequiredPrefix` 経由の置換ではなく、`exactHomophoneCandidateIndices` が返す protected exact 候補（既定上位3件、`aiRerankExactHomophoneMaxCandidates` で最大6）を `LlamaZenzContext.score` の条件付き平均logprobで**直接比較**する。未完成語幹（候補集合内に `語幹+い` または `っ` 終わり語幹の完成形が存在する候補、例: `ください` があるときの `くださ`）は比較対象から除外するため、モデルが未完成候補を昇格させることは構造上できない。また、**入力の生かな表記**（候補textが `request.hiragana` と一致するひらがなのみ候補）は、bestでない限り比較対象から除外する。文字レベルLMはかな列に系統的に高い確率を与えるため、`こみ` が `込み` に、`いっか` が `一家` に文脈と無関係に勝ってしまう（BUG-024）。生かな表記は heuristic 順・かな確定キー（`;` / `q`）から常に到達できるので失うものはなく、`ください`（入力 `kudasa` の生かな表記は `くださ`）のような正当なひらがな語は比較対象に残る。bestが生かな表記そのものの場合は除外せず、漢字同音異義語を上へ昇格できる。対称に、**記号のみの候補**（かな・漢字を1文字も含まないtext、例: `〇` `△` `×`）は比較対象から**無条件に**除外する。文字レベルLMは記号に系統的に低い確率を与えるため（`まる` の `〇`=-8.60 vs `円`=-2.91）、ユーザーが繰り返し選んだ記号でも毎回漢字同音異義語に上書きされてしまう（BUG-031）。bestが記号の場合は比較自体がスキップされ、記号がchallengerとして昇格することもない。`〇円` のようにかな・漢字を含む混在テキストは比較に残る。勝者が現在のbestを margin（`aiRerankExactHomophoneMargin`、既定0.10）**+ bestのcontextAffinity優位 × 2.0**（logprob単位）以上上回った場合のみ先頭を入れ替える。ユーザーが部分一致文脈（affinity < skip閾値0.75）で学習済みの選好を、モデルが僅差で覆すことを防ぐ（dogfood 2026-07-14: 学習済み `仕様` をモデルが `使用` へ再降格していた）。ログ outcome は `exact-homophone-fixed`（入れ替え）/ `exact-homophone-kept-local`（勝者が別候補だがmargin不足）/ `exact-homophone-passed`（bestが勝者）/ `exact-homophone-unavailable`（scoring失敗）を使う。
+読み完全一致の `.exact` / `.compound` 最上位候補は、原則として model review で prefix 予測候補へ沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`、`kinou` の `機能` / `昨日`）は exact 同音異義語レビューとして扱う（ADR-021）。この場合は `fixRequiredPrefix` 経由の置換ではなく、`exactHomophoneCandidateIndices` が返す protected exact 候補（既定上位3件、`aiRerankExactHomophoneMaxCandidates` で最大6）を `LlamaZenzContext.score` の条件付き平均logprobで**直接比較**する。未完成語幹（候補集合内に `語幹+い` または `っ` 終わり語幹の完成形が存在する候補、例: `ください` があるときの `くださ`）は比較対象から除外するため、モデルが未完成候補を昇格させることは構造上できない。また、**入力の生かな表記**（候補textが `request.hiragana` と一致するひらがなのみ候補）は、bestでない限り比較対象から除外する。文字レベルLMはかな列に系統的に高い確率を与えるため、`こみ` が `込み` に、`いっか` が `一家` に文脈と無関係に勝ってしまう（BUG-024）。生かな表記は heuristic 順・かな確定キー（`;` / `q`）から常に到達できるので失うものはなく、`ください`（入力 `kudasa` の生かな表記は `くださ`）のような正当なひらがな語は比較対象に残る。bestが生かな表記そのものの場合は除外せず、漢字同音異義語を上へ昇格できる。対称に、**記号のみの候補**（かな・漢字を1文字も含まないtext、例: `〇` `△` `×`）は比較対象から**無条件に**除外する。文字レベルLMは記号に系統的に低い確率を与えるため（`まる` の `〇`=-8.60 vs `円`=-2.91）、ユーザーが繰り返し選んだ記号でも毎回漢字同音異義語に上書きされてしまう（BUG-031）。bestが記号の場合は比較自体がスキップされ、記号がchallengerとして昇格することもない。`〇円` のようにかな・漢字を含む混在テキストは比較に残る。勝者が現在のbestを margin（`aiRerankExactHomophoneMargin`、既定0.10）**+ bestのcontextAffinity優位 × 2.0 + bestのstudy頻度優位 × 2.0**（logprob単位）以上上回った場合のみ先頭を入れ替える。頻度優位は `log2(best頻度 / 挑戦者頻度)`（挑戦者がstudy語でなければ頻度1扱い、負なら0）で、`selectExactHomophoneWinner(studyFrequencies:frequencyMarginWeight:)` が計算する（BUG-036: dogfood 2026-09-11 で `君`(31) を `キミ`(7) に、`指摘`(63) を `私的`(3) に上書きし、いずれもユーザーが戻していた。確定直前の結果別top1率は上書きあり 88.5% vs 上書きなし 98%）。ユーザーが部分一致文脈（affinity < skip閾値0.75）で学習済みの選好を、モデルが僅差で覆すことを防ぐ（dogfood 2026-07-14: 学習済み `仕様` をモデルが `使用` へ再降格していた）。ログ outcome は `exact-homophone-fixed`（入れ替え）/ `exact-homophone-kept-local`（勝者が別候補だがmargin不足）/ `exact-homophone-passed`（bestが勝者）/ `exact-homophone-unavailable`（scoring失敗）を使う。
 
 bestの `contextAffinity` が閾値（`aiRerankExactHomophoneAffinityThreshold`、既定0.75 = suffix一致3文字以上）以上の場合、同音異義語レビュー自体をスキップする（outcome `affinity-skip`）。ユーザーがその文脈で既に選んだ同音異義語をモデルが覆すべきではなく、レビューのレイテンシも節約できる。
 

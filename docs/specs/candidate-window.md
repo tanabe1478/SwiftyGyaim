@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-07-10 (AI・文脈学習セクション追加 — issue #61)
+> Last updated: 2026-09-12 (学習辞書セクションに疑わしいエントリ確認ボタン)
 
 ## 概要
 
@@ -82,6 +82,7 @@ NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackV
 - 設定キー: `exactReadingMatchPriority` (Bool, デフォルトfalse)
 - `toggleExactReadingMatchPriority(_:)` アクションで即座に設定ファイルに保存
 - ON時は前方一致検索 (searchMode==0) で4バケット順序 (study-exact → local-exact → study-prefix → local-prefix → connection) で候補を並べる（詳細は dictionary-system.md）
+- **疑わしい学習エントリを確認...** ボタン: `StudySuspectsWindow.show()` で typo確定・長期未使用の学習語を一覧し、選択削除できる（dictionary-system.md「StudySuspects」）
 - **通常入力で軽量rerankを使う**: チェックボックス（デフォルトON）
 - 設定キー: `aiRerankFastContextEnabled` (Bool, デフォルトtrue)
 - `toggleFastContextRerank(_:)` アクションで即座に設定ファイルに保存

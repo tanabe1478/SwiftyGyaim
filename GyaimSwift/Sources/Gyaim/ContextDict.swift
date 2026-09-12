@@ -36,7 +36,7 @@ final class ContextDict {
         GyaimSettings.set(value, forKey: enabledKey)
     }
 
-    static let maxEntries = 5_000
+    static let maxEntries = 20_000
     /// Stored context is limited to the trailing characters that carry the
     /// selectional preference (e.g. "どちらの", "この素材は").
     static let maxContextKeyLength = 8
