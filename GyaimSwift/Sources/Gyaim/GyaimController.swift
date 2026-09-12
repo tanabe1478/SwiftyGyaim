@@ -114,6 +114,11 @@ class GyaimController: IMKInputController {
     /// by every keystroke so the model only runs when typing pauses.
     private var pendingModelReview: DispatchWorkItem?
     private var inputGeneration = 0
+    private let traceControllerID = UUID().uuidString
+    /// Increments on the first printable key of a composition; joins rerank
+    /// logs to its commit together with the controller UUID and generation.
+    private var compositionID = 0
+    private var fastContextTrace: FastContextTrace?
     /// Diagnostics for very short activate → deactivate cycles caused by input source switching.
     private var lastActivationTime: CFAbsoluteTime?
     private var lastActivationSequence = 0
@@ -248,6 +253,7 @@ class GyaimController: IMKInputController {
 
     private func resetState() {
         cancelDeferredModelReview()
+        fastContextTrace = nil
         inputPat = ""
         candidates = []
         nthCand = 0
@@ -458,7 +464,7 @@ class GyaimController: IMKInputController {
             }
             // Capture selected text and clipboard only on the first keystroke of a new input
             if inputPat.isEmpty {
-                captureExternalCandidates(client: sender)
+                startComposition(client: sender)
             }
             inputPat += eventString
             searchMode = 0
@@ -721,34 +727,32 @@ class GyaimController: IMKInputController {
 
     // MARK: - Deferred model review (ADR-026) — scheduling
 
+    private func startComposition(client sender: Any?) {
+        compositionID += 1
+        captureExternalCandidates(client: sender)
+    }
+
     private func cancelDeferredModelReview() {
+        if pendingModelReview != nil { fastContextTrace?.cancel() }
         pendingModelReview?.cancel()
         pendingModelReview = nil
         inputGeneration += 1
     }
 
-    private func scheduleDeferredModelReview(searchResults: [SearchCandidate],
-                                             inputPat: String,
-                                             hiragana: String) {
-        cancelDeferredModelReview()
+    private func traceTag(pass: String) -> String {
+        "controller=\(traceControllerID) composition=\(compositionID) gen=\(inputGeneration) pass=\(pass)"
+    }
+
+    private func scheduleDeferredModelReview(input: FastContextPrefixInput) {
         let generation = inputGeneration
-        let clip = clipboardCandidate
-        let sel = selectedCandidate
-        let context = recentCommittedText
         let work = DispatchWorkItem { [weak self] in
             guard let self,
                   self.inputGeneration == generation,
-                  self.inputPat == inputPat,
+                  self.inputPat == input.inputPat,
                   self.searchMode == 0,
                   self.nthCand == 0 else { return }
             self.pendingModelReview = nil
-            let reviewed = Self.buildPrefixCandidates(searchResults: searchResults,
-                                                      inputPat: inputPat,
-                                                      clipboardCandidate: clip,
-                                                      selectedCandidate: sel,
-                                                      hiragana: hiragana,
-                                                      context: context,
-                                                      allowModelReview: true)
+            let reviewed = self.reviewPrefixCandidates(input: input, generation: generation, pass: "review")
             guard reviewed.map(\.word) != self.candidates.map(\.word) else { return }
             self.candidates = reviewed
             self.showCands(client: self.client())
@@ -756,6 +760,16 @@ class GyaimController: IMKInputController {
         pendingModelReview = work
         let delay = DispatchTimeInterval.milliseconds(Self.modelReviewDelayMilliseconds())
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func reviewPrefixCandidates(input: FastContextPrefixInput, generation: Int, pass: String) -> [SearchCandidate] {
+        var observation: FastContextObservation?
+        let reviewed = Self.buildPrefixCandidates(searchResults: input.searchResults, inputPat: input.inputPat,
+                                                   clipboardCandidate: input.clipboard, selectedCandidate: input.selected,
+                                                   hiragana: input.hiragana, context: input.context, allowModelReview: true,
+                                                   traceTag: traceTag(pass: pass), onRerank: { observation = $0 })
+        fastContextTrace?.complete(words: reviewed.map(\.word), observation: observation, generation: generation)
+        return reviewed
     }
 
     // MARK: - Search & Display
@@ -766,6 +780,8 @@ class GyaimController: IMKInputController {
         let q = query ?? inputPat
         guard !q.isEmpty else { return }
 
+        cancelDeferredModelReview()
+        fastContextTrace = nil
         pendingGoogleQuery = q
         searchMode = 2
         Log.input.info("Google Transliterate triggered: \"\(q)\"")
@@ -794,6 +810,10 @@ class GyaimController: IMKInputController {
 
     private func searchAndShowCands(client sender: Any?) {
         guard let ws else { return }
+        // Allocate the request generation BEFORE both passes. Scheduling must
+        // not increment it again, or prereview/review/commit cannot be joined.
+        cancelDeferredModelReview()
+        fastContextTrace = nil
 
         if GoogleTransliterate.hasTriggerSuffix(inputPat) {
             let query = GoogleTransliterate.stripTriggerSuffix(inputPat)
@@ -820,26 +840,32 @@ class GyaimController: IMKInputController {
             let searchResults = PerfLog.measure("search(\(inputPat), prefix)", logger: Log.input) {
                 ws.search(query: inputPat, searchMode: searchMode)
             }
-            let hiragana = rk.roma2hiragana(inputPat)
-            let deferModelReview = Self.shouldDeferModelReview(inputPat: inputPat)
-            candidates = Self.buildPrefixCandidates(
-                searchResults: searchResults,
-                inputPat: inputPat,
-                clipboardCandidate: clipboardCandidate,
-                selectedCandidate: selectedCandidate,
-                hiragana: hiragana,
-                context: recentCommittedText,
-                allowModelReview: !deferModelReview
-            )
-            if deferModelReview {
-                scheduleDeferredModelReview(searchResults: searchResults,
-                                            inputPat: inputPat,
-                                            hiragana: hiragana)
-            }
+            updatePrefixCandidates(searchResults: searchResults)
         }
 
         nthCand = 0
         showCands(client: sender)
+    }
+
+    private func updatePrefixCandidates(searchResults: [SearchCandidate]) {
+        let input = FastContextPrefixInput(searchResults: searchResults, inputPat: inputPat,
+                                           hiragana: rk.roma2hiragana(inputPat), clipboard: clipboardCandidate,
+                                           selected: selectedCandidate, context: recentCommittedText)
+        let deferReview = Self.shouldDeferModelReview(inputPat: inputPat)
+        let useModel = Self.shouldUseModelForFastContextRerank(inputPat: inputPat)
+        candidates = Self.buildPrefixCandidates(searchResults: searchResults, inputPat: inputPat,
+                                                clipboardCandidate: input.clipboard, selectedCandidate: input.selected,
+                                                hiragana: input.hiragana, context: input.context, allowModelReview: false,
+                                                traceTag: traceTag(pass: useModel ? "prereview" : "heuristic"))
+        fastContextTrace = FastContextTrace(controllerID: traceControllerID, compositionID: compositionID,
+                                           generation: inputGeneration, heuristicWords: candidates.map(\.word),
+                                           proposedWords: nil, modelState: useModel ? .pending : .notScheduled,
+                                           deferred: deferReview)
+        if deferReview {
+            scheduleDeferredModelReview(input: input)
+        } else if useModel {
+            candidates = reviewPrefixCandidates(input: input, generation: inputGeneration, pass: "sync")
+        }
     }
 
     private func showCands(client sender: Any?) {
@@ -893,7 +919,8 @@ class GyaimController: IMKInputController {
                                       chosenIndex: Int,
                                       context: String,
                                       headLimit: Int = 8,
-                                      affinityProvider: ((SearchCandidate) -> Double)? = nil) -> String? {
+                                      affinityProvider: ((SearchCandidate) -> Double)? = nil,
+                                      trace: FastContextTrace? = nil) -> String? {
         guard candidates.indices.contains(chosenIndex) else { return nil }
 
         func encode(_ candidate: SearchCandidate, rank: Int) -> [String: Any] {
@@ -915,11 +942,15 @@ class GyaimController: IMKInputController {
         if chosenIndex >= headLimit {
             top.append(encode(candidates[chosenIndex], rank: chosenIndex))
         }
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "chosenRank": chosenIndex,
             "context": context,
             "top": top,
         ]
+        if let trace {
+            payload.merge(trace.payload(chosenWord: candidates[chosenIndex].word,
+                                        displayedWords: candidates.map(\.word))) { _, new in new }
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8) else { return nil }
         return json
@@ -987,20 +1018,6 @@ class GyaimController: IMKInputController {
         let candidateWords = candidates.map(\.word)
         Log.input.info("Fixed: \"\(word)\" (reading: \"\(reading)\", index: \(nthCand)/\(candidates.count), candidates: \(candidateWords))")
 
-        // Accepted-rank metric for dogfood evaluation: which rank the user
-        // actually committed. rank=0 is the raw input; rank=1 is the first
-        // displayed candidate. Aggregated by aggregate-fast-context-log.py.
-        if Self.isFastContextRerankLoggingEnabled, !skipStudy, searchMode == 0 {
-            Log.input.info("Fast context accepted: input=\"\(self.inputPat)\" word=\"\(word)\" "
-                + "rank=\(self.nthCand) candidates=\(self.candidates.count) "
-                + "source=\(String(describing: candidate.source)) kind=\(candidate.kind.rawValue)")
-            if let payload = Self.acceptedDetailPayload(candidates: candidates,
-                                                        chosenIndex: nthCand,
-                                                        context: Self.limitedFastContext(recentCommittedText)) {
-                Log.input.info("Fast context accepted detail: input=\"\(self.inputPat)\" payload=\(payload)")
-            }
-        }
-
         let resolvedClient = (sender as? IMKTextInput) ?? (self.client() as? IMKTextInput)
         guard let client = resolvedClient else {
             resetState()
@@ -1020,28 +1037,8 @@ class GyaimController: IMKInputController {
         if skipStudy {
             Log.input.info("Study skipped (deactivation): \"\(word)\" (reading: \"\(reading)\")")
         } else {
-            let isExternalCandidate = (word == clipboardCandidate || word == selectedCandidate)
-            if isExternalCandidate {
-                // External candidate (clipboard/selected text) → register to user dict only when the reading is safe.
-                if Self.isExternalCandidateAllowed(forInput: inputPat), Self.isValidExternalCandidate(word) {
-                    ws?.register(word: word, reading: inputPat)
-                    Log.input.info("Registered to user dict: \"\(word)\" (reading: \"\(inputPat)\")")
-                } else {
-                    Log.input.info("External candidate registration skipped: \"\(word.prefix(50))\" (reading: \"\(inputPat)\")")
-                }
-            } else if let reading = candidate.reading {
-                if reading != "ds" {
-                    ws?.study(word: word, reading: reading)
-                    ContextDict.shared.record(context: recentCommittedText, reading: reading, word: word)
-                    Log.input.info("Studied: \"\(word)\" (reading: \"\(reading)\")")
-                }
-            } else {
-                if inputPat != "ds" {
-                    ws?.study(word: word, reading: inputPat)
-                    ContextDict.shared.record(context: recentCommittedText, reading: inputPat, word: word)
-                    Log.input.info("Studied: \"\(word)\" (reading: \"\(inputPat)\")")
-                }
-            }
+            logAcceptedCandidate(candidate)
+            learnCommittedCandidate(candidate)
         }
 
         if !skipStudy {
@@ -1049,6 +1046,35 @@ class GyaimController: IMKInputController {
         }
         resetState()
         hideWindow()
+    }
+
+    private func logAcceptedCandidate(_ candidate: SearchCandidate) {
+        guard Self.isFastContextRerankLoggingEnabled, searchMode == 0 else { return }
+        Log.input.info("Fast context accepted: input=\"\(self.inputPat)\" word=\"\(candidate.word)\" "
+            + "rank=\(self.nthCand) candidates=\(self.candidates.count) "
+            + "source=\(String(describing: candidate.source)) kind=\(candidate.kind.rawValue)")
+        if let payload = Self.acceptedDetailPayload(candidates: candidates, chosenIndex: nthCand,
+                                                    context: Self.limitedFastContext(recentCommittedText),
+                                                    trace: fastContextTrace) {
+            Log.input.info("Fast context accepted detail: input=\"\(self.inputPat)\" payload=\(payload)")
+        }
+    }
+
+    private func learnCommittedCandidate(_ candidate: SearchCandidate) {
+        let word = candidate.word
+        let reading = candidate.reading ?? inputPat
+        if word == clipboardCandidate || word == selectedCandidate {
+            if Self.isExternalCandidateAllowed(forInput: inputPat), Self.isValidExternalCandidate(word) {
+                ws?.register(word: word, reading: inputPat)
+                Log.input.info("Registered to user dict: \"\(word)\" (reading: \"\(inputPat)\")")
+            } else {
+                Log.input.info("External candidate registration skipped: \"\(word.prefix(50))\" (reading: \"\(inputPat)\")")
+            }
+        } else if reading != "ds" {
+            ws?.study(word: word, reading: reading)
+            ContextDict.shared.record(context: recentCommittedText, reading: reading, word: word)
+            Log.input.info("Studied: \"\(word)\" (reading: \"\(reading)\")")
+        }
     }
 
     // MARK: - Delete Candidate

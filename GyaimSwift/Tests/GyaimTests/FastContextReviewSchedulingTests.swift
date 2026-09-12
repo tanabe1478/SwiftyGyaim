@@ -7,6 +7,8 @@ final class FastContextReviewSchedulingTests: XCTestCase {
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
         UserDefaults.standard.removeObject(forKey: "aiRerankFastContextReviewDelayMs")
+        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled")
+        UserDefaults.standard.removeObject(forKey: "aiRerankUseBundledZenz")
         super.tearDown()
     }
 
@@ -47,6 +49,15 @@ final class FastContextReviewSchedulingTests: XCTestCase {
         XCTAssertEqual(Array(words.prefix(3)), ["shitagau", "従う", "従うな"])
         // The GGUF model must not be loaded on this path (a load takes seconds).
         XCTAssertLessThan(elapsedMs, 500)
+    }
+
+    func testDisabledRerankOrBackendDoesNotScheduleModel() {
+        UserDefaults.standard.set(true, forKey: "aiRerankUseModelForFastContext")
+        UserDefaults.standard.set(false, forKey: "aiRerankFastContextEnabled")
+        XCTAssertFalse(GyaimController.shouldDeferModelReview(inputPat: "kousin"))
+        UserDefaults.standard.set(true, forKey: "aiRerankFastContextEnabled")
+        UserDefaults.standard.set(false, forKey: "aiRerankUseBundledZenz")
+        XCTAssertFalse(GyaimController.shouldDeferModelReview(inputPat: "kousin"))
     }
 
     func testOutcomeLabelDistinguishesPreReviewHeuristic() {

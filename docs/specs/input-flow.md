@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift, GyaimController+FastContextRerank.swift
-> Last updated: 2026-09-12 (fast-context の static 群を GyaimController+FastContextRerank.swift へ分離)
+> Last updated: 2026-09-13 (ADR-028: request trace・同期/遅延比較と同音候補の下位並べ替え)
 
 ## 概要
 
@@ -41,7 +41,7 @@ handle(_:client:) → routeEvent() → HandleResult
 
 | パス | メソッド | 学習 | 用途 |
 |------|---------|------|------|
-| Enter/数字キー | `fix(client:)` | あり | 通常確定（prefix mode の先頭候補が raw `inputPat` の場合のみ Enter は完全一致検索へ遷移）。study と同時に ContextDict へ `(文脈末尾, reading, word)` を記録。`aiRerankFastContextLoggingEnabled=true` かつ prefix mode の意図的確定では `Fast context accepted: ... rank=N` と、preference抽出用の `Fast context accepted detail: ... payload={...}`（表示上位8件+確定候補のメタデータJSON）を出力する |
+| Enter/数字キー | `fix(client:)` | あり | 通常確定（prefix mode の先頭候補が raw `inputPat` の場合のみ Enter は完全一致検索へ遷移）。study と同時に ContextDict へ `(文脈末尾, reading, word)` を記録。`aiRerankFastContextLoggingEnabled=true` かつ prefix mode の意図的確定では `Fast context accepted: ... rank=N` と、preference抽出用の `Fast context accepted detail: ... payload={...}`（表示上位8件+確定候補のメタデータJSON。加えて `controller` / `composition` / `generation` / `modelState` / `heuristicRank` / `proposedRank` を持ち、heuristic 単独順に対する確定順位の改善・悪化を集計できる — ai-rerank.md 評価ループ）を出力する |
 | F6/`;` | `fixAsKana(hiragana: true)` | **なし**（`kanaConfirmStudyEnabled=true` で従来どおり学習） | ひらがな確定。出力は常に再生成可能な素のかな表記のため、学習はランキングノイズとtypoの温床にしかならない |
 | F7/`q` | `fixAsKana(hiragana: false)` | あり | カタカナ確定。表記選択として価値がある（辞書提案workflowの源泉） |
 | IME切替 | `fix(client:sender, skipStudy: true)` | **なし** | deactivation確定 |
@@ -54,6 +54,12 @@ handle(_:client:) → routeEvent() → HandleResult
 通常入力では、`aiRerankFastContextEnabled=true`（デフォルトON）のとき、生成を伴わない軽量な `fast-context-rerank` だけを同期実行する。対象は prefix mode の辞書候補上位24件（`aiRerankFastContextCandidateLimit` で 2〜48 に調整可能）で、raw input と外部候補（クリップボード/選択テキスト）は順序固定。既定では `AIReranker.localRerank` の Swift heuristic のみを使い、読み完全一致候補を長い予測候補より優先しつつ、直前文脈に強い否定命令 cue（例: `決して`, `禁止`, `してはいけ`）がある場合だけ `従うな` のような予測候補を上げられる。候補には `ContextDict.shared.affinity`（文脈条件付き学習、ADR-020）と study頻度が `contextAffinity` / `studyFrequency` として付与され、同じ文脈で過去に選んだ同音異義語はモデルなしで先頭化できる。ただし入力の生ひらがな表記（例: `bunsyou -> ぶんしょう`）はかな確定キーから常に到達できるため affinity bonus を適用せず、一度の文脈履歴が頻出漢字候補を上書きし続けることを防ぐ。`aiRerankUseModelForFastContext=true` の場合だけ in-process model backend を使うが、短い入力では走らせない（`aiRerankFastContextModelMinInputLength`、デフォルト4）。モデル経路では候補ごとの全件scoringではなく、Swift heuristic の最上位候補をZenzで1回だけreviewし、必要な場合だけ既存候補内のprefix一致候補を先頭へ移動する。読み完全一致の `.exact` / `.compound` 最上位候補はモデルで沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`）は exact 同音異義語レビュー（ADR-021）として、protected exact 候補同士（既定上位3件）を条件付き平均logprobで直接比較し、margin（既定0.10）以上勝る候補だけを先頭へ入れ替える。prefix予測候補、`ください` があるときの `くださ` のような未完成語幹、入力の生かな表記に一致するひらがな候補（best以外。BUG-024: 文字LMのかなバイアスで `こみ` が `込み` に勝つ）は比較対象に入らないため、モデルが不正な候補を昇格させることはできない。bestの `contextAffinity` が閾値（既定0.75）以上ならレビュー自体をスキップする（outcome `affinity-skip`）。通常reviewの1文字prefixは、候補textが完全一致する protected exact 候補に限り昇格できる。文脈は末尾だけに制限する（`aiRerankFastContextMaxContextLength`、デフォルト20）。
 
 **遅延実行（ADR-026）**: モデル経路が有効な入力でも、打鍵時の `searchAndShowCands` は `buildPrefixCandidates(allowModelReview: false)` で heuristic 順を即座に表示する（ログ outcome `heuristic-prereview`）。そのうえで `scheduleDeferredModelReview` が `aiRerankFastContextReviewDelayMs`（既定80ms、0で同期実行に戻る、上限1000）後にメインスレッドで同じ入力のモデルレビューを走らせ、`inputGeneration` が進んでおらず `inputPat` / `searchMode == 0` / `nthCand == 0` が変わっていない場合だけ `candidates` を差し替えて `showCands` する。`handle()` の先頭と `resetState()` で保留中のレビューを `cancelDeferredModelReview()` で破棄するため、連続打鍵中はモデルが走らない。入力ごとの latency・before/after ログは `aiRerankFastContextLoggingEnabled=true` のときだけ出す。通常review（非同音異義語）は追加で入力長5以上を要求する（`aiRerankFastContextNormalReviewMinInputLength`。入力長4はfix実績0のため）。ログには `outcome=heuristic|protected-exact-skip|affinity-skip|short-input-skip|review-fixed|review-passed|review-kept-local|review-unavailable|exact-homophone-fixed|exact-homophone-passed|exact-homophone-kept-local|exact-homophone-unavailable` と `topChanged` を含め、dogfood時にmodel reviewの効果と無駄撃ちを集計できるようにする。
+
+**評価と下位候補（ADR-028）**: 検索開始前にリクエスト世代を確定し、レビュー予約時には進めない。controllerごとのUUIDとcomposition IDを含む同じ識別子でprereview/review/確定を紐付ける。確定キーで保留分をcancelしても、比較対象のtraceは元の世代とheuristic順位を保持する。同期実行（delay=0）もheuristic単独順を保存する。実際の採点なしのskip/fallbackと採点失敗を、モデル承認から区別する。確定detailはclient取得・insertText等の後、辞書学習の前に記録する（clientなしの確定試行を品質ラベルにしない）。詳細スキーマと指標はai-rerank.mdを参照。
+
+同音異義語レビューでは、従来の先頭ガードを適用した後、採点済み候補の2位以下のスロット同士だけをスコア順へ並べる。先頭・未採点候補の位置はこの追加操作で変更せず、同点は元順。採点件数/頻度係数/affinity skipは変更しない。先頭不変で下位のみ変われば `exact-homophone-tail-reranked`。`topChanged` は辞書の先頭変更を表し、下位だけの変更は含めない。
+
+モデル推論は引き続きメインスレッド。80ms待機中のキャンセルで呼び出し回数は減るが、採点開始後の打鍵待ちを解消したわけではない。バックグラウンド化・設定/affinityまで含むsnapshot化は別作業とする。
 
 ## Google Transliterate
 

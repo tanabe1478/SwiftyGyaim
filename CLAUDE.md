@@ -269,4 +269,4 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 
 ### メンテナンス
 
-週次（目安30分）: git logから変更を確認し、影響するspecを更新。新規バグはbug-memory.mdに追記。あわせて `python3 GyaimSwift/Tools/ai-rerank/aggregate-fast-context-log.py --last-minutes 10080` で直近1週間の acceptedRanks（acceptedTop1Rate）と byOutcome（fix率・latency）を確認し、悪化があれば eval fixture 化する（issue #57）。
+週次（目安30分）: git logから変更を確認し、影響するspecを更新。新規バグはbug-memory.mdに追記。あわせて `python3 GyaimSwift/Tools/ai-rerank/aggregate-fast-context-log.py --last-minutes 10080` で直近1週間の acceptedRanks（acceptedTop1Rate）、byOutcome（fix率・latency）、modelEffect（heuristic 単独順に対する netImproved と committedBeforeReviewRate）を確認し、悪化があれば eval fixture 化する（issue #57）。
