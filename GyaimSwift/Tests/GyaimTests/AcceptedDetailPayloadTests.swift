@@ -76,6 +76,50 @@ final class AcceptedDetailPayloadTests: XCTestCase {
         XCTAssertTrue(GyaimController.shouldCommitOnDeactivation(inputPat: "bunsyou"))
     }
 
+    func testPayloadCarriesModelEffectFieldsFromTrace() throws {
+        // Heuristic-only order had 更新 at rank 2; the model moved it to rank 1
+        // and the user committed rank 1 -> the aggregator scores this as improved.
+        let candidates = [
+            SearchCandidate(word: "kousin", kind: .raw),
+            SearchCandidate(word: "更新", reading: "kousinn", source: .study, kind: .exact, studyFrequency: 101),
+            SearchCandidate(word: "行進", reading: "kousin", source: .study, kind: .exact, studyFrequency: 11),
+        ]
+        let trace = FastContextTrace(compositionID: 7,
+                                     generation: 12,
+                                     heuristicWords: ["kousin", "行進", "更新"],
+                                     proposedWords: ["kousin", "更新", "行進"],
+                                     modelState: .appliedChanged)
+
+        let payload = try XCTUnwrap(GyaimController.acceptedDetailPayload(candidates: candidates,
+                                                                          chosenIndex: 1,
+                                                                          context: "",
+                                                                          affinityProvider: { _ in 0 },
+                                                                          trace: trace))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any])
+
+        XCTAssertEqual(object["composition"] as? Int, 7)
+        XCTAssertEqual(object["generation"] as? Int, 12)
+        XCTAssertEqual(object["modelState"] as? String, "applied-changed")
+        XCTAssertEqual(object["chosenRank"] as? Int, 1)
+        XCTAssertEqual(object["heuristicRank"] as? Int, 2)
+        XCTAssertEqual(object["proposedRank"] as? Int, 1)
+    }
+
+    func testPayloadOmitsRanksWhenTraceHasNoHeuristicList() throws {
+        let candidates = [SearchCandidate(word: "a", kind: .raw), SearchCandidate(word: "亜", reading: "a", kind: .exact)]
+        let trace = FastContextTrace(compositionID: 1, generation: 1, heuristicWords: nil, proposedWords: nil, modelState: .sync)
+        let payload = try XCTUnwrap(GyaimController.acceptedDetailPayload(candidates: candidates, chosenIndex: 1, context: "",
+                                                                          affinityProvider: { _ in 0 }, trace: trace))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any])
+        XCTAssertEqual(object["modelState"] as? String, "sync")
+        XCTAssertNil(object["heuristicRank"])
+        XCTAssertNil(object["proposedRank"])
+        // Without a trace the payload keeps its previous shape.
+        let legacy = try XCTUnwrap(GyaimController.acceptedDetailPayload(candidates: candidates, chosenIndex: 1, context: "",
+                                                                         affinityProvider: { _ in 0 }))
+        XCTAssertFalse(legacy.contains("modelState"))
+    }
+
     func testPayloadNilForInvalidIndex() {
         XCTAssertNil(GyaimController.acceptedDetailPayload(candidates: [],
                                                            chosenIndex: 0,

@@ -20,6 +20,7 @@ from typing import Iterable
 LOG_RE = re.compile(
     r'^\[(?P<timestamp>[^\]]+)\] \[input\] \[(?P<level>[^\]]+)\] '
     r'Fast context rerank finished: input="(?P<input>[^"]*)" '
+    r'(?:(?:controller=\S+ )?composition=\d+ gen=\d+ pass=\S+ )?'
     r'model=(?P<model>\S+) '
     r'(?:outcome=(?P<outcome>\S+) )?'
     r'(?:topChanged=(?P<top_changed>true|false) )?'
@@ -87,6 +88,10 @@ def parse_literal_list(value: str) -> list:
 
 
 def infer_outcome(model: str) -> str:
+    if "heuristic-prereview" in model:
+        return "heuristic-prereview"
+    if "review-exact-homophone-tail-reranked" in model:
+        return "exact-homophone-tail-reranked"
     if "review-affinity-skipped" in model:
         return "affinity-skip"
     if "review-length-skipped" in model:
@@ -123,8 +128,8 @@ def parse_case(line: str, index: int) -> ReviewCase | None:
     before = [str(item) for item in parse_literal_list(match.group("before"))]
     after = [str(item) for item in parse_literal_list(match.group("after"))]
     order = [item for item in parse_literal_list(match.group("order")) if isinstance(item, int)]
-    top_changed_raw = match.group("top_changed")
-    top_changed = top_changed_raw == "true" if top_changed_raw is not None else before[:1] != after[:1]
+    # Historic topChanged meant any change in the first eight rows.
+    top_changed = before[:1] != after[:1]
     return ReviewCase(
         id=f"review-fixed-{index:04d}",
         timestamp=match.group("timestamp"),

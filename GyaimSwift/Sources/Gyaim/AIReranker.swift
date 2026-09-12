@@ -38,10 +38,19 @@ struct AIRerankRequest: Codable, Equatable {
     let candidates: [AIRerankCandidate]
 }
 
+/// Optional diagnostics from an actual model evaluation (absent for skips/fallback).
+/// Indices refer to the request, not the full displayed list including raw/external rows.
+struct AIRerankReview: Codable, Equatable {
+    let candidateIndices: [Int]
+    let scores: [String: Double]
+    let topDecision: String
+}
+
 struct AIRerankResponse: Codable, Equatable {
     let order: [Int]
     let scores: [String: Double]?
     let model: String?
+    var review: AIRerankReview?
 }
 
 struct AIRerankScoreBreakdown: Equatable {

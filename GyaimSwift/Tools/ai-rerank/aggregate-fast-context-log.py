@@ -27,6 +27,7 @@ from typing import Iterable
 LOG_RE = re.compile(
     r'^\[(?P<timestamp>[^\]]+)\] \[input\] \[(?P<level>[^\]]+)\] '
     r'Fast context rerank finished: input="(?P<input>[^"]*)" '
+    r'(?:(?:controller=(?P<controller>\S+) )?composition=(?P<composition>\d+) gen=(?P<generation>\d+) pass=(?P<pass>\S+) )?'
     r'model=(?P<model>\S+) '
     r'(?:outcome=(?P<outcome>\S+) )?'
     r'(?:topChanged=(?P<top_changed>true|false) )?'
@@ -107,6 +108,10 @@ def parse_list_head(value: str) -> str | None:
 
 
 def infer_outcome(model: str) -> str:
+    if "heuristic-prereview" in model:
+        return "heuristic-prereview"
+    if "review-exact-homophone-tail-reranked" in model:
+        return "exact-homophone-tail-reranked"
     if "review-affinity-skipped" in model:
         return "affinity-skip"
     if "review-length-skipped" in model:
@@ -146,7 +151,8 @@ def parse_fast_context_line(line: str) -> FastContextEvent | None:
     top_changed = None if top_changed_raw is None else top_changed_raw == "true"
     before_top = parse_list_head(match.group("before"))
     after_top = parse_list_head(match.group("after"))
-    if top_changed is None and before_top is not None and after_top is not None:
+    # Old topChanged compared all eight rows; recompute true top1 changes.
+    if before_top is not None and after_top is not None:
         top_changed = before_top != after_top
     return FastContextEvent(
         timestamp=match.group("timestamp"),
@@ -266,6 +272,118 @@ def collect_accepted_events(lines: Iterable[str], cutoff: datetime | None) -> di
     }
 
 
+ACCEPTED_DETAIL_RE = re.compile(
+    r"^\[(?P<timestamp>[^\]]+)\] \[input\] \[info\] "
+    r'Fast context accepted detail: input="(?P<input>[^"]*)" payload=(?P<payload>\{.*\})$'
+)
+
+
+def collect_model_effect(lines: Iterable[str], cutoff: datetime | None) -> dict:
+    """Score each commit against the heuristic-only order (model-effect metric).
+
+    Uses the `Fast context accepted detail` payload fields written by
+    GyaimController (composition / modelState / heuristicRank / proposedRank).
+    A commit counts as improved when the displayed rank the user chose is
+    better than its rank under the heuristic-only order, worsened when it is
+    worse. Only commits where the model actually changed the display
+    (modelState=applied-changed) can move either way; applied-unchanged is a
+    model no-op; cancelled means the user acted before the deferred review ran
+    (committedBeforeReviewRate).
+    """
+    by_state: dict[str, int] = defaultdict(int)
+    top1_by_state: dict[str, int] = defaultdict(int)
+    improved = worsened = same = 0
+    scored = 0
+    scheduled = before_review = 0
+    seen: set[tuple[str, int, int]] = set()
+    effects: dict[str, list[int]] = defaultdict(list)
+    allowed_states = {"not-scheduled", "pending", "cancelled", "applied-changed",
+                      "applied-unchanged", "skipped", "unavailable", "sync"}
+    for line in lines:
+        match = ACCEPTED_DETAIL_RE.match(line.rstrip("\n"))
+        if not match:
+            continue
+        if cutoff is not None:
+            timestamp = parse_timestamp(match.group("timestamp"))
+            if timestamp is not None and timestamp < cutoff:
+                continue
+        try:
+            payload = json.loads(match.group("payload"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        state = payload.get("modelState")
+        chosen = payload.get("chosenRank")
+        if not isinstance(state, str) or state not in allowed_states or type(chosen) is not int or chosen < 1:
+            continue  # legacy/no trace, invalid ranks, and raw commits are not quality labels
+        if payload.get("traceVersion") == 2:
+            controller = payload.get("controller")
+            composition = payload.get("composition")
+            generation = payload.get("generation")
+            if (not isinstance(controller, str) or not controller
+                    or type(composition) is not int or composition < 0
+                    or type(generation) is not int or generation < 0):
+                continue
+            key = (controller, composition, generation)
+            if key in seen:
+                continue
+            seen.add(key)
+        by_state[state] += 1
+        # This is a rate over committed requests, NOT all scheduled keystrokes.
+        if payload.get("deferred", state != "sync") is True and state != "not-scheduled":
+            scheduled += 1
+            before_review += state in {"pending", "cancelled"}
+        if chosen == 1:
+            top1_by_state[state] += 1
+        heuristic_rank = payload.get("heuristicRank")
+        proposed_rank = payload.get("proposedRank", chosen)
+        if (state in {"applied-changed", "applied-unchanged", "sync"}
+                and type(heuristic_rank) is int and heuristic_rank >= 1
+                and type(proposed_rank) is int and proposed_rank == chosen):
+            delta = heuristic_rank - chosen
+            effects["all"].append(delta)
+            outcome = payload.get("modelOutcome", "unknown")
+            if isinstance(outcome, str):
+                effects["outcome:" + outcome].append(delta)
+            if state == "applied-changed":
+                scored += 1
+                improved += delta > 0
+                worsened += delta < 0
+                same += delta == 0
+    total = sum(by_state.values())
+    if total == 0:
+        return {"count": 0}
+    def rank_effect(deltas: list[int]) -> dict:
+        return {
+            "scored": len(deltas), "improved": sum(d > 0 for d in deltas),
+            "worsened": sum(d < 0 for d in deltas), "same": deltas.count(0),
+            "netImproved": sum((d > 0) - (d < 0) for d in deltas),
+            "rankGainSum": sum(deltas),
+            "meanRankGain": round(mean(deltas), 3) if deltas else None,
+        }
+
+    return {
+        "count": total,
+        "byModelState": dict(sorted(by_state.items())),
+        "top1RateByModelState": {
+            state: round(top1_by_state[state] / count, 3) for state, count in sorted(by_state.items())
+        },
+        "deferredCommitCount": scheduled,
+        "committedBeforeReviewRate": round(before_review / scheduled, 3) if scheduled else None,
+        "rankEffect": rank_effect(effects["all"]),
+        "byOutcome": {key.removeprefix("outcome:"): rank_effect(value)
+                      for key, value in sorted(effects.items()) if key.startswith("outcome:")},
+        "appliedChanged": {
+            "scored": scored,
+            "improved": improved,
+            "worsened": worsened,
+            "same": same,
+            "netImproved": improved - worsened,
+        },
+    }
+
+
 def print_table(title: str, rows: dict[str, dict]) -> None:
     print(f"\n## {title}")
     print("key\tcount\tavgMs\tp50Ms\tp95Ms\tmaxMs\ttopChanged\ttopChangedRate")
@@ -299,6 +417,7 @@ def main() -> int:
         "byCandidateBucket": group_by(events, lambda e: e.candidate_bucket),
         "reviewEvents": collect_review_events(lines, cutoff),
         "acceptedRanks": collect_accepted_events(lines, cutoff),
+        "modelEffect": collect_model_effect(lines, cutoff),
         "slowest": [asdict(e) for e in sorted(events, key=lambda e: e.latency_ms, reverse=True)[: args.slow]],
         "examplesByOutcome": {
             outcome: [asdict(e) for e in grouped[: args.examples]]
@@ -318,6 +437,8 @@ def main() -> int:
     print(json.dumps(result["reviewEvents"], ensure_ascii=False, indent=2))
     print("\n## accepted ranks")
     print(json.dumps(result["acceptedRanks"], ensure_ascii=False, indent=2))
+    print("\n## model effect (vs heuristic-only order)")
+    print(json.dumps(result["modelEffect"], ensure_ascii=False, indent=2))
     print("\n## slowest")
     for event in result["slowest"]:
         print(
