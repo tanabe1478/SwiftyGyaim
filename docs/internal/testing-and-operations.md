@@ -47,6 +47,8 @@ GyaimSwift/.build/Build/Products/Debug/SwiftyGyaim.app
 1. `xcodebuild build-for-testing`
 2. `.xctest` の拡張属性をクリア
 3. `xcrun xctest` でテスト実行
+4. `swiftlint lint --strict --baseline .swiftlint-baseline.json`（既存の警告は baseline で凍結し、新規違反だけを fail にする。古い警告を直したら `--write-baseline` で更新）
+5. Python ツールのテストと eval gate
 
 背景として、ローカルmacOS/Xcode環境で `xcodebuild ... test` が `Cannot find executable for CFBundle` を出すことがあります。実際には `Contents/MacOS/GyaimTests` が存在しており、`.xctest` に付いた `com.apple.provenance` などの拡張属性がローダー失敗を引き起こすケースがあります。
 
@@ -67,7 +69,7 @@ GyaimSwift/.build/Build/Products/Debug/SwiftyGyaim.app
 | `StudyEntryTests` | 学習辞書entry・score |
 | `ConnectionDictTests` | 連接辞書 |
 
-現在のユニットテストは 272 tests です（2026-09-11 時点、約 5 秒で完走）。
+現在のユニットテストは 288 tests です（2026-09-12 時点、約 5 秒で完走）。CLAUDE.md の表が正で、この数字は目安。
 
 ## E2Eテスト
 

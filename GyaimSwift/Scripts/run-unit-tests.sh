@@ -25,6 +25,15 @@ xcodebuild \
 LLVM_PROFILE_FILE="$PROFILE_DIR/${SCHEME}-%p.profraw" \
   xcrun xctest "$BUNDLE"
 
+# SwiftLint (issue #28). Existing violations are frozen in .swiftlint-baseline.json;
+# only new violations fail. To refresh the baseline after fixing old warnings:
+#   swiftlint lint --quiet --write-baseline .swiftlint-baseline.json
+if command -v swiftlint >/dev/null 2>&1; then
+  swiftlint lint --quiet --strict --baseline .swiftlint-baseline.json
+else
+  echo "skip: swiftlint not installed"
+fi
+
 python3 -m py_compile \
   Tools/ai-rerank/validate-fast-context-eval-cases.py \
   Tools/ai-rerank/evaluate-fast-context-rerank.py \

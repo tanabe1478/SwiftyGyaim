@@ -1,6 +1,8 @@
 # SwiftLint configuration for SwiftyGyaim
 # Based on Airbnb Swift Style Guide (https://github.com/airbnb/swift)
-# Violations in existing code are warnings; new code should have 0 violations.
+# Existing violations are frozen in .swiftlint-baseline.json (run-unit-tests.sh runs
+# `swiftlint lint --strict --baseline`), so new code must have 0 violations while
+# old ones are fixed incrementally (issue #28).
 
 included:
   - Sources
