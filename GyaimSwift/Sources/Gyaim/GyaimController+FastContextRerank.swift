@@ -47,7 +47,9 @@ extension GyaimController {
         hiragana: String,
         context: String? = nil,
         fastContextRerankEnabled: Bool = true,
-        allowModelReview: Bool = true
+        allowModelReview: Bool = true,
+        traceTag: String? = nil,
+        onRerank: ((FastContextObservation) -> Void)? = nil
     ) -> [SearchCandidate] {
         var candidates: [SearchCandidate] = [SearchCandidate(word: inputPat, kind: .raw)]
 
@@ -82,7 +84,7 @@ extension GyaimController {
         }
         let dictionaryCandidates = shouldFastContextRerank
             ? fastContextRerank(searchResults, inputPat: inputPat, hiragana: hiragana, context: context,
-                                allowModelReview: allowModelReview)
+                                allowModelReview: allowModelReview, traceTag: traceTag, onRerank: onRerank)
             : searchResults
         candidates.append(contentsOf: dictionaryCandidates)
 
@@ -106,7 +108,9 @@ extension GyaimController {
                                           inputPat: String,
                                           hiragana: String,
                                           context: String?,
-                                          allowModelReview: Bool = true) -> [SearchCandidate] {
+                                          allowModelReview: Bool = true,
+                                          traceTag: String? = nil,
+                                          onRerank: ((FastContextObservation) -> Void)? = nil) -> [SearchCandidate] {
         guard searchResults.count >= 2 else {
             if isFastContextRerankLoggingEnabled {
                 Log.input.info(
@@ -122,41 +126,42 @@ extension GyaimController {
         let head = Array(searchResults.prefix(maxFastRerankCandidates))
         let tail = Array(searchResults.dropFirst(maxFastRerankCandidates))
         let trimmedContext = limitedFastContext(context)
-        let request = AIRerankRequest(
-            version: 1,
-            mode: "fast-context-rerank",
-            inputPat: inputPat,
-            hiragana: hiragana,
-            context: trimmedContext.isEmpty ? nil : trimmedContext,
-            candidates: head.enumerated().map { index, candidate in
-                AIRerankCandidate(index: index,
-                                  text: candidate.word,
-                                  reading: candidate.reading,
-                                  source: String(describing: candidate.source),
-                                  kind: candidate.kind.rawValue,
-                                  contextAffinity: ContextDict.shared.affinity(context: trimmedContext,
-                                                                               reading: candidate.reading,
-                                                                               word: candidate.word),
-                                  studyFrequency: candidate.studyFrequency)
-            }
-        )
+        let request = fastContextRequest(head: head, inputPat: inputPat, hiragana: hiragana, context: trimmedContext)
         let response = fastContextRerankResponse(for: request, allowModelReview: allowModelReview)
         let rerankedHead = AIReranker.apply(order: response.order, to: head)
+        if let onRerank {
+            onRerank(FastContextObservation(request: request, response: response,
+                                           heuristicOrder: AIReranker.localRerank(request).order))
+        }
         if isFastContextRerankLoggingEnabled {
             let elapsed = elapsedMilliseconds(since: start)
             let beforeTop = head.prefix(8).map(\.word)
             let afterTop = rerankedHead.prefix(8).map(\.word)
             let model = response.model ?? "unknown"
+            let tag = traceTag.map { " \($0)" } ?? ""
             Log.input.info(
-                "Fast context rerank finished: input=\"\(inputPat)\" "
+                "Fast context rerank finished: input=\"\(inputPat)\"\(tag) "
                     + "model=\(model) outcome=\(fastContextRerankOutcome(model: model)) "
-                    + "topChanged=\(beforeTop != afterTop) candidates=\(head.count)/\(searchResults.count) "
+                    + "topChanged=\(beforeTop.first != afterTop.first) candidates=\(head.count)/\(searchResults.count) "
                     + "context=\(trimmedContext.isEmpty ? "none" : "present") "
                     + "order=\(response.order) before=\(beforeTop) after=\(afterTop) "
                     + "latency=\(formatMilliseconds(elapsed))ms"
             )
         }
         return rerankedHead + tail
+    }
+
+    private static func fastContextRequest(head: [SearchCandidate], inputPat: String,
+                                           hiragana: String, context: String) -> AIRerankRequest {
+        AIRerankRequest(version: 1, mode: "fast-context-rerank", inputPat: inputPat, hiragana: hiragana,
+                       context: context.isEmpty ? nil : context,
+                       candidates: head.enumerated().map { index, candidate in
+            AIRerankCandidate(index: index, text: candidate.word, reading: candidate.reading,
+                              source: String(describing: candidate.source), kind: candidate.kind.rawValue,
+                              contextAffinity: ContextDict.shared.affinity(context: context,
+                                                                           reading: candidate.reading, word: candidate.word),
+                              studyFrequency: candidate.studyFrequency)
+        })
     }
 
     private static func fastContextRerankResponse(for request: AIRerankRequest,
@@ -221,31 +226,31 @@ extension GyaimController {
         GyaimSettings.set(value, forKey: "aiRerankFastContextLoggingEnabled")
     }
 
-    private static func shouldUseModelForFastContextRerank(inputPat: String) -> Bool {
-        guard isFastContextRerankModelEnabled else { return false }
+    static func shouldUseModelForFastContextRerank(inputPat: String) -> Bool {
+        guard isFastContextRerankEnabled, isFastContextRerankModelEnabled, isBundledZenzEnabled else { return false }
         return inputPat.count >= minFastContextModelInputLength()
     }
 
     static func fastContextRerankOutcome(model: String) -> String {
-        if model.contains("heuristic-prereview") { return "heuristic-prereview" }
-        if model.contains("review-affinity-skipped") { return "affinity-skip" }
-        if model.contains("review-length-skipped") { return "short-input-skip" }
-        if model.contains("review-skipped") { return "protected-exact-skip" }
-        if model.contains("review-exact-homophone-unavailable") { return "exact-homophone-unavailable" }
-        if model.contains("review-exact-homophone-fixed") { return "exact-homophone-fixed" }
-        if model.contains("review-exact-homophone-kept-local") { return "exact-homophone-kept-local" }
-        if model.contains("review-exact-homophone-passed") { return "exact-homophone-passed" }
-        if model.contains("review-unavailable") { return "review-unavailable" }
-        if model.contains("review-fixed") { return "review-fixed" }
-        if model.contains("review-kept-local") { return "review-kept-local" }
-        if model.contains("review-passed") { return "review-passed" }
-        if model.contains("review") { return "review-applied" }
-        if model.contains("swift-fast-context-heuristic") { return "heuristic" }
-        // Model backend disabled or unavailable → plain heuristic result.
-        // Review-path model strings also contain this substring but are
-        // matched by the earlier patterns, so this must stay last.
-        if model.contains("swift-local-heuristic") { return "heuristic" }
-        return "fallback"
+        let outcomes = [
+            ("heuristic-prereview", "heuristic-prereview"),
+            ("review-affinity-skipped", "affinity-skip"),
+            ("review-length-skipped", "short-input-skip"),
+            ("review-skipped", "protected-exact-skip"),
+            ("review-exact-homophone-tail-reranked", "exact-homophone-tail-reranked"),
+            ("review-exact-homophone-unavailable", "exact-homophone-unavailable"),
+            ("review-exact-homophone-fixed", "exact-homophone-fixed"),
+            ("review-exact-homophone-kept-local", "exact-homophone-kept-local"),
+            ("review-exact-homophone-passed", "exact-homophone-passed"),
+            ("review-unavailable", "review-unavailable"),
+            ("review-fixed", "review-fixed"),
+            ("review-kept-local", "review-kept-local"),
+            ("review-passed", "review-passed"),
+            ("review", "review-applied"),
+            ("swift-fast-context-heuristic", "heuristic"),
+            ("swift-local-heuristic", "heuristic"),
+        ]
+        return outcomes.first { model.contains($0.0) }?.1 ?? "fallback"
     }
 
     private static func minFastContextModelInputLength() -> Int {

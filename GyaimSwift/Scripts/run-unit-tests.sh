@@ -49,7 +49,7 @@ python3 -m py_compile \
 # Python unit tests. test_compare_hf_gguf.py is stdlib-only and always runs.
 # test_train_zenz.py imports torch/transformers, so it runs only when the
 # model-training venv (see Tools/model-training/README.md) provides them.
-python3 -m unittest Tools/model-training/test_compare_hf_gguf.py
+python3 -m unittest Tools/model-training/test_compare_hf_gguf.py Tools/ai-rerank/test_aggregate_fast_context_log.py
 TRAIN_PY="Tools/model-training/.venv/bin/python"
 if [ -x "$TRAIN_PY" ] && "$TRAIN_PY" -c "import torch, transformers" 2>/dev/null; then
   (cd Tools/model-training && ./.venv/bin/python -m unittest test_train_zenz.py)
