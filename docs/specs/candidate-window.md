@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-09-12 (学習辞書セクションに疑わしいエントリ確認ボタン)
+> Last updated: 2026-09-12 (レイアウトを layoutContent() に一本化、生成トグル削除)
 
 ## 概要
 
@@ -74,7 +74,7 @@ NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackV
 - **淘汰方式**: NSSegmentedControl（3セグメント: MRU / 淘汰なし / スコアベース）
 - 設定キー: `studyDictEvictionMode` (Int, 0=mru, 1=none, 2=scoreBased, デフォルト0)
 - `changeEvictionMode(_:)` アクションで即座に `~/.gyaim/settings.json` に保存
-- `buildUI()` と `rebuildLayout()` の両方に同じUIを構築（既存パターンに従う）
+- レイアウトは `layoutContent()` の 1 箇所に集約。`buildUI()` は KeyBindings から recorder 行を作ってから、`rebuildLayout()` は既存行を保ったまま subview を全消去してから、同じ `layoutContent()` を呼ぶ
 - **平仮名学習**: チェックボックス「平仮名の確定を学習する」（デフォルトON）
 - 設定キー: `studyHiraganaEnabled` (Bool, デフォルトtrue)
 - `toggleStudyHiragana(_:)` アクションで即座に設定ファイルに保存
@@ -97,7 +97,6 @@ NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackV
 学習辞書セクションの下に「AI・文脈学習」セクションを追加。
 
 - **AIモデル（同梱Zenz）で候補を評価する**: チェックボックス（デフォルトON）。設定キー `aiRerankUseBundledZenz`。OFFでTab・同音異義語レビューがheuristicのみになる
-- **Tabで辞書から追加候補を選ぶ（辞書制約付き生成）**: チェックボックス（デフォルトON）。設定キー `aiRerankUseZenzGeneration`（ADR-022）
 - **文脈学習を使う**: チェックボックス（デフォルトON）。設定キー `contextLearningEnabled`。OFFで ContextDict の記録・affinity参照を停止（既存エントリは保持され、再ONで復活）
 - **学習済みの文脈: N件** ラベル + **文脈学習をクリア** ボタン: `ContextDict.shared.clear()` で全エントリ削除
 - 実験的パラメータ（margin・閾値・候補数上限）は設定ファイルのみで、UIには露出しない

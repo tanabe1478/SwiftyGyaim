@@ -1,4 +1,0 @@
-torch
-transformers==4.40.0
-tokenizers>=0.19,<0.20
-safetensors
