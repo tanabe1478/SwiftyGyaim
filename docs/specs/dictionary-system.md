@@ -255,9 +255,8 @@ SearchCandidate は `source` で候補の出自、`kind` で候補の性質を�
 `kind`:
 - `.exact` / `.prefix` → 辞書候補の読み一致種別
 - `.raw` → ローマ字そのまま
-- `.compound` → connection dict の複数エントリ合成候補、または AI Tab 用 CandidateGenerator 生成候補
-- `.lattice` / `.completion` → AI Tab 用 CandidateGenerator 生成候補
-- `.zenz` → 同梱Zenzの制約付き生成候補
+- `.compound` → connection dict の複数エントリ合成候補
+- `.lattice` / `.completion` / `.zenz` → 削除済みの Tab AI パイプライン由来（ADR-024）。現在は生成されないが eval fixture 互換のため値を保持
 - `.google` → Google Input Tools 候補
 - `.kana` → ひらがな/カタカナ候補
 
