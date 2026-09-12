@@ -96,6 +96,69 @@ final class GyaimSettingsTests: XCTestCase {
         XCTAssertFalse(GyaimSettings.bool(forKey: "settingsTestFlag", default: true))
     }
 
+    func testSetWritesOnlyTheSettingsFileNotUserDefaults() throws {
+        // ADR-027: settings.json is the only write target in production
+        // (override set => production path).
+        GyaimSettings.set(true, forKey: "settingsTestFlag")
+        GyaimSettings.set(Data([0x01]), forKey: "settingsTestData")
+
+        XCTAssertNil(UserDefaults.standard.object(forKey: "settingsTestFlag"))
+        XCTAssertNil(UserDefaults.standard.object(forKey: "settingsTestData"))
+        XCTAssertTrue(GyaimSettings.bool(forKey: "settingsTestFlag"))
+    }
+
+    func testRemoveObjectClearsFileAndLegacyUserDefaults() throws {
+        GyaimSettings.set(true, forKey: "settingsTestFlag")
+        UserDefaults.standard.set(true, forKey: "settingsTestFlag")
+
+        GyaimSettings.removeObject(forKey: "settingsTestFlag")
+
+        XCTAssertFalse(GyaimSettings.bool(forKey: "settingsTestFlag"))
+        XCTAssertNil(UserDefaults.standard.object(forKey: "settingsTestFlag"))
+    }
+
+    func testSynchronizeDoesNotCopyFileValuesBackToUserDefaults() throws {
+        GyaimSettings.set(false, forKey: "aiRerankFastContextEnabled")
+        defer { GyaimSettings.removeObject(forKey: "aiRerankFastContextEnabled") }
+
+        GyaimSettings.synchronizeFileAndUserDefaults()
+
+        XCTAssertNil(UserDefaults.standard.object(forKey: "aiRerankFastContextEnabled"))
+        XCTAssertFalse(GyaimSettings.bool(forKey: "aiRerankFastContextEnabled", default: true))
+    }
+
+    /// Every settings key literal in Sources/Gyaim must be in `knownKeys`, and
+    /// every known key must still be used somewhere, so the migration list and
+    /// docs/specs/settings.md cannot drift from the code.
+    func testKnownKeysMatchSettingsKeysUsedInSources() throws {
+        let sourcesDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/Gyaim")
+        let files = try FileManager.default.contentsOfDirectory(atPath: sourcesDir.path)
+            .filter { $0.hasSuffix(".swift") && $0 != "GyaimSettings.swift" }
+
+        let literalPattern = try NSRegularExpression(pattern: #"forKey:\s*"([A-Za-z]+)""#)
+        let constantPattern = try NSRegularExpression(pattern: #"[kK]ey\s*=\s*"([A-Za-z]+)""#)
+        var used = Set<String>()
+        for file in files {
+            let text = try String(contentsOf: sourcesDir.appendingPathComponent(file), encoding: .utf8)
+            let range = NSRange(text.startIndex..., in: text)
+            for pattern in [literalPattern, constantPattern] {
+                for match in pattern.matches(in: text, range: range) {
+                    if let keyRange = Range(match.range(at: 1), in: text) {
+                        used.insert(String(text[keyRange]))
+                    }
+                }
+            }
+        }
+        // Environment-variable names share the `...Key = "..."` shape but are not settings.
+        used = used.filter { !$0.hasPrefix("GYAIM_") }
+
+        let known = Set(GyaimSettings.knownKeys)
+        XCTAssertEqual(used.subtracting(known), [], "settings keys used in Sources but missing from knownKeys")
+        XCTAssertEqual(known.subtracting(used), [], "knownKeys no code reads any more")
+    }
+
     func testSynchronizeMigratesKnownUserDefaultsKeyToSettingsJson() throws {
         UserDefaults.standard.set(false, forKey: "aiRerankFastContextEnabled")
         defer { UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled") }

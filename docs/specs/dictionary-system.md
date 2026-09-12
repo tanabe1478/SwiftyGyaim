@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-09-12 (ContextDict上限20,000・疑わしい学習エントリの確認UI)
+> Last updated: 2026-09-12 (設定キーの表記を settings.json に統一 — ADR-027)
 
 ## 概要
 
@@ -164,7 +164,7 @@ connection 候補については、`ConnectionDict` が内部接続ラベル風�
 | frequency | Int | 使用回数 |
 
 ### study()
-- **平仮名スキップ**: `studyHiraganaEnabled` がOFFの場合、wordが全てひらがな（U+3040-U+309F）ならスキップ。デフォルトON（後方互換）。UserDefaultsキー `studyHiraganaEnabled`（Bool）
+- **平仮名スキップ**: `studyHiraganaEnabled` がOFFの場合、wordが全てひらがな（U+3040-U+309F）ならスキップ。デフォルトON（後方互換）。設定キー `studyHiraganaEnabled`（Bool、settings.md）
 - **ひらがな確定スキップ**: `fixAsKana(hiragana: true)`（`;`/F6）による確定は study を呼ばない（`kanaConfirmStudyEnabled=true` で従来動作に戻せる）。カタカナ確定（`q`/F7）は従来どおり学習する
 - 既存エントリ: `lastAccessTime` を更新、`frequency` をインクリメント、先頭に移動
 - 新規エントリ: `StudyEntry(lastAccessTime: now, frequency: 1)` を先頭に挿入
@@ -174,7 +174,7 @@ connection 候補については、`ConnectionDict` が内部接続ラベル風�
 
 ### 淘汰方式（EvictionMode）
 
-設定画面から3つの方式を選択可能。UserDefaultsキー `studyDictEvictionMode`（Int）。
+設定画面から3つの方式を選択可能。設定キー `studyDictEvictionMode`（Int、settings.md）。
 
 | モード | rawValue | 説明 | 淘汰ロジック |
 |--------|----------|------|------------|
@@ -284,7 +284,7 @@ prefix mode では `aiRerankFastContextEnabled=true`（デフォルトON）の�
 
 ## 完全一致reading優先（ADR-016 → ADR-017）
 
-設定画面のトグルで有効/無効を切り替え可能。UserDefaultsキー `exactReadingMatchPriority`（Bool、デフォルトfalse）。
+設定画面のトグルで有効/無効を切り替え可能。設定キー `exactReadingMatchPriority`（Bool、デフォルトfalse、settings.md）。
 
 有効時、前方一致検索（searchMode == 0）で**辞書をまたいだ4バケット順序**で走査（ADR-017）:
 
