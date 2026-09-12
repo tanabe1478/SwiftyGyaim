@@ -82,14 +82,25 @@ struct GLogger {
 // MARK: - FileLogger
 
 /// Writes info+ log lines to ~/.gyaim/gyaim.log with size-based rotation.
+///
+/// Rotation keeps `maxRotatedFiles` generations (gyaim.log.1 ... .7). With
+/// one generation, ~4-5 MB/day of dogfood logging left only about two days
+/// on disk, so the weekly aggregation (`aggregate-fast-context-log.py
+/// --last-minutes 10080`) silently covered a fraction of the week.
 final class FileLogger {
     static let shared = FileLogger()
 
+    static let maxRotatedFiles = 7
+
     private let queue = DispatchQueue(label: "com.pitecan.inputmethod.SwiftyGyaim.filelogger")
     private let logPath: String
-    private let rotatedPath: String
     private let maxSize: Int64 = 5 * 1024 * 1024  // 5 MB
     private var fileHandle: FileHandle?
+
+    /// gyaim.log.1 (newest) ... gyaim.log.N (oldest)
+    private var rotatedPaths: [String] {
+        (1...Self.maxRotatedFiles).map { "\(logPath).\($0)" }
+    }
 
     private lazy var dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -100,7 +111,6 @@ final class FileLogger {
 
     private init() {
         logPath = "\(Config.gyaimDir)/gyaim.log"
-        rotatedPath = "\(Config.gyaimDir)/gyaim.log.1"
     }
 
     func write(category: String, level: String, message: String) {
@@ -130,16 +140,18 @@ final class FileLogger {
             fileHandle = nil
             let fm = FileManager.default
             try? fm.removeItem(atPath: logPath)
-            try? fm.removeItem(atPath: rotatedPath)
+            for path in rotatedPaths {
+                try? fm.removeItem(atPath: path)
+            }
         }
     }
 
     /// Returns the current log file size in bytes (synchronous, for UI).
     func logFileSize() -> Int64 {
         let fm = FileManager.default
-        let mainSize = (try? fm.attributesOfItem(atPath: logPath)[.size] as? Int64) ?? 0
-        let rotatedSize = (try? fm.attributesOfItem(atPath: rotatedPath)[.size] as? Int64) ?? 0
-        return mainSize + rotatedSize
+        return ([logPath] + rotatedPaths).reduce(Int64(0)) { total, path in
+            total + ((try? fm.attributesOfItem(atPath: path)[.size] as? Int64) ?? 0)
+        }
     }
 
     // MARK: - Private
@@ -161,11 +173,24 @@ final class FileLogger {
         handle.closeFile()
         fileHandle = nil
 
-        let fm = FileManager.default
-        try? fm.removeItem(atPath: rotatedPath)
-        try? fm.moveItem(atPath: logPath, toPath: rotatedPath)
+        Self.shiftRotatedFiles(logPath: logPath, rotatedPaths: rotatedPaths)
 
         openFile()
+    }
+
+    /// Drop the oldest generation, shift .N-1 -> .N ... .1 -> .2, then move
+    /// the live log to .1. Pure file-system step, exposed for tests.
+    static func shiftRotatedFiles(logPath: String, rotatedPaths: [String], fileManager fm: FileManager = .default) {
+        guard let oldest = rotatedPaths.last else { return }
+        try? fm.removeItem(atPath: oldest)
+        for index in stride(from: rotatedPaths.count - 1, to: 0, by: -1) {
+            let from = rotatedPaths[index - 1]
+            let to = rotatedPaths[index]
+            if fm.fileExists(atPath: from) {
+                try? fm.moveItem(atPath: from, toPath: to)
+            }
+        }
+        try? fm.moveItem(atPath: logPath, toPath: rotatedPaths[0])
     }
 }
 

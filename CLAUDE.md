@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（272テスト）
+# ユニットテスト（284テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -127,6 +127,10 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | ConnectionDictSharingTests | Tests/GyaimTests/ | 3 | 連接辞書のプロセス内共有（同一パス再利用・パス切替・reset） |
 | GyaimSettingsTests | Tests/GyaimTests/ | 7 | settings.json 永続化・mtimeキャッシュ・UserDefaults移行 |
 | AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests | Tests/GyaimTests/ | 41 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択 |
+| HomophoneFrequencyGuardTests | Tests/GyaimTests/ | 4 | 同音異義語上書きの頻度ガード（BUG-036、実ログ数値で固定） |
+| FastContextReviewSchedulingTests | Tests/GyaimTests/ | 4 | モデルレビュー遅延の判定・遅延設定のクランプ・同期パスがモデルを呼ばないこと（ADR-026） |
+| StudySuspectsTests | Tests/GyaimTests/ | 3 | 疑わしい学習エントリ検出（typo完成形・長期未使用・false positive 抑止） |
+| FileLoggerRotationTests | Tests/GyaimTests/ | 1 | ログ7世代ローテーションのシフト |
 | プロパティテスト（3スイート） | Tests/GyaimTests/ | 5 | PropertyTesting.swiftハーネスによる不変条件検査（validatedOrderの順列性・学習マージの頻度保存と冪等性・combineScoresのzero-sum性）。seed再現可能 |
 | GyaimE2ETests | Tests/E2ETests/ | 3 | CGEventによるIME統合テスト（TextEdit上で実操作） |
 
@@ -177,7 +181,8 @@ docs/adr/
 ├── 022-dictionary-constrained-generation.md (Superseded by ADR-024)
 ├── 023-hidden-ascii-roman-input-mode.md
 ├── 024-remove-tab-ai-pipeline.md
-└── 025-eviction-mode-none-is-unlimited.md
+├── 025-eviction-mode-none-is-unlimited.md
+└── 026-deferred-model-review.md
 ```
 
 ## Logging & Monitoring
@@ -200,7 +205,7 @@ docs/adr/
 # Console.app / ターミナル
 log stream --predicate 'subsystem == "com.pitecan.inputmethod.SwiftyGyaim"' --level debug
 
-# ファイルログ（info以上）
+# ファイルログ（info以上。5MBごとにローテーションし gyaim.log.1〜.7 の7世代を保持）
 tail -f ~/.gyaim/gyaim.log
 ```
 
@@ -246,7 +251,7 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-025）
+- `docs/adr/` — 設計判断の経緯（000-026）
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 

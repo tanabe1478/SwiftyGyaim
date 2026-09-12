@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-09-11 (淘汰なしを上限なしに — ADR-025 / BUG-035)
+> Last updated: 2026-09-12 (ContextDict上限20,000・疑わしい学習エントリの確認UI)
 
 ## 概要
 
@@ -207,10 +207,14 @@ IME切替による自動確定ではユーザーが意図的に候補を選ん�
 - 文脈キー: タブ・改行を除去した確定前文脈の末尾8文字。空なら記録しない
 - 一致判定: suffix共通長。2文字未満はノイズとして0、4文字で1.0に飽和
 - **recency減衰**: affinity にエントリ経過時間の減衰を乗じる（半減期30日、下限0.25）。昔の一度きりの選択が新しい振る舞いを覆し続けないようにしつつ、確認済みの選好は完全には消さない
-- 上限5,000エントリのMRU淘汰、記録ごとに原子的保存
+- 上限20,000エントリのMRU淘汰（5,000では dogfood 2 か月で上限に張り付いていた。1エントリ約60バイトなので20,000で約1.2MB）、記録ごとに原子的保存
 - studydict と同じ理由（BUG-005）で `ContextDict.shared` をプロセス内共有し、lookup は (reading, word) index で O(1)
 - 候補削除UI（`deleteCurrentCandidate`）は `deleteEntries(word:reading:)` で同じ word/reading の context エントリも削除し、削除済み候補が文脈記憶から復活しないようにする
 - 設定 `contextLearningEnabled`（デフォルトtrue）でON/OFF可能。OFF時は記録・affinityとも停止するが既存エントリは保持。設定画面の「文脈学習をクリア」で全削除（`clear()`）
+
+### 疑わしい学習エントリの確認（StudySuspects）
+
+`StudySuspects.find(in:)` は `Tools/dict/find-suspect-study-entries.py` の Swift 移植で、`garbage-completion`（頻出語の末尾1文字付き・頻度2以下・読みが1〜2文字だけ長い）と `stale-singleton`（頻度1・90日以上未使用）を返す。設定画面 学習辞書セクションの「疑わしい学習エントリを確認...」が `StudySuspectsWindow` を開き、選択行を `WordSearch.deleteStudyEntries(_:)`（共有 studyDict から削除して保存、ContextDict の同 word/reading も削除）で消す。自動削除はしない: 同じ形は `今日` / `今` のような正当な語にも一致するため（false positive 実績あり）。
 
 ### SearchCandidate.studyFrequency
 

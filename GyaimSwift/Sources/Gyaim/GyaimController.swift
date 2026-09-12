@@ -110,6 +110,10 @@ class GyaimController: IMKInputController {
     private var lastValidCandidateLineRect: NSRect?
     /// Tracks the in-flight Google Transliterate query to discard stale results.
     private var pendingGoogleQuery: String?
+    /// Deferred model review of the current prefix candidates (ADR-026). Cancelled
+    /// by every keystroke so the model only runs when typing pauses.
+    private var pendingModelReview: DispatchWorkItem?
+    private var inputGeneration = 0
     /// Diagnostics for very short activate → deactivate cycles caused by input source switching.
     private var lastActivationTime: CFAbsoluteTime?
     private var lastActivationSequence = 0
@@ -150,6 +154,9 @@ class GyaimController: IMKInputController {
         CopyText.set(NSPasteboard.general.string(forType: .string))
         SecureInputDiagnostics.checkAndLog()
         ws?.start()
+        if Self.isFastContextRerankModelEnabled {
+            InProcessAIReranker.shared.warmUp()
+        }
         showWindow()
     }
 
@@ -240,6 +247,7 @@ class GyaimController: IMKInputController {
     }
 
     private func resetState() {
+        cancelDeferredModelReview()
         inputPat = ""
         candidates = []
         nthCand = 0
@@ -307,6 +315,8 @@ class GyaimController: IMKInputController {
         let keyCode = event.keyCode
         let modifierFlags = event.modifierFlags
         Log.input.debug("keyDown: keyCode=\(keyCode), chars=\(event.characters ?? ""), mods=\(modifierFlags.rawValue)")
+        // Any key invalidates a pending deferred model review of the previous input.
+        cancelDeferredModelReview()
 
         if keyCode == kVirtualJISKanaModeKey || keyCode == kVirtualJISRomanModeKey {
             return true
@@ -747,7 +757,8 @@ class GyaimController: IMKInputController {
         selectedCandidate: String?,
         hiragana: String,
         context: String? = nil,
-        fastContextRerankEnabled: Bool = true
+        fastContextRerankEnabled: Bool = true,
+        allowModelReview: Bool = true
     ) -> [SearchCandidate] {
         var candidates: [SearchCandidate] = [SearchCandidate(word: inputPat, kind: .raw)]
 
@@ -781,7 +792,8 @@ class GyaimController: IMKInputController {
             )
         }
         let dictionaryCandidates = shouldFastContextRerank
-            ? fastContextRerank(searchResults, inputPat: inputPat, hiragana: hiragana, context: context)
+            ? fastContextRerank(searchResults, inputPat: inputPat, hiragana: hiragana, context: context,
+                                allowModelReview: allowModelReview)
             : searchResults
         candidates.append(contentsOf: dictionaryCandidates)
 
@@ -804,7 +816,8 @@ class GyaimController: IMKInputController {
     private static func fastContextRerank(_ searchResults: [SearchCandidate],
                                           inputPat: String,
                                           hiragana: String,
-                                          context: String?) -> [SearchCandidate] {
+                                          context: String?,
+                                          allowModelReview: Bool = true) -> [SearchCandidate] {
         guard searchResults.count >= 2 else {
             if isFastContextRerankLoggingEnabled {
                 Log.input.info(
@@ -838,7 +851,7 @@ class GyaimController: IMKInputController {
                                   studyFrequency: candidate.studyFrequency)
             }
         )
-        let response = fastContextRerankResponse(for: request)
+        let response = fastContextRerankResponse(for: request, allowModelReview: allowModelReview)
         let rerankedHead = AIReranker.apply(order: response.order, to: head)
         if isFastContextRerankLoggingEnabled {
             let elapsed = elapsedMilliseconds(since: start)
@@ -857,11 +870,71 @@ class GyaimController: IMKInputController {
         return rerankedHead + tail
     }
 
-    private static func fastContextRerankResponse(for request: AIRerankRequest) -> AIRerankResponse {
+    private static func fastContextRerankResponse(for request: AIRerankRequest,
+                                                  allowModelReview: Bool) -> AIRerankResponse {
         if shouldUseModelForFastContextRerank(inputPat: request.inputPat) {
-            return InProcessAIReranker.shared.rerank(request)
+            if allowModelReview {
+                return InProcessAIReranker.shared.rerank(request)
+            }
+            // The model pass is deferred (ADR-026); this synchronous result is
+            // what the user sees while still typing.
+            return AIReranker.localRerank(request, model: "swift-fast-context-heuristic-prereview")
         }
         return AIReranker.localRerank(request, model: "swift-fast-context-heuristic")
+    }
+
+    // MARK: - Deferred model review (ADR-026)
+
+    /// Delay before the model reviews the current prefix candidates. 0 restores
+    /// the synchronous per-keystroke review. Dogfood 2026-09-11: 760 homophone
+    /// reviews (20-27 ms each) ran on intermediate inputs, but only 26 reached a
+    /// commit; deferring past the inter-key interval removes most of them.
+    static func modelReviewDelayMilliseconds() -> Int {
+        let configured = GyaimSettings.integer(forKey: "aiRerankFastContextReviewDelayMs", default: 80)
+        return min(max(configured, 0), 1000)
+    }
+
+    /// True when the model would review this input but should do so after a
+    /// pause instead of inline with the keystroke.
+    static func shouldDeferModelReview(inputPat: String) -> Bool {
+        shouldUseModelForFastContextRerank(inputPat: inputPat) && modelReviewDelayMilliseconds() > 0
+    }
+
+    private func cancelDeferredModelReview() {
+        pendingModelReview?.cancel()
+        pendingModelReview = nil
+        inputGeneration += 1
+    }
+
+    private func scheduleDeferredModelReview(searchResults: [SearchCandidate],
+                                             inputPat: String,
+                                             hiragana: String) {
+        cancelDeferredModelReview()
+        let generation = inputGeneration
+        let clip = clipboardCandidate
+        let sel = selectedCandidate
+        let context = recentCommittedText
+        let work = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.inputGeneration == generation,
+                  self.inputPat == inputPat,
+                  self.searchMode == 0,
+                  self.nthCand == 0 else { return }
+            self.pendingModelReview = nil
+            let reviewed = Self.buildPrefixCandidates(searchResults: searchResults,
+                                                      inputPat: inputPat,
+                                                      clipboardCandidate: clip,
+                                                      selectedCandidate: sel,
+                                                      hiragana: hiragana,
+                                                      context: context,
+                                                      allowModelReview: true)
+            guard reviewed.map(\.word) != self.candidates.map(\.word) else { return }
+            self.candidates = reviewed
+            self.showCands(client: self.client())
+        }
+        pendingModelReview = work
+        let delay = DispatchTimeInterval.milliseconds(Self.modelReviewDelayMilliseconds())
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     static var isFastContextRerankEnabled: Bool {
@@ -909,7 +982,8 @@ class GyaimController: IMKInputController {
         return inputPat.count >= minFastContextModelInputLength()
     }
 
-    private static func fastContextRerankOutcome(model: String) -> String {
+    static func fastContextRerankOutcome(model: String) -> String {
+        if model.contains("heuristic-prereview") { return "heuristic-prereview" }
         if model.contains("review-affinity-skipped") { return "affinity-skip" }
         if model.contains("review-length-skipped") { return "short-input-skip" }
         if model.contains("review-skipped") { return "protected-exact-skip" }
@@ -1013,14 +1087,21 @@ class GyaimController: IMKInputController {
                 ws.search(query: inputPat, searchMode: searchMode)
             }
             let hiragana = rk.roma2hiragana(inputPat)
+            let deferModelReview = Self.shouldDeferModelReview(inputPat: inputPat)
             candidates = Self.buildPrefixCandidates(
                 searchResults: searchResults,
                 inputPat: inputPat,
                 clipboardCandidate: clipboardCandidate,
                 selectedCandidate: selectedCandidate,
                 hiragana: hiragana,
-                context: recentCommittedText
+                context: recentCommittedText,
+                allowModelReview: !deferModelReview
             )
+            if deferModelReview {
+                scheduleDeferredModelReview(searchResults: searchResults,
+                                            inputPat: inputPat,
+                                            hiragana: hiragana)
+            }
         }
 
         nthCand = 0
@@ -1303,7 +1384,7 @@ class GyaimController: IMKInputController {
 
         let sourceDescription = String(describing: resolution.source)
         let modeDescription = mode == .classic ? "classic" : "list"
-        Log.ui.info("showWindow: reportedLineRect=\(reportedLineRect) "
+        Log.ui.debug("showWindow: reportedLineRect=\(reportedLineRect) "
             + "resolvedLineRect=\(resolution.lineRect) source=\(sourceDescription) "
             + "winSize=\(winSize) mode=\(modeDescription) -> origin=\(origin)")
         cw.setFrameOrigin(origin)
