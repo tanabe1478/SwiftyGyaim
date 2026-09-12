@@ -57,7 +57,7 @@ Working directory for build commands: `GyaimSwift/`
 
 ### Three-Tier Dictionary System (WordSearch.swift + ConnectionDict.swift)
 
-1. **Connection Dictionary** (`resources/dict.txt`) — Fixed morphological dictionary with conjugation support. Tab-separated format: `romaji[TAB]surface[TAB]input_connection[TAB]output_connection`.
+1. **Connection Dictionary** (`GyaimSwift/Resources/dict.txt`) — Fixed morphological dictionary with conjugation support. Tab-separated format: `romaji[TAB]surface[TAB]input_connection[TAB]output_connection`.
 2. **Local Dictionary** (`~/.gyaim/localdict.txt`) — User-registered words, highest priority. Hot reload via mtime check.
 3. **Study Dictionary** (`~/.gyaim/studydict.txt`) — Score-based learning (max 10,000 entries; 「淘汰なし」mode is uncapped, ADR-025). 4-column TSV: `reading[TAB]word[TAB]timestamp[TAB]frequency`. Eviction mode selectable in Preferences (MRU / None / Score-based). Default: score-based (Mozc-style). See ADR-014.
 
@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（288テスト）
+# ユニットテスト（288テスト）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）

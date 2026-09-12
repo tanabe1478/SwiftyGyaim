@@ -1,23 +1,8 @@
-.repl_history
-ib.xcodeproj/
-Gemfile.lock
-build
-tags
-app/pixate_code.rb
-resources/*.nib
-resources/*.momd
-resources/*.storyboardc
-vendor/
 .DS_Store
-nbproject
-.redcar
 #*#
 *~
 *.sw[po]
-.eprj
-.sass-cache
 .idea
-.dat*.*
 LOG.md
 PLAN.md
 # .claude - ignore all except hooks, skills, and settings

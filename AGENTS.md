@@ -48,7 +48,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 辞書優先度:
 1. `~/.gyaim/studydict.txt`
 2. `~/.gyaim/localdict.txt`
-3. `resources/dict.txt`
+3. `GyaimSwift/Resources/dict.txt`（`~/.gyaim/connectiondict.txt` にインポートしたものがあれば優先）
 
 ## InputMethodKit Constraints
 
