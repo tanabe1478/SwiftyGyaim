@@ -23,7 +23,6 @@ class PreferencesWindow: NSWindow {
     private var fastContextRerankModelToggle: NSButton?
     private var fastContextRerankLoggingToggle: NSButton?
     private var bundledZenzToggle: NSButton?
-    private var zenzGenerationToggle: NSButton?
     private var contextLearningToggle: NSButton?
     private var contextDictCountLabel: NSTextField?
     private var connectionDictURLField: NSTextField?
@@ -113,58 +112,88 @@ class PreferencesWindow: NSWindow {
     }
 
     private func buildUI() {
-        var y = frame.height - 60
+        hiraganaRecorders = KeyBindings.shared.hiragana.map { shortcut in
+            makeRecorderRow(shortcut) { [weak self] row in self?.removeHiraganaRow(row) }
+        }
+        katakanaRecorders = KeyBindings.shared.katakana.map { shortcut in
+            makeRecorderRow(shortcut) { [weak self] row in self?.removeKatakanaRow(row) }
+        }
+        googleTransliterateRecorders = KeyBindings.shared.googleTransliterate.map { shortcut in
+            makeRecorderRow(shortcut) { [weak self] row in self?.removeGoogleTransliterateRow(row) }
+        }
+        deleteCandidateRecorders = KeyBindings.shared.deleteCandidate.map { shortcut in
+            makeRecorderRow(shortcut) { [weak self] row in self?.removeDeleteCandidateRow(row) }
+        }
+        layoutContent()
+    }
 
-        // Title
+    private func makeRecorderRow(_ shortcut: KeyShortcut,
+                                 onRemove: @escaping (ShortcutRecorderRow) -> Void) -> ShortcutRecorderRow {
+        let row = ShortcutRecorderRow(frame: .zero)
+        row.setShortcut(shortcut)
+        row.onRemove = onRemove
+        return row
+    }
+
+    /// Lays out every section top-down using the current recorder rows. Called
+    /// by buildUI() (fresh rows from KeyBindings) and rebuildLayout() (rows added
+    /// or removed by the user). There is exactly one copy of the layout code.
+    private func layoutContent() {
+        var y = frame.height - 60
+        addShortcutSections(y: &y)
+        addCandidateSection(y: &y)
+        addStudySection(y: &y)
+        addStudySuspectsControls(y: &y)
+        addFastContextRerankControls(y: &y)
+        addAIModelControls(y: &y)
+        addGoogleSection(y: &y)
+        addDeleteCandidateSection(y: &y)
+        addLogSection(y: &y)
+        addBottomButtons(y: &y)
+    }
+
+    private func addShortcutSections(y: inout CGFloat) {
+
         let titleLabel = makeLabel("キーボードショートカット", bold: true)
         titleLabel.frame = NSRect(x: 20, y: y, width: 440, height: 24)
         contentBox.addSubview(titleLabel)
-        y -= 10
 
-        // Hiragana section
-        y -= 30
+        y -= 40
         let hiraLabel = makeLabel("ひらがな確定:")
         hiraLabel.frame = NSRect(x: 20, y: y, width: 200, height: 20)
         contentBox.addSubview(hiraLabel)
 
-        for shortcut in KeyBindings.shared.hiragana {
+        for row in hiraganaRecorders {
             y -= 32
-            let row = ShortcutRecorderRow(frame: NSRect(x: 30, y: y, width: 420, height: 28))
-            row.setShortcut(shortcut)
-            row.onRemove = { [weak self] r in self?.removeHiraganaRow(r) }
+            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
             contentBox.addSubview(row)
-            hiraganaRecorders.append(row)
         }
 
         y -= 30
         let addHiraBtn = NSButton(title: "+ 追加", target: self, action: #selector(addHiraganaShortcut))
         addHiraBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
         addHiraBtn.bezelStyle = .rounded
-        addHiraBtn.tag = 1
         contentBox.addSubview(addHiraBtn)
 
-        // Katakana section
         y -= 40
         let kataLabel = makeLabel("カタカナ確定:")
         kataLabel.frame = NSRect(x: 20, y: y, width: 200, height: 20)
         contentBox.addSubview(kataLabel)
 
-        for shortcut in KeyBindings.shared.katakana {
+        for row in katakanaRecorders {
             y -= 32
-            let row = ShortcutRecorderRow(frame: NSRect(x: 30, y: y, width: 420, height: 28))
-            row.setShortcut(shortcut)
-            row.onRemove = { [weak self] r in self?.removeKatakanaRow(r) }
+            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
             contentBox.addSubview(row)
-            katakanaRecorders.append(row)
         }
 
         y -= 30
         let addKataBtn = NSButton(title: "+ 追加", target: self, action: #selector(addKatakanaShortcut))
         addKataBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
         addKataBtn.bezelStyle = .rounded
-        addKataBtn.tag = 2
         contentBox.addSubview(addKataBtn)
+    }
 
+    private func addCandidateSection(y: inout CGFloat) {
         // Candidate section
         y -= 40
         let candTitle = makeLabel("候補", bold: true)
@@ -195,7 +224,9 @@ class PreferencesWindow: NSWindow {
         stToggle.state = GyaimController.isSelectedTextCandidateEnabled ? .on : .off
         contentBox.addSubview(stToggle)
         selectedTextToggle = stToggle
+    }
 
+    private func addStudySection(y: inout CGFloat) {
         // Study dict eviction section
         y -= 36
         let studyTitle = makeLabel("学習辞書", bold: true)
@@ -217,9 +248,7 @@ class PreferencesWindow: NSWindow {
         evictionModeControl = evictControl
 
         y -= 28
-        let evictHint = makeLabel("MRU: 最近使った順に上限10,000件  淘汰なし: 上限なしで全件保持  スコアベース: 使用頻度と時間で評価")
-        evictHint.font = NSFont.systemFont(ofSize: 11)
-        evictHint.textColor = .secondaryLabelColor
+        let evictHint = makeHint("MRU: 最近使った順に上限10,000件  淘汰なし: 上限なしで全件保持  スコアベース: 使用頻度と時間で評価")
         evictHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
         contentBox.addSubview(evictHint)
 
@@ -239,13 +268,14 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(erToggle)
         exactReadingMatchToggle = erToggle
 
-        let erHint = makeLabel("入力と読みが完全に一致する候補を、前方一致の候補より上に表示します")
-        erHint.font = NSFont.systemFont(ofSize: 11)
-        erHint.textColor = .secondaryLabelColor
+        let erHint = makeHint("入力と読みが完全に一致する候補を、前方一致の候補より上に表示します")
         y -= 18
         erHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
         contentBox.addSubview(erHint)
 
+    }
+
+    private func addStudySuspectsControls(y: inout CGFloat) {
         y -= 30
         let suspectsButton = NSButton(title: "疑わしい学習エントリを確認...",
                                       target: self, action: #selector(showStudySuspects))
@@ -257,10 +287,9 @@ class PreferencesWindow: NSWindow {
         suspectsHint.textColor = .secondaryLabelColor
         suspectsHint.frame = NSRect(x: 248, y: y + 2, width: 220, height: 20)
         contentBox.addSubview(suspectsHint)
+    }
 
-        addFastContextRerankControls(y: &y)
-        addAIModelControls(y: &y)
-
+    private func addGoogleSection(y: inout CGFloat) {
         // Google Transliterate section
         y -= 40
         let googleTitle = makeLabel("Google変換", bold: true)
@@ -291,13 +320,10 @@ class PreferencesWindow: NSWindow {
         shortcutLabel.frame = NSRect(x: 20, y: y, width: 120, height: 20)
         contentBox.addSubview(shortcutLabel)
 
-        for shortcut in KeyBindings.shared.googleTransliterate {
+        for row in googleTransliterateRecorders {
             y -= 32
-            let row = ShortcutRecorderRow(frame: NSRect(x: 30, y: y, width: 420, height: 28))
-            row.setShortcut(shortcut)
-            row.onRemove = { [weak self] r in self?.removeGoogleTransliterateRow(r) }
+            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
             contentBox.addSubview(row)
-            googleTransliterateRecorders.append(row)
         }
 
         y -= 30
@@ -305,7 +331,9 @@ class PreferencesWindow: NSWindow {
         addGoogleBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
         addGoogleBtn.bezelStyle = .rounded
         contentBox.addSubview(addGoogleBtn)
+    }
 
+    private func addDeleteCandidateSection(y: inout CGFloat) {
         // Delete candidate section
         y -= 40
         let deleteTitle = makeLabel("候補削除（Shift+X）", bold: true)
@@ -317,13 +345,10 @@ class PreferencesWindow: NSWindow {
         deleteShortcutLabel.frame = NSRect(x: 20, y: y, width: 120, height: 20)
         contentBox.addSubview(deleteShortcutLabel)
 
-        for shortcut in KeyBindings.shared.deleteCandidate {
+        for row in deleteCandidateRecorders {
             y -= 32
-            let row = ShortcutRecorderRow(frame: NSRect(x: 30, y: y, width: 420, height: 28))
-            row.setShortcut(shortcut)
-            row.onRemove = { [weak self] r in self?.removeDeleteCandidateRow(r) }
+            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
             contentBox.addSubview(row)
-            deleteCandidateRecorders.append(row)
         }
 
         y -= 30
@@ -340,7 +365,9 @@ class PreferencesWindow: NSWindow {
         contentBox.addSubview(deleteHint)
 
         addConnectionDictionarySection(y: &y)
+    }
 
+    private func addLogSection(y: inout CGFloat) {
         // Log section
         y -= 40
         let logTitle = makeLabel("ログ", bold: true)
@@ -369,9 +396,10 @@ class PreferencesWindow: NSWindow {
         finderBtn.frame = NSRect(x: 340, y: y - 2, width: 120, height: 24)
         finderBtn.bezelStyle = .rounded
         contentBox.addSubview(finderBtn)
+    }
 
-        // Bottom buttons
-        let bottomMargin: CGFloat = 56 // 12 + 32 (button) + 12 padding
+    private func addBottomButtons(y: inout CGFloat) {
+        let bottomMargin: CGFloat = 56
         resizeToFitContent(lastY: y, bottomMargin: bottomMargin)
 
         let saveBtn = NSButton(title: "保存", target: self, action: #selector(saveAndClose))
@@ -438,20 +466,11 @@ class PreferencesWindow: NSWindow {
         bundledZenzToggle = zenzToggle
 
         y -= 20
-        let zenzHint = makeLabel("OFFにするとTab・同音異義語選択がヒューリスティックのみになります")
+        let zenzHint = makeLabel("OFFにすると同音異義語の選択がヒューリスティックのみになります")
         zenzHint.font = NSFont.systemFont(ofSize: 11)
         zenzHint.textColor = .secondaryLabelColor
         zenzHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
         contentBox.addSubview(zenzHint)
-
-        y -= 24
-        let generationToggle = NSButton(checkboxWithTitle: "Tabで辞書から追加候補を選ぶ（辞書制約付き生成）",
-                                        target: self,
-                                        action: #selector(toggleZenzGeneration(_:)))
-        generationToggle.frame = NSRect(x: 20, y: y, width: 400, height: 20)
-        generationToggle.state = GyaimController.isZenzGenerationEnabled ? .on : .off
-        contentBox.addSubview(generationToggle)
-        zenzGenerationToggle = generationToggle
 
         y -= 24
         let learningToggle = NSButton(checkboxWithTitle: "文脈学習を使う（確定した文脈で同音異義語を選ぶ）",
@@ -522,265 +541,8 @@ class PreferencesWindow: NSWindow {
     }
 
     private func rebuildLayout() {
-        // Remove all subviews and rebuild
         contentBox.subviews.forEach { $0.removeFromSuperview() }
-        hiraganaRecorders.forEach { $0.removeFromSuperview() }
-        katakanaRecorders.forEach { $0.removeFromSuperview() }
-        googleTransliterateRecorders.forEach { $0.removeFromSuperview() }
-        deleteCandidateRecorders.forEach { $0.removeFromSuperview() }
-
-        var y = frame.height - 60
-
-        let titleLabel = makeLabel("キーボードショートカット", bold: true)
-        titleLabel.frame = NSRect(x: 20, y: y, width: 440, height: 24)
-        contentBox.addSubview(titleLabel)
-
-        y -= 40
-        let hiraLabel = makeLabel("ひらがな確定:")
-        hiraLabel.frame = NSRect(x: 20, y: y, width: 200, height: 20)
-        contentBox.addSubview(hiraLabel)
-
-        for row in hiraganaRecorders {
-            y -= 32
-            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
-            contentBox.addSubview(row)
-        }
-
-        y -= 30
-        let addHiraBtn = NSButton(title: "+ 追加", target: self, action: #selector(addHiraganaShortcut))
-        addHiraBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
-        addHiraBtn.bezelStyle = .rounded
-        contentBox.addSubview(addHiraBtn)
-
-        y -= 40
-        let kataLabel = makeLabel("カタカナ確定:")
-        kataLabel.frame = NSRect(x: 20, y: y, width: 200, height: 20)
-        contentBox.addSubview(kataLabel)
-
-        for row in katakanaRecorders {
-            y -= 32
-            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
-            contentBox.addSubview(row)
-        }
-
-        y -= 30
-        let addKataBtn = NSButton(title: "+ 追加", target: self, action: #selector(addKatakanaShortcut))
-        addKataBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
-        addKataBtn.bezelStyle = .rounded
-        contentBox.addSubview(addKataBtn)
-
-        // Candidate section in rebuildLayout
-        y -= 40
-        let candTitle = makeLabel("候補", bold: true)
-        candTitle.frame = NSRect(x: 20, y: y, width: 440, height: 24)
-        contentBox.addSubview(candTitle)
-
-        y -= 28
-        let styleLabel = makeLabel("表示スタイル:")
-        styleLabel.frame = NSRect(x: 20, y: y, width: 100, height: 20)
-        contentBox.addSubview(styleLabel)
-
-        let modeControl = NSSegmentedControl(labels: ["リスト表示", "クラシック表示"], trackingMode: .selectOne, target: self, action: #selector(changeDisplayMode(_:)))
-        modeControl.frame = NSRect(x: 120, y: y - 2, width: 220, height: 24)
-        modeControl.selectedSegment = CandidateDisplayMode.current.rawValue
-        contentBox.addSubview(modeControl)
-        displayModeControl = modeControl
-
-        y -= 28
-        let cbToggle = NSButton(checkboxWithTitle: "クリップボードの内容を候補に表示する", target: self, action: #selector(toggleClipboardCandidate(_:)))
-        cbToggle.frame = NSRect(x: 20, y: y, width: 300, height: 20)
-        cbToggle.state = GyaimController.isClipboardCandidateEnabled ? .on : .off
-        contentBox.addSubview(cbToggle)
-        clipboardToggle = cbToggle
-
-        y -= 24
-        let stToggle = NSButton(checkboxWithTitle: "選択テキストを候補に表示する", target: self, action: #selector(toggleSelectedTextCandidate(_:)))
-        stToggle.frame = NSRect(x: 20, y: y, width: 300, height: 20)
-        stToggle.state = GyaimController.isSelectedTextCandidateEnabled ? .on : .off
-        contentBox.addSubview(stToggle)
-        selectedTextToggle = stToggle
-
-        // Study dict eviction section in rebuildLayout
-        y -= 36
-        let studyTitle = makeLabel("学習辞書", bold: true)
-        studyTitle.frame = NSRect(x: 20, y: y, width: 440, height: 24)
-        contentBox.addSubview(studyTitle)
-
-        y -= 28
-        let evictLabel = makeLabel("淘汰方式:")
-        evictLabel.frame = NSRect(x: 20, y: y, width: 80, height: 20)
-        contentBox.addSubview(evictLabel)
-
-        let evictControl = NSSegmentedControl(labels: ["MRU", "淘汰なし", "スコアベース"],
-                                               trackingMode: .selectOne,
-                                               target: self,
-                                               action: #selector(changeEvictionMode(_:)))
-        evictControl.frame = NSRect(x: 100, y: y - 2, width: 280, height: 24)
-        evictControl.selectedSegment = EvictionMode.current.rawValue
-        contentBox.addSubview(evictControl)
-        evictionModeControl = evictControl
-
-        y -= 28
-        let evictHint = makeLabel("MRU: 最近使った順に上限10,000件  淘汰なし: 上限なしで全件保持  スコアベース: 使用頻度と時間で評価")
-        evictHint.font = NSFont.systemFont(ofSize: 11)
-        evictHint.textColor = .secondaryLabelColor
-        evictHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
-        contentBox.addSubview(evictHint)
-
-        y -= 24
-        let shToggle = NSButton(checkboxWithTitle: "平仮名の確定を学習する",
-                                 target: self, action: #selector(toggleStudyHiragana(_:)))
-        shToggle.frame = NSRect(x: 20, y: y, width: 300, height: 20)
-        shToggle.state = WordSearch.isStudyHiraganaEnabled ? .on : .off
-        contentBox.addSubview(shToggle)
-        studyHiraganaToggle = shToggle
-
-        y -= 24
-        let erToggle = NSButton(checkboxWithTitle: "完全一致の読みを優先する",
-                                 target: self, action: #selector(toggleExactReadingMatchPriority(_:)))
-        erToggle.frame = NSRect(x: 20, y: y, width: 300, height: 20)
-        erToggle.state = WordSearch.isExactReadingMatchPriority ? .on : .off
-        contentBox.addSubview(erToggle)
-        exactReadingMatchToggle = erToggle
-
-        let erHint = makeLabel("入力と読みが完全に一致する候補を、前方一致の候補より上に表示します")
-        erHint.font = NSFont.systemFont(ofSize: 11)
-        erHint.textColor = .secondaryLabelColor
-        y -= 18
-        erHint.frame = NSRect(x: 36, y: y, width: 420, height: 16)
-        contentBox.addSubview(erHint)
-
-        y -= 30
-        let suspectsButton = NSButton(title: "疑わしい学習エントリを確認...",
-                                      target: self, action: #selector(showStudySuspects))
-        suspectsButton.frame = NSRect(x: 20, y: y, width: 220, height: 24)
-        suspectsButton.bezelStyle = .rounded
-        contentBox.addSubview(suspectsButton)
-        let suspectsHint = makeLabel("typo確定や長期未使用の学習語を一覧し、選んで削除できます")
-        suspectsHint.font = NSFont.systemFont(ofSize: 11)
-        suspectsHint.textColor = .secondaryLabelColor
-        suspectsHint.frame = NSRect(x: 248, y: y + 2, width: 220, height: 20)
-        contentBox.addSubview(suspectsHint)
-
-        addFastContextRerankControls(y: &y)
-        addAIModelControls(y: &y)
-
-        // Google Transliterate section in rebuildLayout
-        y -= 40
-        let googleTitle = makeLabel("Google変換", bold: true)
-        googleTitle.frame = NSRect(x: 20, y: y, width: 440, height: 24)
-        contentBox.addSubview(googleTitle)
-
-        y -= 28
-        let triggerLabel = makeLabel("トリガー文字:")
-        triggerLabel.frame = NSRect(x: 20, y: y, width: 100, height: 20)
-        contentBox.addSubview(triggerLabel)
-
-        let triggerField = NSTextField()
-        triggerField.frame = NSRect(x: 120, y: y - 2, width: 40, height: 24)
-        triggerField.stringValue = GoogleTransliterate.triggerSuffix
-        triggerField.alignment = .center
-        triggerField.placeholderString = "`"
-        contentBox.addSubview(triggerField)
-        googleTriggerField = triggerField
-
-        let triggerHint = makeLabel("入力末尾に付けてGoogle変換（例: meguro`）")
-        triggerHint.font = NSFont.systemFont(ofSize: 11)
-        triggerHint.textColor = .secondaryLabelColor
-        triggerHint.frame = NSRect(x: 170, y: y, width: 300, height: 20)
-        contentBox.addSubview(triggerHint)
-
-        y -= 28
-        let shortcutLabel = makeLabel("ショートカット:")
-        shortcutLabel.frame = NSRect(x: 20, y: y, width: 120, height: 20)
-        contentBox.addSubview(shortcutLabel)
-
-        for row in googleTransliterateRecorders {
-            y -= 32
-            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
-            contentBox.addSubview(row)
-        }
-
-        y -= 30
-        let addGoogleBtn = NSButton(title: "+ 追加", target: self, action: #selector(addGoogleTransliterateShortcut))
-        addGoogleBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
-        addGoogleBtn.bezelStyle = .rounded
-        contentBox.addSubview(addGoogleBtn)
-
-        // Delete candidate section in rebuildLayout
-        y -= 40
-        let deleteTitle = makeLabel("候補削除（Shift+X）", bold: true)
-        deleteTitle.frame = NSRect(x: 20, y: y, width: 440, height: 24)
-        contentBox.addSubview(deleteTitle)
-
-        y -= 28
-        let deleteShortcutLabel = makeLabel("ショートカット:")
-        deleteShortcutLabel.frame = NSRect(x: 20, y: y, width: 120, height: 20)
-        contentBox.addSubview(deleteShortcutLabel)
-
-        for row in deleteCandidateRecorders {
-            y -= 32
-            row.frame = NSRect(x: 30, y: y, width: 420, height: 28)
-            contentBox.addSubview(row)
-        }
-
-        y -= 30
-        let addDeleteBtn = NSButton(title: "+ 追加", target: self, action: #selector(addDeleteCandidateShortcut))
-        addDeleteBtn.frame = NSRect(x: 30, y: y, width: 80, height: 24)
-        addDeleteBtn.bezelStyle = .rounded
-        contentBox.addSubview(addDeleteBtn)
-
-        let deleteHint = makeLabel("候補表示中にShift+Xまたは上記ショートカットで学習/ユーザー辞書の候補を削除")
-        deleteHint.font = NSFont.systemFont(ofSize: 11)
-        deleteHint.textColor = .secondaryLabelColor
-        y -= 20
-        deleteHint.frame = NSRect(x: 20, y: y, width: 440, height: 20)
-        contentBox.addSubview(deleteHint)
-
-        addConnectionDictionarySection(y: &y)
-
-        // Log section in rebuildLayout
-        y -= 40
-        let logTitle = makeLabel("ログ", bold: true)
-        logTitle.frame = NSRect(x: 20, y: y, width: 440, height: 24)
-        contentBox.addSubview(logTitle)
-
-        y -= 28
-        let toggle = NSButton(checkboxWithTitle: "ロギングを有効にする", target: self, action: #selector(toggleLogging(_:)))
-        toggle.frame = NSRect(x: 20, y: y, width: 250, height: 20)
-        toggle.state = Log.isEnabled ? .on : .off
-        contentBox.addSubview(toggle)
-        logToggle = toggle
-
-        y -= 24
-        let sizeLabel = makeLabel(logSizeString())
-        sizeLabel.frame = NSRect(x: 20, y: y, width: 200, height: 20)
-        contentBox.addSubview(sizeLabel)
-        logSizeLabel = sizeLabel
-
-        let clearBtn = NSButton(title: "ログを削除", target: self, action: #selector(clearLogs))
-        clearBtn.frame = NSRect(x: 230, y: y - 2, width: 100, height: 24)
-        clearBtn.bezelStyle = .rounded
-        contentBox.addSubview(clearBtn)
-
-        let finderBtn = NSButton(title: "Finderで表示", target: self, action: #selector(showInFinder))
-        finderBtn.frame = NSRect(x: 340, y: y - 2, width: 120, height: 24)
-        finderBtn.bezelStyle = .rounded
-        contentBox.addSubview(finderBtn)
-
-        let bottomMargin: CGFloat = 56
-        resizeToFitContent(lastY: y, bottomMargin: bottomMargin)
-
-        let saveBtn = NSButton(title: "保存", target: self, action: #selector(saveAndClose))
-        saveBtn.frame = NSRect(x: 380, y: 12, width: 80, height: 32)
-        saveBtn.bezelStyle = .rounded
-        saveBtn.keyEquivalent = "\r"
-        contentBox.addSubview(saveBtn)
-
-        let resetBtn = NSButton(title: "初期値に戻す", target: self, action: #selector(resetDefaults))
-        resetBtn.frame = NSRect(x: 20, y: 12, width: 120, height: 32)
-        resetBtn.bezelStyle = .rounded
-        contentBox.addSubview(resetBtn)
+        layoutContent()
     }
 
     @objc private func addGoogleTransliterateShortcut() {
@@ -906,10 +668,6 @@ class PreferencesWindow: NSWindow {
         GyaimController.setBundledZenzEnabled(sender.state == .on)
     }
 
-    @objc private func toggleZenzGeneration(_ sender: NSButton) {
-        GyaimController.setZenzGenerationEnabled(sender.state == .on)
-    }
-
     @objc private func toggleContextLearning(_ sender: NSButton) {
         ContextDict.setEnabled(sender.state == .on)
     }
@@ -987,6 +745,14 @@ class PreferencesWindow: NSWindow {
             setFrame(newFrame, display: true)
             contentBox.frame = NSRect(x: 0, y: 0, width: newFrame.width, height: newFrame.height)
         }
+    }
+
+    /// Secondary 11pt explanation text placed under a control.
+    private func makeHint(_ text: String) -> NSTextField {
+        let label = makeLabel(text)
+        label.font = NSFont.systemFont(ofSize: 11)
+        label.textColor = .secondaryLabelColor
+        return label
     }
 
     private func makeLabel(_ text: String, bold: Bool = false) -> NSTextField {

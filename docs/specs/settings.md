@@ -1,7 +1,7 @@
 # Spec: 設定ストア（settings.json）
 
 > Trigger: GyaimSettings.swift
-> Last updated: 2026-09-12 (ADR-027: settings.json を唯一の書き込み先に)
+> Last updated: 2026-09-12 (Tab 生成・legacy reranker のキーを削除)
 
 ## 概要
 
@@ -70,19 +70,16 @@
 | キー | 型 | 既定値 | UI | 内容 |
 |---|---|---|---|---|
 | `aiRerankUseBundledZenz` | Bool | true | ○ | 同梱 GGUF モデルを使う |
-| `aiRerankUseZenzGeneration` | Bool | true | ○ | 辞書制約付き生成（現在 Tab は Google 変換のため実質未使用、ADR-024） |
 | `aiRerankZenzWeight` | Double | 0.30 | – | 全件 rerank 時のモデルスコア重み |
 | `aiRerankZenzMaxCandidates` | Int | 8 | – | 全件 rerank でモデル採点する上位件数 |
-| `aiRerankZenzGenerationBeamWidth` | Int | 1（〜6） | – | 生成のビーム幅 |
-| `aiRerankConstrainedSelectionMaxSurfaces` | Int | 12（〜24） | – | 制約付き選択で採点する表層数 |
 | `aiRerankExactHomophoneMargin` | Double | 0.10 | – | 同音異義語上書きに必要な平均 logprob 差 |
 | `aiRerankExactHomophoneMaxCandidates` | Int | 3（〜6） | – | 同音異義語比較の候補数 |
 | `aiRerankExactHomophoneAffinityThreshold` | Double | 0.75（〜1.0） | – | この affinity 以上ならレビューをスキップ |
 | `aiRerankExactHomophoneFrequencyMarginWeight` | Double | 2.0 | – | best の study 頻度優位 1 doubling あたりの追加 margin（BUG-036） |
 
-### 旧キー（読み取りのみ残存）
+### 削除済みキー
 
-`aiRerankServerURL` / `aiRerankHTTPTimeoutMs` / `aiRerankCommand` / `aiRerankTimeoutMs` は legacy の外部 reranker（`HTTPAIReranker` / `ExternalCommandAIReranker`）が読むが、これらのクラスはどこからも呼ばれていない。`aiRerankUseGoogle` / `aiRerankUseLegacyExternalReranker` / `aiRerankZenzReviewRounds` / `aiRerankZenzAlternativeLimit` / `aiRerankZenzGenerationLimit` / `aiRerankUseZenzFreeGeneration` は ADR-024 で経路ごと削除され、コードに存在しない。
+以下はコードに存在しない（settings.json に残っていても読まれない）。ADR-024 の Tab パイプライン削除に伴うもの: `aiRerankUseZenzGeneration` / `aiRerankZenzGenerationBeamWidth` / `aiRerankConstrainedSelectionMaxSurfaces` / `aiRerankZenzGenerationLimit` / `aiRerankUseZenzFreeGeneration` / `aiRerankZenzReviewRounds` / `aiRerankZenzAlternativeLimit` / `aiRerankUseGoogle`。legacy 外部 reranker（GPT-2 server / external command）の削除に伴うもの: `aiRerankServerURL` / `aiRerankHTTPTimeoutMs` / `aiRerankCommand` / `aiRerankTimeoutMs` / `aiRerankUseLegacyExternalReranker`。
 
 ## 変更手順
 
