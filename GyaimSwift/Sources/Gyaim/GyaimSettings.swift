@@ -44,20 +44,12 @@ enum GyaimSettings {
         "aiRerankFastContextReviewDelayMs",
         // Bundled model
         "aiRerankUseBundledZenz",
-        "aiRerankUseZenzGeneration",
         "aiRerankZenzWeight",
         "aiRerankZenzMaxCandidates",
-        "aiRerankZenzGenerationBeamWidth",
-        "aiRerankConstrainedSelectionMaxSurfaces",
         "aiRerankExactHomophoneMargin",
         "aiRerankExactHomophoneMaxCandidates",
         "aiRerankExactHomophoneAffinityThreshold",
         "aiRerankExactHomophoneFrequencyMarginWeight",
-        // Legacy external rerankers (classes kept, not wired; keys still read there)
-        "aiRerankServerURL",
-        "aiRerankHTTPTimeoutMs",
-        "aiRerankCommand",
-        "aiRerankTimeoutMs",
     ]
 
     private static var settingsFilePath: String {

@@ -4,7 +4,7 @@
 The extractor parses lines like:
   Fixed: "機能" (reading: "kinou", index: 2/4, candidates: ["kinou", "昨日", "機能", "きのう"])
 
-It emits JSONL records usable by evaluate-reranker.py.
+It emits JSONL records (query / answer / outputs) for offline analysis.
 """
 
 from __future__ import annotations

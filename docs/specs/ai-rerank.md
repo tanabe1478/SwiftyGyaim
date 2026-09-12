@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
-> Trigger: AIReranker.swift, ZenzRuntime.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController の fast-context rerank
-> Last updated: 2026-09-12 (ADR-024 以降の現状に合わせて全面更新。Tab パイプライン・GPT-2 server の記述を廃止扱いに)
+> Trigger: AIReranker.swift, ZenzRuntime.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController+FastContextRerank.swift
+> Last updated: 2026-09-12 (Tab 生成経路・legacy reranker のコード削除を反映)
 
 ## 概要
 
@@ -30,7 +30,6 @@
 - `aiRerankZenzWeight` / `aiRerankZenzMaxCandidates`（全件 rerank 用）
 - `customModelPath`（モデル差し替え）
 
-`aiRerankUseZenzGeneration` / `aiRerankZenzGenerationBeamWidth` / `aiRerankConstrainedSelectionMaxSurfaces` は ADR-022 の辞書制約付き生成用で、ADR-024 以降は到達経路がない（設定画面のトグルも効果なし。削除はフォローアップ）。
 
 ## Request JSON
 
@@ -113,7 +112,7 @@ candidate evaluation で モデル最尤 token が EOS の場合（モデルが�
 
 ## 辞書制約付き生成（ADR-022 → ADR-024 で廃止）
 
-`ConnectionDict.constrainedCompositions` と `ZenzRuntime.selectCandidates` による辞書制約付き選択は、Tab 起動パイプラインの削除（ADR-024）で到達経路を失った。`constrainedCompositions` 自体は `ConnectionDictTests` で仕様を保持している。関連設定と設定画面のトグルは残っているが効果はない。
+Tab 起動パイプラインの削除（ADR-024）で到達経路を失った `ZenzRuntime` の生成・選択メソッド、`AICandidateGenerationBackend`、`WordSearch.connectionCompositions`、設定画面の「辞書制約付き生成」トグルと関連キーは削除済み。`ConnectionDict.constrainedCompositions` だけは `ConnectionDictTests` で仕様を保持している（将来の再利用候補）。
 
 ## Validation
 
@@ -152,9 +151,9 @@ Tab / suffix / shortcut while converting
 
 遅延モデルレビューは `inputGeneration` カウンタと `inputPat` / `searchMode == 0` / `nthCand == 0` の一致を確認してから候補を差し替える。`handle()` の先頭と `resetState()` で保留分を破棄するため、連続打鍵中はモデルが走らない。Google 変換は `pendingGoogleQuery` と `inputPat` の一致で古い応答を破棄する（google-transliterate.md）。
 
-## Legacy: GPT-2 external reranker（未接続）
+## Legacy: GPT-2 external reranker（削除済み）
 
-`Tools/ai-rerank/gyaim-gpt2-char-rerank*.py`（`ku-nlp/gpt2-small-japanese-char` の resident server / client）と、Swift 側の `HTTPAIReranker` / `ExternalCommandAIReranker`（設定キー `aiRerankServerURL` / `aiRerankHTTPTimeoutMs` / `aiRerankCommand` / `aiRerankTimeoutMs`、環境変数 `GYAIM_AI_RERANK_SERVER` / `GYAIM_AI_RERANK_COMMAND`）は 2026-05 の比較実験用で、現在は Swift 本体から呼ばれていない。`Tools/ai-rerank/evaluate-reranker.py` もこの server 向け。削除候補。
+2026-05 の比較実験に使った `ku-nlp/gpt2-small-japanese-char` の resident server / client（`Tools/ai-rerank/gyaim-gpt2-char-rerank*.py`、`evaluate-reranker.py`、`requirements.txt`）と Swift 側の `HTTPAIReranker` / `ExternalCommandAIReranker` は、呼び出し元がないため削除した。当時の測定値は git 履歴（#48 以前）を参照。
 
 ## 評価ループ
 
@@ -180,36 +179,6 @@ Tools/eval/extract-ime-log-cases.py \
   --azookey-json /tmp/gyaim-azookey-eval.json \
   --study-dict /tmp/gyaim-feedback-studydict.txt
 ```
-
-固定fixtureでアプリ外の候補生成 + rerank ループを検証する場合は以下を使う。入力fixtureは `Tests/GyaimTests/Fixtures/candidate-feedback-cases.json` に置き、top5 / learnedTop1 / zenzTop5 の期待順位をテストする。Zenz込み検証では base generation / Zenz generation / review loop / final rerank の latency breakdown、review round数、review追加候補数を `/tmp/gyaim-candidate-feedback-report.md` に出力する。`RUN_ZENZ=0` で重いZenz込み検証をskipできる。
-
-```bash
-cd GyaimSwift
-Tools/eval/run-candidate-feedback.sh
-```
-
-resident server を起動した状態で、評価 runner から評価する。実用 latency を見る場合は `--server-url` で直接HTTP接続する。external command client 経由の評価は protocol 検証用。
-
-```bash
-Tools/ai-rerank/evaluate-reranker.py \
-  /tmp/gyaim-rerank.jsonl \
-  --server-url http://127.0.0.1:8765/rerank \
-  --limit 200 \
-  --top-n 10 \
-  --report /tmp/gyaim-rerank-report.md
-```
-
-external command client 経由で評価する場合:
-
-```bash
-Tools/ai-rerank/evaluate-reranker.py \
-  /tmp/gyaim-rerank.jsonl \
-  --command "$PWD/Tools/ai-rerank/gyaim-gpt2-char-rerank-client.py" \
-  --limit 200 \
-  --top-n 10
-```
-
-評価 summary は baseline top1/top3、rerank top1/top3、latency p50/p95、改善・悪化件数を出す。2026-05-22 の手元ログ200件では、直接HTTPで baseline top1 2.0% → rerank top1 87.0%、top3 99.0%維持、latency p50 31.6ms / p95 40.5ms。
 
 ## 既知の制約
 

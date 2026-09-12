@@ -53,7 +53,7 @@ Working directory for build commands: `GyaimSwift/`
 
 ### Core Input Flow
 
-`GyaimController.swift` is the central IME controller implementing the InputMethodKit protocol. It handles keyboard events via `handle(_:client:)`, manages input state (`inputPat`, `candidates`, `nthCand`, `searchMode`), and coordinates dictionary lookups and candidate display.
+`GyaimController.swift` is the central IME controller implementing the InputMethodKit protocol. It handles keyboard events via `handle(_:client:)`, manages input state (`inputPat`, `candidates`, `nthCand`, `searchMode`), and coordinates dictionary lookups and candidate display. The pure static parts of prefix-candidate assembly and fast-context rerank live in `GyaimController+FastContextRerank.swift`.
 
 ### Three-Tier Dictionary System (WordSearch.swift + ConnectionDict.swift)
 
@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（288テスト）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（287テスト）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -126,7 +126,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | ConnectionDictTests | Tests/GyaimTests/ | 9 | 連接辞書の検索・同梱辞書の語彙回帰・制約付き合成 |
 | ConnectionDictSharingTests | Tests/GyaimTests/ | 3 | 連接辞書のプロセス内共有（同一パス再利用・パス切替・reset） |
 | GyaimSettingsTests | Tests/GyaimTests/ | 11 | settings.json 永続化・mtimeキャッシュ・UserDefaults一方向移行・書き込み先の単一性・knownKeysとソースの一致 |
-| AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests | Tests/GyaimTests/ | 41 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択 |
+| AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests | Tests/GyaimTests/ | 40 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択 |
 | HomophoneFrequencyGuardTests | Tests/GyaimTests/ | 4 | 同音異義語上書きの頻度ガード（BUG-036、実ログ数値で固定） |
 | FastContextReviewSchedulingTests | Tests/GyaimTests/ | 4 | モデルレビュー遅延の判定・遅延設定のクランプ・同期パスがモデルを呼ばないこと（ADR-026） |
 | StudySuspectsTests | Tests/GyaimTests/ | 3 | 疑わしい学習エントリ検出（typo完成形・長期未使用・false positive 抑止） |
@@ -243,7 +243,7 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 
 | Spec | Trigger（編集対象） | 内容 |
 |------|-------------------|------|
-| [input-flow.md](docs/specs/input-flow.md) | GyaimController.swift | キー入力→変換→確定フロー、routeEvent設計 |
+| [input-flow.md](docs/specs/input-flow.md) | GyaimController.swift, GyaimController+FastContextRerank.swift | キー入力→変換→確定フロー、routeEvent設計 |
 | [dictionary-system.md](docs/specs/dictionary-system.md) | WordSearch.swift, ConnectionDict.swift | 3階層辞書、学習、ホットリロード |
 | [candidate-window.md](docs/specs/candidate-window.md) | CandidateWindow.swift, PreferencesWindow.swift | 候補表示モード、NSPanel制約 |
 | [google-transliterate.md](docs/specs/google-transliterate.md) | GoogleTransliterate.swift | Google API連携、非同期処理、stale guard |

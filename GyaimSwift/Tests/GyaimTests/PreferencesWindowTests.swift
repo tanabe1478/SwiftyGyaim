@@ -16,7 +16,6 @@ final class PreferencesWindowTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
         UserDefaults.standard.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
         UserDefaults.standard.removeObject(forKey: "aiRerankUseBundledZenz")
-        UserDefaults.standard.removeObject(forKey: "aiRerankUseZenzGeneration")
         UserDefaults.standard.removeObject(forKey: "contextLearningEnabled")
         window = PreferencesWindow()
     }
@@ -33,7 +32,6 @@ final class PreferencesWindowTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
         UserDefaults.standard.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
         UserDefaults.standard.removeObject(forKey: "aiRerankUseBundledZenz")
-        UserDefaults.standard.removeObject(forKey: "aiRerankUseZenzGeneration")
         UserDefaults.standard.removeObject(forKey: "contextLearningEnabled")
         super.tearDown()
     }
@@ -42,11 +40,11 @@ final class PreferencesWindowTests: XCTestCase {
 
     func testAIModelTogglesExistWithDefaults() {
         let zenz = findCheckbox(titled: "AIモデル（同梱Zenz）で候補を評価する")
-        let generation = findCheckbox(titled: "Tabで辞書から追加候補を選ぶ（辞書制約付き生成）")
         let learning = findCheckbox(titled: "文脈学習を使う（確定した文脈で同音異義語を選ぶ）")
 
         XCTAssertEqual(zenz?.state, .on, "bundled Zenz defaults to on")
-        XCTAssertEqual(generation?.state, .on, "constrained generation defaults to on")
+        XCTAssertNil(findCheckbox(titled: "Tabで辞書から追加候補を選ぶ（辞書制約付き生成）"),
+                     "generation toggle was removed with the Tab pipeline (ADR-024)")
         XCTAssertEqual(learning?.state, .on, "context learning defaults to on")
         XCTAssertNotNil(findLabel(containing: "学習済みの文脈"))
     }

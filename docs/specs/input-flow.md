@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
-> Trigger: GyaimController.swift
-> Last updated: 2026-09-12 (モデルレビューの遅延実行 — ADR-026 / モデル先読み)
+> Trigger: GyaimController.swift, GyaimController+FastContextRerank.swift
+> Last updated: 2026-09-12 (fast-context の static 群を GyaimController+FastContextRerank.swift へ分離)
 
 ## 概要
 
@@ -49,7 +49,7 @@ handle(_:client:) → routeEvent() → HandleResult
 
 ## AI rerank
 
-変換中に Tab を押すと Google Transliterate を起動する（`triggerGoogleTransliterate`、suffix・設定ショートカットと同じ経路）。かつてはローカルAI候補生成パイプライン（CandidateGenerator による lattice/補完候補 + Zenz制約付き生成 + rerank）を起動していたが、辞書部品の合成しかできず未知語（例: `syutuji` → 「種辻」「手辻」）でゴミ候補を量産したため削除した（ADR-024、ADR-022をsupersede）。Shift+Tab は従来どおり副作用なしで消費する。`` ` `` は既定の Google Transliterate suffix として扱う。なお設定画面の「Zenz生成」トグルと `aiRerankUseGoogle` / `aiRerankUseLegacyExternalReranker` 等のパイプライン用設定キーは未整理のまま残っている（フォローアップ対象）。
+変換中に Tab を押すと Google Transliterate を起動する（`triggerGoogleTransliterate`、suffix・設定ショートカットと同じ経路）。かつてはローカルAI候補生成パイプライン（CandidateGenerator による lattice/補完候補 + Zenz制約付き生成 + rerank）を起動していたが、辞書部品の合成しかできず未知語（例: `syutuji` → 「種辻」「手辻」）でゴミ候補を量産したため削除した（ADR-024、ADR-022をsupersede）。Shift+Tab は従来どおり副作用なしで消費する。`` ` `` は既定の Google Transliterate suffix として扱う。パイプライン用の設定キーと設定画面の「Zenz生成」トグルも削除済み（settings.md「削除済みキー」）。
 
 通常入力では、`aiRerankFastContextEnabled=true`（デフォルトON）のとき、生成を伴わない軽量な `fast-context-rerank` だけを同期実行する。対象は prefix mode の辞書候補上位24件（`aiRerankFastContextCandidateLimit` で 2〜48 に調整可能）で、raw input と外部候補（クリップボード/選択テキスト）は順序固定。既定では `AIReranker.localRerank` の Swift heuristic のみを使い、読み完全一致候補を長い予測候補より優先しつつ、直前文脈に強い否定命令 cue（例: `決して`, `禁止`, `してはいけ`）がある場合だけ `従うな` のような予測候補を上げられる。候補には `ContextDict.shared.affinity`（文脈条件付き学習、ADR-020）と study頻度が `contextAffinity` / `studyFrequency` として付与され、同じ文脈で過去に選んだ同音異義語はモデルなしで先頭化できる。ただし入力の生ひらがな表記（例: `bunsyou -> ぶんしょう`）はかな確定キーから常に到達できるため affinity bonus を適用せず、一度の文脈履歴が頻出漢字候補を上書きし続けることを防ぐ。`aiRerankUseModelForFastContext=true` の場合だけ in-process model backend を使うが、短い入力では走らせない（`aiRerankFastContextModelMinInputLength`、デフォルト4）。モデル経路では候補ごとの全件scoringではなく、Swift heuristic の最上位候補をZenzで1回だけreviewし、必要な場合だけ既存候補内のprefix一致候補を先頭へ移動する。読み完全一致の `.exact` / `.compound` 最上位候補はモデルで沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`）は exact 同音異義語レビュー（ADR-021）として、protected exact 候補同士（既定上位3件）を条件付き平均logprobで直接比較し、margin（既定0.10）以上勝る候補だけを先頭へ入れ替える。prefix予測候補、`ください` があるときの `くださ` のような未完成語幹、入力の生かな表記に一致するひらがな候補（best以外。BUG-024: 文字LMのかなバイアスで `こみ` が `込み` に勝つ）は比較対象に入らないため、モデルが不正な候補を昇格させることはできない。bestの `contextAffinity` が閾値（既定0.75）以上ならレビュー自体をスキップする（outcome `affinity-skip`）。通常reviewの1文字prefixは、候補textが完全一致する protected exact 候補に限り昇格できる。文脈は末尾だけに制限する（`aiRerankFastContextMaxContextLength`、デフォルト20）。
 

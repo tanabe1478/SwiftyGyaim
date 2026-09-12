@@ -12,28 +12,6 @@ protocol AIRerankBackend {
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse
 }
 
-protocol AICandidateGenerationBackend {
-    func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate]
-    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate]
-    /// Dictionary-constrained selection (issue #59): rank dictionary-composable
-    /// surfaces and return the best ones as candidates.
-    func selectConstrainedCandidates(inputPat: String,
-                                     hiragana: String,
-                                     context: String?,
-                                     surfaces: [String],
-                                     limit: Int) -> [SearchCandidate]
-}
-
-extension AICandidateGenerationBackend {
-    func selectConstrainedCandidates(inputPat: String,
-                                     hiragana: String,
-                                     context: String?,
-                                     surfaces: [String],
-                                     limit: Int) -> [SearchCandidate] {
-        []
-    }
-}
-
 struct HeuristicAIRerankBackend: AIRerankBackend {
     let identifier = "swift-local-heuristic"
 
@@ -44,7 +22,7 @@ struct HeuristicAIRerankBackend: AIRerankBackend {
     }
 }
 
-final class BundledZenzAIRerankBackend: AIRerankBackend, AICandidateGenerationBackend {
+final class BundledZenzAIRerankBackend: AIRerankBackend {
     static let enabledDefaultsKey = "aiRerankUseBundledZenz"
 
     var identifier: String { "swift-local-heuristic+\(BundledAIRerankModel.activeModelLabel)-mapped" }
@@ -66,34 +44,5 @@ final class BundledZenzAIRerankBackend: AIRerankBackend, AICandidateGenerationBa
 
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse {
         runtime.rerank(request) ?? AIReranker.localRerank(request, model: identifier)
-    }
-
-    func generateCandidates(inputPat: String,
-                            hiragana: String,
-                            context: String?,
-                            limit: Int) -> [SearchCandidate] {
-        guard canRun() else { return [] }
-        return runtime.generateCandidates(inputPat: inputPat,
-                                          hiragana: hiragana,
-                                          context: context,
-                                          limit: limit)
-    }
-
-    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate] {
-        guard canRun() else { return [] }
-        return runtime.alternativeCandidates(for: request, limit: limit)
-    }
-
-    func selectConstrainedCandidates(inputPat: String,
-                                     hiragana: String,
-                                     context: String?,
-                                     surfaces: [String],
-                                     limit: Int) -> [SearchCandidate] {
-        guard canRun() else { return [] }
-        return runtime.selectCandidates(inputPat: inputPat,
-                                        hiragana: hiragana,
-                                        context: context,
-                                        surfaces: surfaces,
-                                        limit: limit)
     }
 }

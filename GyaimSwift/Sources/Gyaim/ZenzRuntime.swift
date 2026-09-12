@@ -24,35 +24,6 @@ protocol ZenzRuntime {
     var identifier: String { get }
     func prepare() -> ZenzRuntimeStatus
     func rerank(_ request: AIRerankRequest) -> AIRerankResponse?
-    func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate]
-    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate]
-    /// Dictionary-constrained selection (issue #59, ADR-022): rank the given
-    /// dictionary-composable surfaces by conditional log probability and return
-    /// the best ones. The model can only choose among `surfaces`, so it can
-    /// never emit a word the dictionary cannot form.
-    func selectCandidates(inputPat: String,
-                          hiragana: String,
-                          context: String?,
-                          surfaces: [String],
-                          limit: Int) -> [SearchCandidate]
-}
-
-extension ZenzRuntime {
-    func generateCandidates(inputPat: String, hiragana: String, context: String?, limit: Int) -> [SearchCandidate] {
-        []
-    }
-
-    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate] {
-        []
-    }
-
-    func selectCandidates(inputPat: String,
-                          hiragana: String,
-                          context: String?,
-                          surfaces: [String],
-                          limit: Int) -> [SearchCandidate] {
-        []
-    }
 }
 
 final class BundledZenzRuntime: ZenzRuntime {
@@ -164,141 +135,6 @@ final class BundledZenzRuntime: ZenzRuntime {
                                 model: "\(BundledAIRerankModel.activeModelLabel)+swift-local-heuristic")
         #else
         nil
-        #endif
-    }
-
-    func generateCandidates(inputPat: String,
-                            hiragana: String,
-                            context requestContext: String?,
-                            limit: Int) -> [SearchCandidate] {
-        #if canImport(llama)
-        let enabled = GyaimSettings.bool(forKey: "aiRerankUseZenzGeneration", default: true)
-        guard limit > 0, enabled else { return [] }
-        lock.lock()
-        defer { lock.unlock() }
-        guard let activeContext = context else { return [] }
-
-        let request = AIRerankRequest(version: 1,
-                                      mode: "generate",
-                                      inputPat: inputPat,
-                                      hiragana: hiragana,
-                                      context: requestContext,
-                                      candidates: [])
-        let prompt = Self.prompt(for: request)
-        var seen = Set<String>()
-        let generated = activeContext.generateAlternatives(prompt: prompt,
-                                                           maxTokens: 12,
-                                                           beamWidth: Self.generationBeamWidth(),
-                                                           limit: limit)
-        let candidates = generated.compactMap { text -> SearchCandidate? in
-            guard let candidate = Self.cleanGeneratedCandidate(text, inputPat: inputPat),
-                  seen.insert(candidate).inserted else { return nil }
-            Log.input.info("Zenz generated candidate: input=\"\(inputPat)\" text=\"\(candidate)\"")
-            return SearchCandidate(word: candidate,
-                                   reading: inputPat,
-                                   source: .synthetic,
-                                   kind: .zenz)
-        }
-        return Array(candidates.prefix(limit))
-        #else
-        return []
-        #endif
-    }
-
-    func selectCandidates(inputPat: String,
-                          hiragana: String,
-                          context requestContext: String?,
-                          surfaces: [String],
-                          limit: Int) -> [SearchCandidate] {
-        #if canImport(llama)
-        guard limit > 0, !surfaces.isEmpty,
-              GyaimSettings.bool(forKey: "aiRerankUseZenzGeneration", default: true) else { return [] }
-        lock.lock()
-        defer { lock.unlock() }
-        guard let activeContext = context else { return [] }
-
-        let request = AIRerankRequest(version: 1,
-                                      mode: "constrained-select",
-                                      inputPat: inputPat,
-                                      hiragana: hiragana,
-                                      context: requestContext,
-                                      candidates: [])
-        let prompt = Self.prompt(for: request)
-        let scoringBudget = Self.constrainedSelectionMaxSurfaces()
-        if surfaces.count > scoringBudget {
-            Log.input.info("Zenz constrained selection truncated: input=\"\(inputPat)\" "
-                + "surfaces=\(surfaces.count) budget=\(scoringBudget)")
-        }
-        var scored: [(surface: String, score: Double)] = []
-        for surface in surfaces.prefix(scoringBudget) {
-            guard let score = activeContext.score(prompt: prompt, continuation: surface) else { continue }
-            scored.append((surface, score))
-            Log.input.info("Zenz constrained score: input=\"\(inputPat)\" "
-                + "surface=\"\(surface)\" score=\(String(format: "%.4f", score))")
-        }
-        return Self.rankConstrainedSurfaces(scored).prefix(limit).map { surface in
-            SearchCandidate(word: surface,
-                            reading: inputPat,
-                            source: .connection,
-                            kind: .zenz)
-        }
-        #else
-        return []
-        #endif
-    }
-
-    /// Pure ranking for dictionary-constrained selection: highest conditional
-    /// mean log probability first; ties keep the dictionary enumeration order.
-    static func rankConstrainedSurfaces(_ scored: [(surface: String, score: Double)]) -> [String] {
-        scored.enumerated()
-            .sorted { lhs, rhs in
-                if lhs.element.score == rhs.element.score { return lhs.offset < rhs.offset }
-                return lhs.element.score > rhs.element.score
-            }
-            .map(\.element.surface)
-    }
-
-    private static func constrainedSelectionMaxSurfaces() -> Int {
-        let configured = GyaimSettings.integer(forKey: "aiRerankConstrainedSelectionMaxSurfaces")
-        return configured > 0 ? min(configured, 24) : 12
-    }
-
-    func alternativeCandidates(for request: AIRerankRequest, limit: Int) -> [SearchCandidate] {
-        #if canImport(llama)
-        guard limit > 0 else { return [] }
-        lock.lock()
-        defer { lock.unlock() }
-        guard let activeContext = context else { return [] }
-        let prompt = Self.prompt(for: request)
-        let localOrder = AIReranker.localRerank(request, model: identifier).order
-        let candidatesByIndex = Dictionary(uniqueKeysWithValues: request.candidates.map { ($0.index, $0) })
-        var seen = Set(request.candidates.map(\.text))
-        var alternatives: [SearchCandidate] = []
-
-        for index in localOrder where alternatives.count < limit {
-            guard let candidate = candidatesByIndex[index], candidate.kind != CandidateKind.raw.rawValue,
-                  let evaluation = activeContext.evaluateCandidate(prompt: prompt,
-                                                                   candidateText: candidate.text,
-                                                                   alternativeLimit: 2) else { continue }
-            if let fixed = evaluation.fixRequiredPrefix,
-               appendAlternative(fixed,
-                                 base: candidate,
-                                 inputPat: request.inputPat,
-                                 seen: &seen,
-                                 alternatives: &alternatives) {
-                break
-            }
-            for alternative in evaluation.alternatives where alternative.probabilityRatio > 0.25 && alternatives.count < limit {
-                _ = appendAlternative(alternative.prefix,
-                                      base: candidate,
-                                      inputPat: request.inputPat,
-                                      seen: &seen,
-                                      alternatives: &alternatives)
-            }
-        }
-        return alternatives
-        #else
-        return []
         #endif
     }
 
@@ -475,21 +311,6 @@ final class BundledZenzRuntime: ZenzRuntime {
     }
     #endif
 
-    private func appendAlternative(_ prefix: String,
-                                   base: AIRerankCandidate,
-                                   inputPat: String,
-                                   seen: inout Set<String>,
-                                   alternatives: inout [SearchCandidate]) -> Bool {
-        guard let cleaned = Self.cleanGeneratedCandidate(prefix, inputPat: inputPat),
-              seen.insert(cleaned).inserted else { return false }
-        Log.input.info("Zenz alternative constraint: input=\"\(inputPat)\" base=\"\(base.text)\" prefix=\"\(cleaned)\"")
-        alternatives.append(SearchCandidate(word: cleaned,
-                                            reading: inputPat,
-                                            source: .synthetic,
-                                            kind: .zenz))
-        return true
-    }
-
     static func prompt(for request: AIRerankRequest) -> String {
         var prompt = ""
         if let context = request.context?.trimmingCharacters(in: .whitespacesAndNewlines), !context.isEmpty {
@@ -500,44 +321,11 @@ final class BundledZenzRuntime: ZenzRuntime {
         return prompt
     }
 
-    private static func cleanGeneratedCandidate(_ text: String, inputPat: String) -> String? {
-        let stopTags = [ZenzPrompt.inputTag, ZenzPrompt.outputTag, ZenzPrompt.contextTag]
-        var candidate = text
-        for tag in stopTags {
-            if let range = candidate.range(of: tag) {
-                candidate = String(candidate[..<range.lowerBound])
-            }
-        }
-        candidate = candidate.components(separatedBy: .newlines).first ?? candidate
-        candidate = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !candidate.isEmpty,
-              candidate != inputPat,
-              candidate.count <= 16,
-              candidate.contains(where: isJapaneseLike),
-              candidate.allSatisfy(isAllowedGeneratedCharacter) else {
-            return nil
-        }
-        return candidate
-    }
-
     private static func isJapaneseLike(_ character: Character) -> Bool {
         character.unicodeScalars.contains { scalar in
             0x3040...0x309F ~= scalar.value
                 || 0x30A0...0x30FF ~= scalar.value
                 || 0x4E00...0x9FFF ~= scalar.value
-        }
-    }
-
-    private static func isAllowedGeneratedCharacter(_ character: Character) -> Bool {
-        character.unicodeScalars.allSatisfy { scalar in
-            switch scalar.value {
-            case 0x3040...0x309F, 0x30A0...0x30FF, 0x4E00...0x9FFF,
-                 0x3005...0x3007, 0x30FC, 0xFF10...0xFF19,
-                 0xFF21...0xFF3A, 0xFF41...0xFF5A:
-                return true
-            default:
-                return false
-            }
         }
     }
 
@@ -560,11 +348,6 @@ final class BundledZenzRuntime: ZenzRuntime {
     private static func scoreWeight() -> Double {
         let configured = GyaimSettings.double(forKey: "aiRerankZenzWeight")
         return configured > 0 ? configured : 0.30
-    }
-
-    private static func generationBeamWidth() -> Int {
-        let configured = GyaimSettings.integer(forKey: "aiRerankZenzGenerationBeamWidth")
-        return configured > 0 ? min(configured, 6) : 1
     }
 
     /// Combine heuristic and Zenz scores with mean-centering (BUG-029).
