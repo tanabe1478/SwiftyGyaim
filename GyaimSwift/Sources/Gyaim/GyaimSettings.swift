@@ -1,35 +1,59 @@
 import Foundation
 
+/// Settings store (ADR-027).
+///
+/// `~/.gyaim/settings.json` is the only place the app writes to. UserDefaults
+/// is read as a fallback for values written by versions before the settings
+/// file existed, and `synchronizeFileAndUserDefaults()` copies such values
+/// into the file once at launch. Under XCTest the file is not used unless
+/// `settingsFilePathOverride` is set; writes then go to UserDefaults so tests
+/// can configure and clean up with `UserDefaults.standard` as before.
 enum GyaimSettings {
     static var settingsFilePathOverride: String?
 
-    private static let knownKeys = [
+    /// Every settings key the app reads or writes (docs/specs/settings.md).
+    /// Used for the one-way UserDefaults -> settings.json migration and
+    /// checked against the sources by GyaimSettingsTests so the list cannot
+    /// drift. Keys that no code reads any more are not listed.
+    static let knownKeys: [String] = [
+        // General / logging / model
         "loggingEnabled",
         "customModelPath",
+        // Candidates
         "candidateDisplayMode",
+        "clipboardCandidateEnabled",
+        "selectedTextCandidateEnabled",
+        // Study dictionary
         "studyDictEvictionMode",
         "studyHiraganaEnabled",
         "exactReadingMatchPriority",
+        "kanaConfirmStudyEnabled",
+        "contextLearningEnabled",
+        // Google Transliterate / connection dictionary / key bindings
         "googleTransliterateTrigger",
         "connectionDictSourceURL",
         "GyaimKeyBindings",
-        "clipboardCandidateEnabled",
-        "selectedTextCandidateEnabled",
+        // Fast-context rerank
         "aiRerankFastContextEnabled",
         "aiRerankUseModelForFastContext",
         "aiRerankFastContextLoggingEnabled",
         "aiRerankFastContextModelMinInputLength",
+        "aiRerankFastContextNormalReviewMinInputLength",
         "aiRerankFastContextMaxContextLength",
         "aiRerankFastContextCandidateLimit",
-        "aiRerankUseGoogle",
-        "aiRerankZenzReviewRounds",
-        "aiRerankZenzAlternativeLimit",
-        "aiRerankUseLegacyExternalReranker",
+        "aiRerankFastContextReviewDelayMs",
+        // Bundled model
         "aiRerankUseBundledZenz",
         "aiRerankUseZenzGeneration",
         "aiRerankZenzWeight",
-        "aiRerankZenzGenerationBeamWidth",
         "aiRerankZenzMaxCandidates",
+        "aiRerankZenzGenerationBeamWidth",
+        "aiRerankConstrainedSelectionMaxSurfaces",
+        "aiRerankExactHomophoneMargin",
+        "aiRerankExactHomophoneMaxCandidates",
+        "aiRerankExactHomophoneAffinityThreshold",
+        "aiRerankExactHomophoneFrequencyMarginWeight",
+        // Legacy external rerankers (classes kept, not wired; keys still read there)
         "aiRerankServerURL",
         "aiRerankHTTPTimeoutMs",
         "aiRerankCommand",
@@ -52,12 +76,12 @@ enum GyaimSettings {
             || ProcessInfo.processInfo.processName.contains("xctest")
     }
 
+    /// One-way migration: copy legacy UserDefaults values for known keys into
+    /// settings.json when the file has no value yet. The file is never copied
+    /// back to UserDefaults (ADR-027).
     static func synchronizeFileAndUserDefaults() {
         guard shouldUseSettingsFile else { return }
         var dictionary = loadDictionary()
-        for (key, value) in dictionary {
-            setUserDefaultsValue(value, forKey: key)
-        }
 
         var didMigrate = false
         for key in knownKeys where dictionary[key] == nil {
@@ -125,30 +149,47 @@ enum GyaimSettings {
     }
 
     static func set(_ value: Bool, forKey key: String) {
-        setJSONValue(value, forKey: key)
-        UserDefaults.standard.set(value, forKey: key)
+        if shouldUseSettingsFile {
+            setJSONValue(value, forKey: key)
+        } else {
+            UserDefaults.standard.set(value, forKey: key)
+        }
     }
 
     static func set(_ value: Int, forKey key: String) {
-        setJSONValue(value, forKey: key)
-        UserDefaults.standard.set(value, forKey: key)
+        if shouldUseSettingsFile {
+            setJSONValue(value, forKey: key)
+        } else {
+            UserDefaults.standard.set(value, forKey: key)
+        }
     }
 
     static func set(_ value: Double, forKey key: String) {
-        setJSONValue(value, forKey: key)
-        UserDefaults.standard.set(value, forKey: key)
+        if shouldUseSettingsFile {
+            setJSONValue(value, forKey: key)
+        } else {
+            UserDefaults.standard.set(value, forKey: key)
+        }
     }
 
     static func set(_ value: String, forKey key: String) {
-        setJSONValue(value, forKey: key)
-        UserDefaults.standard.set(value, forKey: key)
+        if shouldUseSettingsFile {
+            setJSONValue(value, forKey: key)
+        } else {
+            UserDefaults.standard.set(value, forKey: key)
+        }
     }
 
     static func set(_ value: Data, forKey key: String) {
-        setJSONValue(["type": "data", "base64": value.base64EncodedString()], forKey: key)
-        UserDefaults.standard.set(value, forKey: key)
+        if shouldUseSettingsFile {
+            setJSONValue(["type": "data", "base64": value.base64EncodedString()], forKey: key)
+        } else {
+            UserDefaults.standard.set(value, forKey: key)
+        }
     }
 
+    /// Removes the key from the settings file. The legacy UserDefaults value is
+    /// removed as well so the fallback read cannot resurrect it.
     static func removeObject(forKey key: String) {
         if shouldUseSettingsFile {
             var dictionary = loadDictionary()
@@ -250,20 +291,5 @@ enum GyaimSettings {
         }
         guard JSONSerialization.isValidJSONObject(["value": value]) else { return nil }
         return value
-    }
-
-    private static func setUserDefaultsValue(_ value: Any, forKey key: String) {
-        if let encoded = value as? [String: Any],
-           encoded["type"] as? String == "data",
-           let base64 = encoded["base64"] as? String,
-           let data = Data(base64Encoded: base64) {
-            UserDefaults.standard.set(data, forKey: key)
-        } else if let string = value as? String {
-            UserDefaults.standard.set(string, forKey: key)
-        } else if let number = value as? NSNumber {
-            UserDefaults.standard.set(number, forKey: key)
-        } else if let bool = value as? Bool {
-            UserDefaults.standard.set(bool, forKey: key)
-        }
     }
 }

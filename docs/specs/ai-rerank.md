@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, CandidateGenerator.swift, ExternalCommandAIReranker, GyaimController AI rerank integration
-> Last updated: 2026-09-12 (同音異義語上書きの頻度ガード BUG-036・遅延レビュー ADR-026)
+> Last updated: 2026-09-12 (設定キー一覧を settings.md に集約 — ADR-027)
 
 ## 概要
 
@@ -35,17 +35,15 @@ Google Input Tools は後追い補助として optional に使う。Google込み
 - Zenz scoring weight: `aiRerankZenzWeight`（未設定時 0.30）
 - Zenz scoring candidates: `aiRerankZenzMaxCandidates`（未設定時 8、rawは除外）
 - Zenz generation beam: `aiRerankZenzGenerationBeamWidth`（未設定時 1、最大 6）
-- Zenz review rounds: `aiRerankZenzReviewRounds`（未設定時 2、最大 3）
-- Zenz alternative limit: `aiRerankZenzAlternativeLimit`（未設定時 2、最大 4）
 - exact同音異義語margin: `aiRerankExactHomophoneMargin`（未設定時 0.10、平均logprob単位）
 - exact同音異義語比較候補数: `aiRerankExactHomophoneMaxCandidates`（未設定時 3、最大 6）
 - affinityスキップ閾値: `aiRerankExactHomophoneAffinityThreshold`（未設定時 0.75、上限 1.0）
 - exact同音異義語の頻度ガード重み: `aiRerankExactHomophoneFrequencyMarginWeight`（未設定時 2.0、bestのstudy頻度が挑戦者の2倍になるごとに要求marginへ加算するlogprob単位）
 - モデルレビューの遅延: `aiRerankFastContextReviewDelayMs`（未設定時 80、0で打鍵同期、上限 1000。ADR-026）
-- 制約付き選択の候補数: `aiRerankZenzGenerationLimit`（未設定時 3、最大 6）
 - 制約付き選択のスコア対象上限: `aiRerankConstrainedSelectionMaxSurfaces`（未設定時 12、最大 24）
-- 自由生成のopt-in: `aiRerankUseZenzFreeGeneration`（未設定時 false）
 - 文脈学習のON/OFF: `contextLearningEnabled`（未設定時 true、設定画面から変更可能）
+
+全キーの一覧・既定値・保存方式は `docs/specs/settings.md`（ADR-027）を正とする。`aiRerankZenzReviewRounds` / `aiRerankZenzAlternativeLimit` / `aiRerankZenzGenerationLimit` / `aiRerankUseZenzFreeGeneration` / `aiRerankUseGoogle` / `aiRerankUseLegacyExternalReranker` は ADR-024 で経路ごと削除済みで、コードには存在しない。
 
 `aiRerankUseBundledZenz` / `aiRerankUseZenzGeneration` / `contextLearningEnabled` は設定画面「AI・文脈学習」セクションに露出している（issue #61）。
 - legacy opt-in 設定キー: `aiRerankUseLegacyExternalReranker=true`
