@@ -343,19 +343,6 @@ final class ZenzRuntimeTests: XCTestCase {
         XCTAssertEqual(BundledZenzRuntime.combineScores(heuristic: heuristic, zenz: [:], weight: 0.30), heuristic)
     }
 
-    func testRankConstrainedSurfacesOrdersByScoreWithStableTies() {
-        // Issue #59 / ADR-022: highest conditional log probability first;
-        // ties keep the dictionary enumeration order.
-        let ranked = BundledZenzRuntime.rankConstrainedSurfaces([
-            (surface: "教会線", score: -3.0),
-            (surface: "境界線", score: -0.5),
-            (surface: "協会線", score: -3.0),
-        ])
-
-        XCTAssertEqual(ranked, ["境界線", "教会線", "協会線"])
-        XCTAssertEqual(BundledZenzRuntime.rankConstrainedSurfaces([]), [])
-    }
-
     func testShouldRunNormalReviewRequiresMinimumInputLength() {
         // Dogfood 2026-07-08: normal reviews at input length 4 produced 81
         // events with 0 fixes. The homophone path keeps its own (shorter) gate.

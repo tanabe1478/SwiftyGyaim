@@ -50,45 +50,4 @@ final class InProcessAIReranker {
             Log.input.info("AI rerank warm-up finished: backend=\(ready) latency=\(String(format: "%.1f", elapsed))ms")
         }
     }
-
-    func generateCandidates(inputPat: String,
-                            hiragana: String,
-                            context: String?,
-                            limit: Int = 1) -> [SearchCandidate] {
-        for backend in backends {
-            guard let generator = backend as? AICandidateGenerationBackend else { continue }
-            let candidates = generator.generateCandidates(inputPat: inputPat,
-                                                          hiragana: hiragana,
-                                                          context: context,
-                                                          limit: limit)
-            if !candidates.isEmpty { return candidates }
-        }
-        return []
-    }
-
-    func alternativeCandidates(for request: AIRerankRequest, limit: Int = 2) -> [SearchCandidate] {
-        for backend in backends {
-            guard let generator = backend as? AICandidateGenerationBackend else { continue }
-            let candidates = generator.alternativeCandidates(for: request, limit: limit)
-            if !candidates.isEmpty { return candidates }
-        }
-        return []
-    }
-
-    func selectConstrainedCandidates(inputPat: String,
-                                     hiragana: String,
-                                     context: String?,
-                                     surfaces: [String],
-                                     limit: Int = 3) -> [SearchCandidate] {
-        for backend in backends {
-            guard let generator = backend as? AICandidateGenerationBackend else { continue }
-            let candidates = generator.selectConstrainedCandidates(inputPat: inputPat,
-                                                                   hiragana: hiragana,
-                                                                   context: context,
-                                                                   surfaces: surfaces,
-                                                                   limit: limit)
-            if !candidates.isEmpty { return candidates }
-        }
-        return []
-    }
 }

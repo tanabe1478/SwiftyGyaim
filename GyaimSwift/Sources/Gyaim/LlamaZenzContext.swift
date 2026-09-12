@@ -62,13 +62,6 @@ final class LlamaZenzContext {
     private var scoreCache = BoundedCache<Double>(capacity: 256)
     private var evaluationCache = BoundedCache<CandidateEvaluation>(capacity: 256)
 
-    private struct GenerationBeam {
-        let tokens: [llama_token]
-        let generated: [llama_token]
-        let score: Float
-        let finished: Bool
-    }
-
     private struct TokenScore {
         let token: llama_token
         let score: Float
@@ -161,62 +154,6 @@ final class LlamaZenzContext {
         let meanLogProbability = logProbability / Double(continuationTokens.count)
         scoreCache[cacheKey] = meanLogProbability
         return meanLogProbability
-    }
-
-    func generate(prompt: String, maxTokens: Int) -> String? {
-        generateAlternatives(prompt: prompt, maxTokens: maxTokens, beamWidth: 1, limit: 1).first
-    }
-
-    func generateAlternatives(prompt: String,
-                              maxTokens: Int,
-                              beamWidth: Int,
-                              limit: Int) -> [String] {
-        let promptTokens = encode(prompt, addBOS: true)
-        guard !promptTokens.isEmpty, maxTokens > 0, beamWidth > 0, limit > 0 else { return [] }
-
-        var beams = [GenerationBeam(tokens: promptTokens,
-                                    generated: [],
-                                    score: 0,
-                                    finished: false)]
-        for _ in 0..<maxTokens {
-            var expanded: [GenerationBeam] = []
-            for beam in beams {
-                if beam.finished {
-                    expanded.append(beam)
-                    continue
-                }
-                let startOffset = max(0, beam.tokens.count - 1)
-                guard let logits = logits(tokens: beam.tokens,
-                                          startOffset: startOffset,
-                                          seqId: generationSeqId) else {
-                    continue
-                }
-                for next in topTokens(from: logits, limit: beamWidth) {
-                    var tokens = beam.tokens
-                    var generated = beam.generated
-                    let finished = next.token == llama_vocab_eos(vocab)
-                    tokens.append(next.token)
-                    if !finished { generated.append(next.token) }
-                    expanded.append(GenerationBeam(tokens: tokens,
-                                                   generated: generated,
-                                                   score: beam.score + next.score,
-                                                   finished: finished))
-                }
-            }
-            beams = Array(expanded.sorted { $0.score > $1.score }.prefix(beamWidth))
-            if beams.allSatisfy(\.finished) { break }
-        }
-
-        var seen = Set<String>()
-        return beams
-            .sorted { $0.score > $1.score }
-            .compactMap { beam -> String? in
-                guard !beam.generated.isEmpty else { return nil }
-                let text = beam.generated.compactMap(piece(for:)).joined()
-                return seen.insert(text).inserted ? text : nil
-            }
-            .prefix(limit)
-            .map { $0 }
     }
 
     func preferredPrefix(prompt: String, candidateText: String) -> String? {
