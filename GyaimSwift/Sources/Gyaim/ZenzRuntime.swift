@@ -439,7 +439,7 @@ final class BundledZenzRuntime: ZenzRuntime {
             guard let candidate = request.candidates.first(where: { $0.index == index }),
                   let score = activeContext.score(prompt: prompt, continuation: candidate.text) else { continue }
             scores[index] = score
-            Log.input.info("Zenz exact-homophone score: input=\"\(request.inputPat)\" "
+            Log.input.debug("Zenz exact-homophone score: input=\"\(request.inputPat)\" "
                 + "index=\(index) text=\"\(candidate.text)\" score=\(String(format: "%.4f", score))")
         }
 
@@ -452,7 +452,9 @@ final class BundledZenzRuntime: ZenzRuntime {
         } else if let replacement = Self.selectExactHomophoneWinner(scores: scores,
                                                                     currentBest: best.index,
                                                                     margin: Self.exactHomophoneScoreMargin(),
-                                                                    affinities: Self.contextAffinities(of: request)) {
+                                                                    affinities: Self.contextAffinities(of: request),
+                                                                    studyFrequencies: Self.studyFrequencies(of: request),
+                                                                    frequencyMarginWeight: Self.exactHomophoneFrequencyMarginWeight()) {
             outcome = "fixed"
             order.removeAll { $0 == replacement }
             order.insert(replacement, at: 0)
@@ -684,15 +686,25 @@ final class BundledZenzRuntime: ZenzRuntime {
     /// threshold). One affinity point is worth this many mean-logprob units.
     static let affinityMarginWeight = 2.0
 
+    /// A study-frequency advantage of the current best likewise raises the
+    /// bar (BUG-036). Dogfood 2026-09-11: the model promoted キミ (freq 7)
+    /// over 君 (freq 31, mean-logprob gap 3.4 because キミ appeared in the
+    /// left context) and 私的 (freq 3) over 指摘 (freq 63, gap 0.5); both
+    /// were reverted by the user. Each doubling of the best's frequency over
+    /// the challenger's is worth this many mean-logprob units.
+    static let defaultFrequencyMarginWeight = 2.0
+
     /// Picks the homophone to promote: the highest-scoring candidate wins only
     /// when it beats the current best by at least `margin` (mean log-probability
-    /// units) plus the current best's context-affinity advantage, so model
-    /// noise cannot flap the top candidate and cannot override what the user
-    /// already taught the IME in this context.
+    /// units) plus the current best's context-affinity advantage plus its
+    /// study-frequency advantage, so model noise cannot flap the top candidate
+    /// and cannot override what the user already taught the IME.
     static func selectExactHomophoneWinner(scores: [Int: Double],
                                            currentBest: Int,
                                            margin: Double,
-                                           affinities: [Int: Double] = [:]) -> Int? {
+                                           affinities: [Int: Double] = [:],
+                                           studyFrequencies: [Int: Int] = [:],
+                                           frequencyMarginWeight: Double = defaultFrequencyMarginWeight) -> Int? {
         guard let bestScore = scores[currentBest] else { return nil }
         var winnerIndex = currentBest
         var winnerScore = bestScore
@@ -702,9 +714,33 @@ final class BundledZenzRuntime: ZenzRuntime {
         }
         guard winnerIndex != currentBest else { return nil }
         let affinityAdvantage = max(0, (affinities[currentBest] ?? 0) - (affinities[winnerIndex] ?? 0))
-        let requiredMargin = margin + affinityAdvantage * affinityMarginWeight
+        let frequencyAdvantage = studyFrequencyAdvantage(best: studyFrequencies[currentBest],
+                                                         challenger: studyFrequencies[winnerIndex])
+        let requiredMargin = margin
+            + affinityAdvantage * affinityMarginWeight
+            + frequencyAdvantage * frequencyMarginWeight
         guard winnerScore - bestScore >= requiredMargin else { return nil }
         return winnerIndex
+    }
+
+    /// log2(bestFrequency / challengerFrequency), clamped at 0. Only a study
+    /// best (frequency known) raises the bar; a challenger without study
+    /// history (dictionary-only word) counts as frequency 1.
+    static func studyFrequencyAdvantage(best: Int?, challenger: Int?) -> Double {
+        guard let best, best > 1 else { return 0 }
+        let challengerFrequency = max(challenger ?? 1, 1)
+        guard best > challengerFrequency else { return 0 }
+        return log2(Double(best) / Double(challengerFrequency))
+    }
+
+    static func studyFrequencies(of request: AIRerankRequest) -> [Int: Int] {
+        var frequencies: [Int: Int] = [:]
+        for candidate in request.candidates where candidate.source == "study" {
+            if let frequency = candidate.studyFrequency, frequency > 0 {
+                frequencies[candidate.index] = frequency
+            }
+        }
+        return frequencies
     }
 
     static func contextAffinities(of request: AIRerankRequest) -> [Int: Double] {
@@ -748,6 +784,11 @@ final class BundledZenzRuntime: ZenzRuntime {
     private static func exactHomophoneScoreMargin() -> Double {
         let configured = GyaimSettings.double(forKey: "aiRerankExactHomophoneMargin")
         return configured > 0 ? configured : 0.10
+    }
+
+    private static func exactHomophoneFrequencyMarginWeight() -> Double {
+        let configured = GyaimSettings.double(forKey: "aiRerankExactHomophoneFrequencyMarginWeight")
+        return configured > 0 ? configured : defaultFrequencyMarginWeight
     }
 
     private static func exactHomophoneMaxCandidates() -> Int {
