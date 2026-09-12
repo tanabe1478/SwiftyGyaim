@@ -25,18 +25,18 @@ jobs:
         working-directory: GyaimSwift
         run: ./Scripts/run-unit-tests.sh
 
-      # Release build + pkg-in-DMG packaging, matching README and
-      # docs/release-packaging.md (the raw-.app Debug DMG had drifted from
-      # the documented install flow — issue #61). Signing / notarization is
-      # still manual; see docs/release-packaging.md.
-      - name: Build installer DMG (Release, pkg inside)
+      # Release build + .pkg installer (Google 日本語入力 style, installs to
+      # /Library/Input Methods). The pkg is distributed as-is; no DMG wrapper.
+      # Signing is ad-hoc unless APP_IDENTITY / INSTALLER_IDENTITY are set
+      # (see Scripts/build-pkg.sh).
+      - name: Build installer pkg (Release)
         working-directory: GyaimSwift
-        run: ./Scripts/build-dmg.sh
+        run: ./Scripts/build-pkg.sh
 
       - name: Create GitHub Release
         run: |
           gh release create ${{ github.ref_name }} \
-            GyaimSwift/dist/dmg/*.dmg \
+            GyaimSwift/dist/*.pkg \
             --title "${{ github.ref_name }}" \
             --generate-notes
         env:
