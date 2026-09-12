@@ -70,7 +70,7 @@ Search modes: 0 = prefix matching (incremental), 1 = exact matching + auto-add k
 - **トリガー方式**: サフィックス文字（デフォルト`` ` ``、設定変更可能）またはキーボードショートカット（設定画面で追加）
 - **非同期処理**: URLSession（タイムアウト3秒）→ メインスレッドで候補更新。stale guardで入力変更時の古い結果を破棄
 - **複数セグメント結合**: APIの分割応答を直積で結合（例:「ますいとしゆき」→「増井俊之」「増井敏之」等、上限20件）
-- **UserDefaultsキー**: `googleTransliterateTrigger`（String、サフィックス文字）
+- **設定キー**: `googleTransliterateTrigger`（String、サフィックス文字。`~/.gyaim/settings.json`）
 
 ### Text Conversion (RomaKana.swift)
 
@@ -83,7 +83,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 | CandidateWindow.swift | 候補ウィンドウ。リスト表示（縦、番号1-9、1ページ9候補）とクラシック表示（横並び、candwin.png背景、1ページ11候補）の2モード対応。候補数は無制限でスペースキー順送りによるページ送り。続きがある場合は末尾に▼インジケータを表示。`CandidateDisplayMode` enumで切り替え |
 | PreferencesWindow.swift | キーボードショートカット設定、候補表示スタイル切り替え（NSSegmentedControl）、候補トグル（クリップボード/選択テキスト）、Google変換設定（トリガー文字・ショートカット）、ログ管理UI。動的ウィンドウリサイズ対応 |
 | DictEditorWindow.swift | User dictionary editor (NSTableView), add/delete/save/reload |
-| KeyBindings.swift | Configurable shortcuts (hiragana/katakana/Google Transliterate), UserDefaults persistence, single-key kana confirm |
+| KeyBindings.swift | Configurable shortcuts (hiragana/katakana/Google Transliterate), settings.json persistence (`GyaimKeyBindings`), single-key kana confirm |
 
 ### Key Constraints
 
@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（284テスト）
+# ユニットテスト（288テスト）
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -125,7 +125,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | StudyEntryTests | Tests/GyaimTests/ | 6 | StudyEntryスコア計算・EvictionMode既定値・ファイルI/O |
 | ConnectionDictTests | Tests/GyaimTests/ | 9 | 連接辞書の検索・同梱辞書の語彙回帰・制約付き合成 |
 | ConnectionDictSharingTests | Tests/GyaimTests/ | 3 | 連接辞書のプロセス内共有（同一パス再利用・パス切替・reset） |
-| GyaimSettingsTests | Tests/GyaimTests/ | 7 | settings.json 永続化・mtimeキャッシュ・UserDefaults移行 |
+| GyaimSettingsTests | Tests/GyaimTests/ | 11 | settings.json 永続化・mtimeキャッシュ・UserDefaults一方向移行・書き込み先の単一性・knownKeysとソースの一致 |
 | AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests | Tests/GyaimTests/ | 41 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択 |
 | HomophoneFrequencyGuardTests | Tests/GyaimTests/ | 4 | 同音異義語上書きの頻度ガード（BUG-036、実ログ数値で固定） |
 | FastContextReviewSchedulingTests | Tests/GyaimTests/ | 4 | モデルレビュー遅延の判定・遅延設定のクランプ・同期パスがモデルを呼ばないこと（ADR-026） |
@@ -182,12 +182,13 @@ docs/adr/
 ├── 023-hidden-ascii-roman-input-mode.md
 ├── 024-remove-tab-ai-pipeline.md
 ├── 025-eviction-mode-none-is-unlimited.md
-└── 026-deferred-model-review.md
+├── 026-deferred-model-review.md
+└── 027-settings-file-as-single-write-target.md
 ```
 
 ## Logging & Monitoring
 
-`GyaimLogger.swift` に os.Logger ベースのロギング基盤を実装。デフォルト無効（UserDefaults `loggingEnabled`）。例外として `notice` レベル（Secure Event Input残留診断など、稀で診断価値の高いイベント専用）は `loggingEnabled` に関係なく常時 `gyaim.log` へ記録される。
+`GyaimLogger.swift` に os.Logger ベースのロギング基盤を実装。デフォルト無効（設定キー `loggingEnabled`）。例外として `notice` レベル（Secure Event Input残留診断など、稀で診断価値の高いイベント専用）は `loggingEnabled` に関係なく常時 `gyaim.log` へ記録される。
 
 ### カテゴリ
 
@@ -215,15 +216,15 @@ Gyaim設定 > ログセクションで有効/無効切替、ログ削除、Finde
 
 ### 候補設定
 
-Gyaim設定 > 候補セクションで以下を切り替え可能（UserDefaults、即時反映）:
-- **表示スタイル**: NSSegmentedControlでリスト表示（デフォルト）/ クラシック表示を切り替え。UserDefaultsキー `candidateDisplayMode`（Int, 0=list, 1=classic）
+Gyaim設定 > 候補セクションで以下を切り替え可能（`~/.gyaim/settings.json`、即時反映）:
+- **表示スタイル**: NSSegmentedControlでリスト表示（デフォルト）/ クラシック表示を切り替え。設定キー `candidateDisplayMode`（Int, 0=list, 1=classic）
 - **クリップボード候補**: コピーから5秒以内の入力時にクリップボード内容を候補に表示（デフォルトON）
 - **選択テキスト候補**: アクティブアプリの選択テキストを候補に表示（デフォルトON、IMKTextInput経由で取得可能な範囲のみ）
 
 ### Google変換設定
 
 Gyaim設定 > Google変換セクションで以下を設定可能:
-- **トリガー文字**: 入力末尾に付けてGoogle変換を発動（デフォルト`` ` ``）。UserDefaultsキー `googleTransliterateTrigger`
+- **トリガー文字**: 入力末尾に付けてGoogle変換を発動（デフォルト`` ` ``）。設定キー `googleTransliterateTrigger`
 - **ショートカット**: 変換中に押すとGoogle変換を発動（設定画面で追加/削除）。KeyBindingsで永続化
 
 ## Context Infrastructure (3-Tier Docs)
@@ -247,11 +248,12 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 | [candidate-window.md](docs/specs/candidate-window.md) | CandidateWindow.swift, PreferencesWindow.swift | 候補表示モード、NSPanel制約 |
 | [google-transliterate.md](docs/specs/google-transliterate.md) | GoogleTransliterate.swift | Google API連携、非同期処理、stale guard |
 | [imk-constraints.md](docs/specs/imk-constraints.md) | GyaimController.swift, AppDelegate.swift, main.swift | InputMethodKit固有の制約と回避策 |
+| [settings.md](docs/specs/settings.md) | GyaimSettings.swift（設定キーを追加・変更する全ファイル） | 設定ストア、全キー一覧と既定値、移行方針（ADR-027） |
 | [bug-memory.md](docs/specs/bug-memory.md) | 全ファイル（デバッグ時） | 過去のバグパターンと修正方法 |
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-026）
+- `docs/adr/` — 設計判断の経緯（000-027）
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 
