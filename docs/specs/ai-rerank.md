@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, ZenzRuntime.swift, ZenzRuntime+Scoring.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController+FastContextRerank.swift, FastContextTrace.swift
-> Last updated: 2026-09-13 (ADR-028: モデル効果traceの整合性と採点済み同音候補の2位以下への反映)
+> Last updated: 2026-09-13 (ADR-029: 背景 queue でのレビューと Space 合流)
 
 ## 概要
 
@@ -25,7 +25,7 @@
 
 - `aiRerankFastContextEnabled` / `aiRerankUseModelForFastContext` / `aiRerankFastContextLoggingEnabled`（設定画面）
 - `aiRerankUseBundledZenz`（設定画面。OFF でモデル経路を使わない）
-- `aiRerankFastContextReviewDelayMs`（既定 80、ADR-026）
+- `aiRerankFastContextReviewDelayMs`（既定 0、レビュー開始前のスロットル）/ `aiRerankFastContextSelectionWaitMs`（既定 30、Space での合流待ち。ADR-029）
 - `aiRerankExactHomophoneMargin` / `aiRerankExactHomophoneMaxCandidates` / `aiRerankExactHomophoneAffinityThreshold` / `aiRerankExactHomophoneFrequencyMarginWeight`
 - `aiRerankZenzWeight` / `aiRerankZenzMaxCandidates`（全件 rerank 用）
 - `customModelPath`（モデル差し替え）
@@ -136,14 +136,18 @@ SwiftyGyaim 本体は `order` を必ず検証する。
        -> buildPrefixCandidates(allowModelReview: false)
             raw input → 外部候補（クリップボード/選択テキスト）→ fastContextRerank（heuristic）→ ひらがな
        -> nthCand = 0, showCands()
-       -> モデル経路が有効なら scheduleDeferredModelReview()（ADR-026）
+       -> モデル経路が有効なら startAsyncModelReview()（ADR-029、背景 queue）
 
-aiRerankFastContextReviewDelayMs 後（入力が変わっていなければ）
+背景 queue（最新の入力だけ。cancelled な ticket はモデルを呼ばない）
   -> buildPrefixCandidates(allowModelReview: true)
        -> InProcessAIReranker.rerank(mode=fast-context-rerank)
             protected exact best: 同音異義語レビュー or skip
             それ以外: 最上位候補の evaluateCandidate（入力長 >= 5）
-  -> 順序が変わった場合だけ candidates を差し替えて showCands()
+  -> ticket に結果を格納 → main.async applyReview()
+       -> 世代・入力・nthCand == 0 が不変なら candidates を差し替えて showCands()
+
+Space（nthCand == 0）while review in flight
+  -> joinInFlightReviewBeforeSelection(): 最大 aiRerankFastContextSelectionWaitMs 待って applyReview()
 
 Tab / suffix / shortcut while converting
   -> triggerGoogleTransliterate()（google-transliterate.md）

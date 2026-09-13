@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（287テスト）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（308テスト）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -128,7 +128,8 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | GyaimSettingsTests | Tests/GyaimTests/ | 11 | settings.json 永続化・mtimeキャッシュ・UserDefaults一方向移行・書き込み先の単一性・knownKeysとソースの一致 |
 | AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests | Tests/GyaimTests/ | 40 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択 |
 | HomophoneFrequencyGuardTests | Tests/GyaimTests/ | 4 | 同音異義語上書きの頻度ガード（BUG-036、実ログ数値で固定） |
-| FastContextReviewSchedulingTests | Tests/GyaimTests/ | 4 | モデルレビュー遅延の判定・遅延設定のクランプ・同期パスがモデルを呼ばないこと（ADR-026） |
+| FastContextReviewSchedulingTests | Tests/GyaimTests/ | 7 | 背景モデルレビューの予約判定・スロットル/合流待ちのクランプ・同期パスがモデルを呼ばないこと・ticket の待機/一回適用（ADR-029） |
+| FastContextTraceTests / HomophoneAlternativeOrderTests / AcceptedDetailPayloadTests | Tests/GyaimTests/ | 23 | composition trace と確定 payload、同音異義語の下位並べ替え（ADR-028） |
 | StudySuspectsTests | Tests/GyaimTests/ | 3 | 疑わしい学習エントリ検出（typo完成形・長期未使用・false positive 抑止） |
 | FileLoggerRotationTests | Tests/GyaimTests/ | 1 | ログ7世代ローテーションのシフト |
 | プロパティテスト（3スイート） | Tests/GyaimTests/ | 5 | PropertyTesting.swiftハーネスによる不変条件検査（validatedOrderの順列性・学習マージの頻度保存と冪等性・combineScoresのzero-sum性）。seed再現可能 |
@@ -182,8 +183,10 @@ docs/adr/
 ├── 023-hidden-ascii-roman-input-mode.md
 ├── 024-remove-tab-ai-pipeline.md
 ├── 025-eviction-mode-none-is-unlimited.md
-├── 026-deferred-model-review.md
-└── 027-settings-file-as-single-write-target.md
+├── 026-deferred-model-review.md (Superseded by ADR-029)
+├── 027-settings-file-as-single-write-target.md
+├── 028-model-contribution-trace-and-alternatives.md
+└── 029-async-model-review.md
 ```
 
 ## Logging & Monitoring
@@ -253,7 +256,7 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-027）
+- `docs/adr/` — 設計判断の経緯（000-029）
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 
