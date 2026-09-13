@@ -112,7 +112,10 @@ class GyaimController: IMKInputController {
     private var pendingGoogleQuery: String?
     /// Deferred model review of the current prefix candidates (ADR-026). Cancelled
     /// by every keystroke so the model only runs when typing pauses.
-    private var pendingModelReview: DispatchWorkItem?
+    /// Background model review of the current prefix candidates (ADR-029).
+    private var inFlightReview: FastContextReviewTicket?
+    private static let modelReviewQueue = DispatchQueue(label: "com.pitecan.inputmethod.SwiftyGyaim.fast-context-review",
+                                                        qos: .userInitiated)
     private var inputGeneration = 0
     private let traceControllerID = UUID().uuidString
     /// Increments on the first printable key of a composition; joins rerank
@@ -321,7 +324,10 @@ class GyaimController: IMKInputController {
         let keyCode = event.keyCode
         let modifierFlags = event.modifierFlags
         Log.input.debug("keyDown: keyCode=\(keyCode), chars=\(event.characters ?? ""), mods=\(modifierFlags.rawValue)")
-        // Any key invalidates a pending deferred model review of the previous input.
+        // Space on the first candidate is the moment the model's opinion is
+        // consumed: give an in-flight review a short chance to land first
+        // (ADR-029). Every key then invalidates whatever is still pending.
+        joinInFlightReviewIfSelectingFirstCandidate(event)
         cancelDeferredModelReview()
 
         if keyCode == kVirtualJISKanaModeKey || keyCode == kVirtualJISRomanModeKey {
@@ -725,7 +731,7 @@ class GyaimController: IMKInputController {
         }
     }
 
-    // MARK: - Deferred model review (ADR-026) — scheduling
+    // MARK: - Asynchronous model review (ADR-029) — scheduling
 
     private func startComposition(client sender: Any?) {
         compositionID += 1
@@ -733,9 +739,11 @@ class GyaimController: IMKInputController {
     }
 
     private func cancelDeferredModelReview() {
-        if pendingModelReview != nil { fastContextTrace?.cancel() }
-        pendingModelReview?.cancel()
-        pendingModelReview = nil
+        if let ticket = inFlightReview {
+            ticket.cancel()
+            fastContextTrace?.cancel()
+        }
+        inFlightReview = nil
         inputGeneration += 1
     }
 
@@ -743,33 +751,74 @@ class GyaimController: IMKInputController {
         "controller=\(traceControllerID) composition=\(compositionID) gen=\(inputGeneration) pass=\(pass)"
     }
 
-    private func scheduleDeferredModelReview(input: FastContextPrefixInput) {
-        let generation = inputGeneration
-        let work = DispatchWorkItem { [weak self] in
-            guard let self,
-                  self.inputGeneration == generation,
-                  self.inputPat == input.inputPat,
-                  self.searchMode == 0,
-                  self.nthCand == 0 else { return }
-            self.pendingModelReview = nil
-            let reviewed = self.reviewPrefixCandidates(input: input, generation: generation, pass: "review")
-            guard reviewed.map(\.word) != self.candidates.map(\.word) else { return }
-            self.candidates = reviewed
-            self.showCands(client: self.client())
+    /// Run the model review off the main thread and apply it when it lands, if
+    /// the input has not moved on. The heuristic order is already on screen.
+    private func startAsyncModelReview(input: FastContextPrefixInput) {
+        let ticket = FastContextReviewTicket(generation: inputGeneration, input: input)
+        inFlightReview = ticket
+        let tag = traceTag(pass: "review")
+        let work = { [weak self] in
+            guard !ticket.isCancelled else { return }
+            var observation: FastContextObservation?
+            let reviewed = GyaimController.buildPrefixCandidates(
+                searchResults: input.searchResults, inputPat: input.inputPat,
+                clipboardCandidate: input.clipboard, selectedCandidate: input.selected,
+                hiragana: input.hiragana, context: input.context, allowModelReview: true,
+                traceTag: tag, onRerank: { observation = $0 })
+            ticket.store(FastContextReviewTicket.Outcome(candidates: reviewed, observation: observation))
+            DispatchQueue.main.async { self?.applyReview(ticket) }
         }
-        pendingModelReview = work
-        let delay = DispatchTimeInterval.milliseconds(Self.modelReviewDelayMilliseconds())
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        let delay = Self.modelReviewDelayMilliseconds()
+        if delay > 0 {
+            Self.modelReviewQueue.asyncAfter(deadline: .now() + .milliseconds(delay), execute: work)
+        } else {
+            Self.modelReviewQueue.async(execute: work)
+        }
     }
 
-    private func reviewPrefixCandidates(input: FastContextPrefixInput, generation: Int, pass: String) -> [SearchCandidate] {
-        var observation: FastContextObservation?
-        let reviewed = Self.buildPrefixCandidates(searchResults: input.searchResults, inputPat: input.inputPat,
-                                                   clipboardCandidate: input.clipboard, selectedCandidate: input.selected,
-                                                   hiragana: input.hiragana, context: input.context, allowModelReview: true,
-                                                   traceTag: traceTag(pass: pass), onRerank: { observation = $0 })
-        fastContextTrace?.complete(words: reviewed.map(\.word), observation: observation, generation: generation)
-        return reviewed
+    /// Main thread. Applies a finished review once, only while it still
+    /// describes what the user is looking at.
+    private func applyReview(_ ticket: FastContextReviewTicket) {
+        guard inFlightReview === ticket,
+              ticket.generation == inputGeneration,
+              inputPat == ticket.input.inputPat,
+              searchMode == 0,
+              nthCand == 0,
+              let outcome = ticket.current,
+              ticket.markApplied() else { return }
+        inFlightReview = nil
+        let words = outcome.candidates.map(\.word)
+        fastContextTrace?.complete(words: words, observation: outcome.observation, generation: ticket.generation)
+        guard words != candidates.map(\.word) else { return }
+        candidates = outcome.candidates
+        showCands(client: client())
+    }
+
+    /// Space on the first candidate is the moment the model's opinion is
+    /// consumed; number keys and Enter on a highlighted row pick what is
+    /// already displayed and must not be re-ordered underneath the user.
+    private func joinInFlightReviewIfSelectingFirstCandidate(_ event: NSEvent) {
+        guard converting, nthCand == 0, !tmpImageDisplayed,
+              event.characters?.utf8.first == 0x20,
+              event.modifierFlags.isDisjoint(with: [.control, .command, .option]) else { return }
+        joinInFlightReviewBeforeSelection()
+    }
+
+    /// Wait briefly for the in-flight review so the model's order is what the
+    /// user is about to select from.
+    private func joinInFlightReviewBeforeSelection() {
+        guard let ticket = inFlightReview, ticket.generation == inputGeneration else { return }
+        let wait = Self.modelReviewSelectionWaitMilliseconds()
+        let start = CFAbsoluteTimeGetCurrent()
+        if ticket.waitForResult(timeout: .milliseconds(wait)) != nil {
+            applyReview(ticket)
+            if Self.isFastContextRerankLoggingEnabled {
+                Log.input.info("Fast context review joined at selection: input=\"\(inputPat)\" "
+                    + "waited=\(Self.formatMilliseconds(Self.elapsedMilliseconds(since: start)))ms")
+            }
+        } else if Self.isFastContextRerankLoggingEnabled {
+            Log.input.info("Fast context review not ready at selection: input=\"\(inputPat)\" waitMs=\(wait)")
+        }
     }
 
     // MARK: - Search & Display
@@ -851,8 +900,7 @@ class GyaimController: IMKInputController {
         let input = FastContextPrefixInput(searchResults: searchResults, inputPat: inputPat,
                                            hiragana: rk.roma2hiragana(inputPat), clipboard: clipboardCandidate,
                                            selected: selectedCandidate, context: recentCommittedText)
-        let deferReview = Self.shouldDeferModelReview(inputPat: inputPat)
-        let useModel = Self.shouldUseModelForFastContextRerank(inputPat: inputPat)
+        let useModel = Self.shouldScheduleModelReview(inputPat: inputPat)
         candidates = Self.buildPrefixCandidates(searchResults: searchResults, inputPat: inputPat,
                                                 clipboardCandidate: input.clipboard, selectedCandidate: input.selected,
                                                 hiragana: input.hiragana, context: input.context, allowModelReview: false,
@@ -860,11 +908,9 @@ class GyaimController: IMKInputController {
         fastContextTrace = FastContextTrace(controllerID: traceControllerID, compositionID: compositionID,
                                            generation: inputGeneration, heuristicWords: candidates.map(\.word),
                                            proposedWords: nil, modelState: useModel ? .pending : .notScheduled,
-                                           deferred: deferReview)
-        if deferReview {
-            scheduleDeferredModelReview(input: input)
-        } else if useModel {
-            candidates = reviewPrefixCandidates(input: input, generation: inputGeneration, pass: "sync")
+                                           deferred: true)
+        if useModel {
+            startAsyncModelReview(input: input)
         }
     }
 

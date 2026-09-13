@@ -1,7 +1,7 @@
 # Spec: 設定ストア（settings.json）
 
 > Trigger: GyaimSettings.swift
-> Last updated: 2026-09-12 (Tab 生成・legacy reranker のキーを削除)
+> Last updated: 2026-09-13 (aiRerankFastContextSelectionWaitMs 追加、ReviewDelayMs の意味変更)
 
 ## 概要
 
@@ -63,7 +63,8 @@
 | `aiRerankFastContextNormalReviewMinInputLength` | Int | 5（1〜12） | – | 同音異義語以外の通常レビューの最小入力長 |
 | `aiRerankFastContextMaxContextLength` | Int | 20（1〜200） | – | モデルに渡す左文脈の末尾文字数 |
 | `aiRerankFastContextCandidateLimit` | Int | 24（2〜48） | – | 並べ替え対象の辞書候補数 |
-| `aiRerankFastContextReviewDelayMs` | Int | 80（0〜1000） | – | モデルレビューの遅延。0 で打鍵同期（ADR-026） |
+| `aiRerankFastContextReviewDelayMs` | Int | 0（0〜1000） | – | 背景モデルレビュー開始前のスロットル（ADR-029）。0 で毎打鍵 |
+| `aiRerankFastContextSelectionWaitMs` | Int | 30（0〜200） | – | Space で先頭候補を選ぶとき、実行中のレビュー結果を待つ上限 |
 
 ### 同梱モデル
 
