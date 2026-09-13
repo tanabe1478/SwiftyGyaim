@@ -42,6 +42,7 @@ enum GyaimSettings {
         "aiRerankFastContextMaxContextLength",
         "aiRerankFastContextCandidateLimit",
         "aiRerankFastContextReviewDelayMs",
+        "aiRerankFastContextSelectionWaitMs",
         // Bundled model
         "aiRerankUseBundledZenz",
         "aiRerankZenzWeight",

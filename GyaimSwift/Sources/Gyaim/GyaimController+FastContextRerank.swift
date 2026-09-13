@@ -183,15 +183,26 @@ extension GyaimController {
     /// the synchronous per-keystroke review. Dogfood 2026-09-11: 760 homophone
     /// reviews (20-27 ms each) ran on intermediate inputs, but only 26 reached a
     /// commit; deferring past the inter-key interval removes most of them.
+    /// Throttle before the background review starts (ADR-029). 0 (default)
+    /// starts the review on every keystroke; a positive value skips reviews for
+    /// keystrokes that are followed by another one within the delay.
     static func modelReviewDelayMilliseconds() -> Int {
-        let configured = GyaimSettings.integer(forKey: "aiRerankFastContextReviewDelayMs", default: 80)
+        let configured = GyaimSettings.integer(forKey: "aiRerankFastContextReviewDelayMs", default: 0)
         return min(max(configured, 0), 1000)
     }
 
-    /// True when the model would review this input but should do so after a
-    /// pause instead of inline with the keystroke.
-    static func shouldDeferModelReview(inputPat: String) -> Bool {
-        shouldUseModelForFastContextRerank(inputPat: inputPat) && modelReviewDelayMilliseconds() > 0
+    /// How long Space (first candidate selection) waits for an in-flight
+    /// review of the current input before falling back to the heuristic order.
+    /// Dogfood 2026-09-13: 65% of commits happened before the deferred review
+    /// ran, so without this join the model rarely influences the selection.
+    static func modelReviewSelectionWaitMilliseconds() -> Int {
+        let configured = GyaimSettings.integer(forKey: "aiRerankFastContextSelectionWaitMs", default: 30)
+        return min(max(configured, 0), 200)
+    }
+
+    /// True when a background model review is scheduled for this input.
+    static func shouldScheduleModelReview(inputPat: String) -> Bool {
+        shouldUseModelForFastContextRerank(inputPat: inputPat)
     }
 
     static var isFastContextRerankEnabled: Bool {
