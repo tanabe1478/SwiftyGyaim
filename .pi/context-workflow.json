@@ -1,0 +1,78 @@
+{
+  "source": {
+    "extensions": [
+      ".swift"
+    ]
+  },
+  "adr": {
+    "enabled": true,
+    "branchIgnorePatterns": [
+      "^main$",
+      "^master$",
+      "^develop$"
+    ],
+    "remindOnIgnoredBranchesForStrongSignals": true,
+    "strongSignals": [
+      {
+        "name": "architecture docs",
+        "patterns": [
+          "^docs/architecture\\.md$",
+          "^docs/.*/architecture.*\\.md$",
+          "^docs/data-design\\.md$"
+        ]
+      },
+      {
+        "name": "package/dependency changes",
+        "patterns": [
+          "^Package\\.swift$",
+          "^package\\.json$",
+          "^pyproject\\.toml$",
+          "^Cargo\\.toml$",
+          "^go\\.mod$",
+          "^pom\\.xml$",
+          "^build\\.gradle",
+          "^Gemfile$"
+        ]
+      },
+      {
+        "name": "migration changes",
+        "patterns": [
+          "Migration",
+          "Migrations",
+          "migrations"
+        ]
+      },
+      {
+        "name": "auth/oauth/security/storage areas",
+        "patterns": [
+          "auth",
+          "oauth",
+          "oidc",
+          "security",
+          "storage",
+          "persistence",
+          "redis",
+          "dynamodb"
+        ]
+      },
+      {
+        "name": "public route/api changes",
+        "patterns": [
+          "routes?\\.swift$",
+          "Controller",
+          "Route",
+          "OpenAPI",
+          "api",
+          "router",
+          "routes"
+        ]
+      }
+    ]
+  },
+  "bugMemory": {
+    "enforce": true,
+    "branchPatterns": [
+      "(^|[\\\\/_-])(fix|bugfix|hotfix|bug|regression)([\\\\/_-]|$)"
+    ]
+  }
+}
