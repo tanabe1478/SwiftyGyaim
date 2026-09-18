@@ -1,3 +1,5 @@
 {
-  "packages": []
+  "packages": [
+    "git:github.com/tanabe1478/pi-context-workflow"
+  ]
 }

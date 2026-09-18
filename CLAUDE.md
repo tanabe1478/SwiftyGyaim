@@ -240,9 +240,11 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 
 **ルール（必須 — 違反は禁止）**:
 1. `.swift` ファイルを編集する**前に**、下表のTrigger列に該当するspecを**必ずReadすること**（hooksでリマインドされるが、hookが動作しなくてもこのルールは有効）
-2. バグ修正後は `docs/specs/bug-memory.md` にエントリを**必ず追記**すること
+2. バグ修正後は `docs/specs/bugs/BUG-XXX-*.md` に詳細を追加し、`docs/specs/bug-memory.md` の索引を**必ず更新**すること
 3. 動作仕様を変更した場合は、対応するspecを**同じコミットで更新**すること（`> Last updated:` の日付も更新）
 4. コミット前に `docs/specs/` 内の関連specが最新であることを確認すること
+
+pi エージェントには同じワークフローが pi-context-workflow 拡張として適用される（`.pi/settings.json` の `packages` に `git:github.com/tanabe1478/pi-context-workflow` を登録済み、設定は `.pi/context-workflow.json`）。`/spec-check` `/spec-metrics` コマンドと `context_workflow_doctor` ツールが使える。
 
 | Spec | Trigger（編集対象） | 内容 |
 |------|-------------------|------|
@@ -252,11 +254,15 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 | [google-transliterate.md](docs/specs/google-transliterate.md) | GoogleTransliterate.swift | Google API連携、非同期処理、stale guard |
 | [imk-constraints.md](docs/specs/imk-constraints.md) | GyaimController.swift, AppDelegate.swift, main.swift | InputMethodKit固有の制約と回避策 |
 | [settings.md](docs/specs/settings.md) | GyaimSettings.swift（設定キーを追加・変更する全ファイル） | 設定ストア、全キー一覧と既定値、移行方針（ADR-027） |
-| [bug-memory.md](docs/specs/bug-memory.md) | 全ファイル（デバッグ時） | 過去のバグパターンと修正方法 |
+| [ai-rerank.md](docs/specs/ai-rerank.md) | AIReranker.swift, ZenzRuntime*.swift, GyaimController+FastContextRerank.swift 等 | ヒューリスティック/モデル rerank、スコア統合 |
+| [zenz-model-tuning.md](docs/specs/zenz-model-tuning.md) | Zenzモデル・プロンプト調整、GGUF差し替え | モデル選定とチューニング記録（Draft） |
+| [project-setup.md](docs/specs/project-setup.md) | project.yml, Scripts/*.sh, .github/workflows/*.yml | ビルド・テスト・配布のセットアップ |
+| [README.md](docs/specs/README.md) | specs ディレクトリ自体の運用 | spec 一覧とルール |
+| [bug-memory.md](docs/specs/bug-memory.md) | 全ファイル（デバッグ時） | バグ索引と運用ガイド（詳細は `docs/specs/bugs/BUG-*.md`） |
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-029）
+- `docs/adr/` — 設計判断の経緯（000-029）。目次と運用ルールは `docs/adr/README.md`
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 
@@ -272,4 +278,4 @@ arXiv:2602.20478 に基づく3階層ドキュメントシステム（ADR-013）�
 
 ### メンテナンス
 
-週次（目安30分）: git logから変更を確認し、影響するspecを更新。新規バグはbug-memory.mdに追記。あわせて `python3 GyaimSwift/Tools/ai-rerank/aggregate-fast-context-log.py --last-minutes 10080` で直近1週間の acceptedRanks（acceptedTop1Rate）、byOutcome（fix率・latency）、modelEffect（heuristic 単独順に対する netImproved と committedBeforeReviewRate）を確認し、悪化があれば eval fixture 化する（issue #57）。
+週次（目安30分）: git logから変更を確認し、影響するspecを更新。新規バグは `docs/specs/bugs/BUG-*.md` に追加し bug-memory.md の索引を更新。あわせて `python3 GyaimSwift/Tools/ai-rerank/aggregate-fast-context-log.py --last-minutes 10080` で直近1週間の acceptedRanks（acceptedTop1Rate）、byOutcome（fix率・latency）、modelEffect（heuristic 単独順に対する netImproved と committedBeforeReviewRate）を確認し、悪化があれば eval fixture 化する（issue #57）。

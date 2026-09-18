@@ -69,13 +69,18 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | `docs/specs/candidate-window.md` | `CandidateWindow.swift`, `PreferencesWindow.swift` |
 | `docs/specs/google-transliterate.md` | `GoogleTransliterate.swift` |
 | `docs/specs/imk-constraints.md` | `GyaimController.swift`, `AppDelegate.swift`, `main.swift` |
-| `docs/specs/bug-memory.md` | バグ調査・修正時は常に参照 |
+| `docs/specs/settings.md` | `GyaimSettings.swift`、設定キー変更時 |
+| `docs/specs/ai-rerank.md` | `AIReranker*.swift`, `ZenzRuntime*.swift` 等 |
+| `docs/specs/project-setup.md` | `project.yml`, `Scripts/*.sh`, workflows |
+| `docs/specs/bug-memory.md` | バグ調査・修正時は常に参照（索引。詳細は `docs/specs/bugs/BUG-*.md`） |
 
 必須ルール:
 1. `.swift` 編集前に対応specを読む
-2. バグ修正後は `docs/specs/bug-memory.md` に追記
+2. バグ修正後は `docs/specs/bugs/BUG-*.md` に追加し `docs/specs/bug-memory.md` の索引を更新
 3. 動作仕様を変えたら対応specを同じコミットで更新
 4. コミット前に spec の `Last updated` を確認
+
+pi では `.pi/settings.json` に登録した pi-context-workflow 拡張が同じワークフローをリマインド/ゲートする（`/spec-check`・`/spec-metrics`・`context_workflow_doctor`、設定は `.pi/context-workflow.json`）。
 
 ## Testing Notes
 
@@ -87,7 +92,9 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 
 - `CLAUDE.md`: Claude Code向けの詳細版ガイド
 - `.claude/hooks/`: Claude用hook
-- `docs/specs/`: 領域別の仕様
-- `docs/adr/`: 設計判断の履歴
+- `.pi/settings.json` + `.pi/context-workflow.json`: pi-context-workflow 拡張の登録と設定
+- `docs/specs/`: 領域別の仕様（一覧とルールは `docs/specs/README.md`）
+- `docs/specs/bugs/`: 個別バグ記録（索引は `docs/specs/bug-memory.md`）
+- `docs/adr/`: 設計判断の履歴（運用ルールは `docs/adr/README.md`）
 
 この `AGENTS.md` は、Claude向け設定がある環境でも pi など別のエージェントが同じ運用ルールを参照できるように置いている。
