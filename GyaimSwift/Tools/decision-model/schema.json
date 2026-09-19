@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tanabe1478/SwiftyGyaim/decision-model/schema-v1",
+  "title": "Gyaim Decision Model request v1",
+  "type": "object",
+  "required": ["schemaVersion", "context", "readingRoman", "readingHiragana", "candidates"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "context": {"type": "string"},
+    "readingRoman": {"type": "string"},
+    "readingHiragana": {"type": "string"},
+    "selected": {"type": ["integer", "null"], "minimum": 0, "maximum": 23, "description": "Dataset only. null means NONE; integer must be below actual candidate count."},
+    "candidates": {
+      "type": "array", "minItems": 1, "maxItems": 24,
+      "items": {
+        "type": "object", "required": ["text"],
+        "properties": {
+          "text": {"type": "string", "minLength": 1},
+          "reading": {"type": ["string", "null"]},
+          "source": {"enum": ["study", "local", "connection", "external", "google", "synthetic", "unknown"]},
+          "kind": {"enum": ["exact", "prefix", "compound", "kana", "raw", "completion", "google", "unknown"]},
+          "originalRank": {"type": ["integer", "null"], "minimum": 0},
+          "studyFrequency": {"type": ["integer", "null"], "minimum": 0},
+          "contextAffinity": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "exactReadingMatch": {"type": ["boolean", "null"]}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "response": {
+      "type": "object",
+      "required": ["schemaVersion", "modelVersion", "candidates", "noneLogit", "noneProbability"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "modelVersion": {"type": "string"},
+        "candidates": {"type": "array", "minItems": 1, "maxItems": 24, "items": {
+          "type": "object", "required": ["index", "logit", "probability"],
+          "properties": {"index": {"type": "integer", "minimum": 0, "maximum": 23}, "logit": {"type": "number"}, "probability": {"type": "number", "minimum": 0, "maximum": 1}}
+        }},
+        "noneLogit": {"type": "number"},
+        "noneProbability": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    }
+  }
+}
