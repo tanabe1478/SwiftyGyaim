@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（308テスト）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（313テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -126,10 +126,11 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | ConnectionDictTests | Tests/GyaimTests/ | 9 | 連接辞書の検索・同梱辞書の語彙回帰・制約付き合成 |
 | ConnectionDictSharingTests | Tests/GyaimTests/ | 3 | 連接辞書のプロセス内共有（同一パス再利用・パス切替・reset） |
 | GyaimSettingsTests | Tests/GyaimTests/ | 11 | settings.json 永続化・mtimeキャッシュ・UserDefaults一方向移行・書き込み先の単一性・knownKeysとソースの一致 |
-| AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests | Tests/GyaimTests/ | 40 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択 |
+| AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests / IncompleteStemPastTenseTests | Tests/GyaimTests/ | 42 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択・過去形を未完成語幹とみなさない（BUG-043） |
 | HomophoneFrequencyGuardTests | Tests/GyaimTests/ | 4 | 同音異義語上書きの頻度ガード（BUG-036、実ログ数値で固定） |
 | FastContextReviewSchedulingTests | Tests/GyaimTests/ | 7 | 背景モデルレビューの予約判定・スロットル/合流待ちのクランプ・同期パスがモデルを呼ばないこと・ticket の待機/一回適用（ADR-029） |
-| FastContextTraceTests / HomophoneAlternativeOrderTests / AcceptedDetailPayloadTests | Tests/GyaimTests/ | 23 | composition trace と確定 payload、同音異義語の下位並べ替え（ADR-028） |
+| FastContextTraceTests / HomophoneAlternativeOrderTests / AcceptedDetailPayloadTests | Tests/GyaimTests/ | 25 | composition trace と確定 payload（全確定経路の Commit outcome を含む）、同音異義語の下位並べ替え（ADR-028） |
+| TypingSimulationTests | Tests/GyaimTests/ | 1 | 正解付きコーパスを本物の検索・rerankに流して順位を測る（通常はskip。`Tools/eval/run-typing-simulation.sh` で実行） |
 | StudySuspectsTests | Tests/GyaimTests/ | 3 | 疑わしい学習エントリ検出（typo完成形・長期未使用・false positive 抑止） |
 | FileLoggerRotationTests | Tests/GyaimTests/ | 1 | ログ7世代ローテーションのシフト |
 | プロパティテスト（3スイート） | Tests/GyaimTests/ | 5 | PropertyTesting.swiftハーネスによる不変条件検査（validatedOrderの順列性・学習マージの頻度保存と冪等性・combineScoresのzero-sum性）。seed再現可能 |
@@ -278,4 +279,4 @@ pi エージェントには同じワークフローが pi-context-workflow 拡�
 
 ### メンテナンス
 
-週次（目安30分）: git logから変更を確認し、影響するspecを更新。新規バグは `docs/specs/bugs/BUG-*.md` に追加し bug-memory.md の索引を更新。あわせて `python3 GyaimSwift/Tools/ai-rerank/aggregate-fast-context-log.py --last-minutes 10080` で直近1週間の acceptedRanks（acceptedTop1Rate）、byOutcome（fix率・latency）、modelEffect（heuristic 単独順に対する netImproved と committedBeforeReviewRate）を確認し、悪化があれば eval fixture 化する（issue #57）。
+週次（目安30分）: git logから変更を確認し、影響するspecを更新。新規バグは `docs/specs/bugs/BUG-*.md` に追加し bug-memory.md の索引を更新。あわせて `python3 GyaimSwift/Tools/ai-rerank/aggregate-fast-context-log.py --last-minutes 10080` で直近1週間の commitOutcomes（全確定経路での firstCandidateRate と miss 率）、commitDiagnostics（miss がモデル採点集合に入っていたか）、byOutcome（fix率・latency）、modelEffect（heuristic 単独順に対する netImproved と committedBeforeReviewRate）を確認し、悪化があれば eval fixture 化する（issue #57）。

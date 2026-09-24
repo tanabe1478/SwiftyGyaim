@@ -384,6 +384,188 @@ def collect_model_effect(lines: Iterable[str], cutoff: datetime | None) -> dict:
     }
 
 
+SEARCH_RE = re.compile(r"\] \[input\] \[info\] search\((?P<input>.*), (?P<mode>prefix|exact)\): ")
+GOOGLE_TRIGGER_RE = re.compile(r'\] \[input\] \[info\] Google Transliterate triggered: "')
+FIXED_RE = re.compile(
+    r'^\[(?P<timestamp>[^\]]+)\] \[input\] \[info\] '
+    r'Fixed: "(?P<word>[^"]*)" \(reading: "(?P<reading>[^"]*)", index: (?P<index>\d+)/'
+)
+KANA_FIXED_RE = re.compile(
+    r'^\[(?P<timestamp>[^\]]+)\] \[input\] \[info\] '
+    r'Fixed as kana\((?P<script>hiragana|katakana)\): "(?P<word>[^"]*)" \(input: "(?P<input>[^"]*)"'
+)
+DEACTIVATION_RE = re.compile(r'\] \[input\] \[info\] Study skipped \(deactivation\): "(?P<word>[^"]*)"')
+
+# Commit paths that mean the prefix-mode list did not offer the wanted word
+# first. `kana-other` / `kana-absent` are suspected misses: the user may have
+# preferred the kana spelling on purpose.
+COMMIT_MISS = ("prefix-lower", "exact-escape", "kana-other", "kana-absent", "google")
+COMMIT_HIT = ("prefix-top1", "kana-top1")
+COMMIT_EXCLUDED = ("prefix-raw", "kana-no-dictionary", "deactivation")
+
+
+def collect_commit_outcomes(lines: Iterable[str], cutoff: datetime | None, examples: int = 5) -> dict:
+    """Classify every commit by how the user got the word (issue: accepted
+    detail logs only cover prefix-mode picks, so escapes were invisible).
+
+    Reconstructed from plain log lines, so it works on old logs too. Each
+    commit is compared with the dictionary head (`after`, up to 8 words) of
+    the most recent `Fast context rerank finished` line for the same input;
+    lines carry no controller for commits, so interleaved fields can mix.
+    """
+    last_head: dict[str, list[str]] = {}
+    mode = "prefix"
+    commits: list[dict] = []
+
+    def prefix_rank(reading: str, word: str) -> int | None:
+        head = last_head.get(reading, [])
+        return head.index(word) + 1 if word in head else None
+
+    for line in lines:
+        line = line.rstrip("\n")
+        if (event := LOG_RE.match(line)) is not None:
+            try:
+                parsed = ast.literal_eval(event.group("after"))
+            except Exception:
+                parsed = None
+            if isinstance(parsed, list):
+                last_head[event.group("input")] = [str(word) for word in parsed]
+            continue
+        if (search := SEARCH_RE.search(line)) is not None:
+            mode = search.group("mode")
+            continue
+        if GOOGLE_TRIGGER_RE.search(line):
+            mode = "google"
+            continue
+        if (deactivated := DEACTIVATION_RE.search(line)) is not None:
+            if commits and commits[-1]["word"] == deactivated.group("word"):
+                commits[-1]["path"] = "deactivation"
+            continue
+        if (fixed := FIXED_RE.match(line)) is not None:
+            word, reading, index = fixed.group("word"), fixed.group("reading"), int(fixed.group("index"))
+            if mode == "google":
+                path = "google"
+            elif mode == "exact":
+                path = "exact-escape"
+            elif index == 0:
+                path = "prefix-raw"
+            else:
+                path = "prefix-top1" if index == 1 else "prefix-lower"
+            commits.append({"timestamp": fixed.group("timestamp"), "path": path, "input": reading,
+                            "word": word, "prefixRank": prefix_rank(reading, word)})
+            mode = "prefix"
+            continue
+        if (kana := KANA_FIXED_RE.match(line)) is not None:
+            word, reading = kana.group("word"), kana.group("input")
+            head = last_head.get(reading, [])
+            if not head:
+                path = "kana-no-dictionary"
+            elif head[0] == word:
+                path = "kana-top1"
+            else:
+                path = "kana-other" if word in head else "kana-absent"
+            commits.append({"timestamp": kana.group("timestamp"), "path": path, "input": reading,
+                            "word": word, "prefixRank": prefix_rank(reading, word),
+                            "prefixTop": head[0] if head else None})
+            mode = "prefix"
+
+    if cutoff is not None:
+        commits = [c for c in commits if (parse_timestamp(c["timestamp"]) or cutoff) >= cutoff]
+    if not commits:
+        return {"count": 0}
+    by_path: dict[str, int] = defaultdict(int)
+    for commit in commits:
+        by_path[commit["path"]] += 1
+    hits = sum(by_path[p] for p in COMMIT_HIT)
+    strict_misses = sum(by_path[p] for p in COMMIT_MISS if not p.startswith("kana-"))
+    suspected = sum(by_path[p] for p in COMMIT_MISS if p.startswith("kana-"))
+    decidable = hits + strict_misses + suspected
+    escapes = [c for c in commits if c["path"] == "exact-escape"]
+    return {
+        "count": len(commits),
+        "byPath": {path: by_path[path] for path in COMMIT_HIT + COMMIT_MISS + COMMIT_EXCLUDED},
+        "decidable": decidable,
+        # Headline: the first dictionary candidate was the word the user wanted.
+        "firstCandidateRate": round(hits / decidable, 3) if decidable else None,
+        # Lower bound on misses (kana commits trusted as intentional) and the
+        # upper bound (every kana commit that differed from top1 is a miss).
+        "strictMissRate": round(strict_misses / decidable, 3) if decidable else None,
+        "suspectedMissRate": round((strict_misses + suspected) / decidable, 3) if decidable else None,
+        "exactEscapePrefixRank": {
+            "inHead": sum(1 for c in escapes if c["prefixRank"] is not None),
+            "notInHead": sum(1 for c in escapes if c["prefixRank"] is None),
+        },
+        "examples": {
+            path: [{k: v for k, v in c.items() if k != "path"} for c in commits if c["path"] == path][:examples]
+            for path in COMMIT_MISS
+        },
+    }
+
+
+COMMIT_OUTCOME_RE = re.compile(
+    r"^\[(?P<timestamp>[^\]]+)\] \[input\] \[info\] "
+    r'Commit outcome: input="(?P<input>[^"]*)" payload=(?P<payload>\{.*\})$'
+)
+
+
+def _rank_bucket(rank) -> str:
+    if type(rank) is not int:
+        return "absent"
+    if rank <= 1:
+        return str(rank)
+    return "2-3" if rank <= 3 else "4-8" if rank <= 8 else "9+"
+
+
+def collect_commit_diagnostics(lines: Iterable[str], cutoff: datetime | None) -> dict:
+    """Explain misses from `Commit outcome` lines (every commit path).
+
+    A miss is any commit whose word was not the first prefix candidate:
+    exact/google escapes, prefix rank>=2, and kana commits whose word was not
+    rank 1. For misses it reports where the word sat in the prefix list and
+    whether the model review scored it (`inScoredSet=false` means the model
+    could not have fixed it, whatever its quality).
+    """
+    by_path: dict[str, int] = defaultdict(int)
+    buckets: dict[str, dict[str, int]] = {
+        "byPrefixRank": defaultdict(int), "byScoredSet": defaultdict(int), "byModelOutcome": defaultdict(int),
+    }
+    misses = 0
+    for line in lines:
+        match = COMMIT_OUTCOME_RE.match(line.rstrip("\n"))
+        if not match:
+            continue
+        if cutoff is not None:
+            timestamp = parse_timestamp(match.group("timestamp"))
+            if timestamp is not None and timestamp < cutoff:
+                continue
+        try:
+            payload = json.loads(match.group("payload"))
+        except json.JSONDecodeError:
+            continue
+        path = payload.get("path")
+        if not isinstance(path, str):
+            continue
+        by_path[path] += 1
+        rank = payload.get("prefixRank")
+        if path == "deactivation" or (path == "prefix" and rank in (0, 1)):
+            continue
+        if path.startswith("kana-") and rank == 1:
+            continue
+        misses += 1
+        buckets["byPrefixRank"][_rank_bucket(rank)] += 1
+        scored = payload.get("inScoredSet")
+        buckets["byScoredSet"]["noReview" if scored is None else "scored" if scored else "notScored"] += 1
+        buckets["byModelOutcome"][str(payload.get("modelOutcome") or payload.get("modelState") or "no-trace")] += 1
+    if not by_path:
+        return {"count": 0}
+    return {
+        "count": sum(by_path.values()),
+        "byPath": dict(sorted(by_path.items())),
+        "missCount": misses,
+        "misses": {name: dict(sorted(values.items())) for name, values in buckets.items()},
+    }
+
+
 def print_table(title: str, rows: dict[str, dict]) -> None:
     print(f"\n## {title}")
     print("key\tcount\tavgMs\tp50Ms\tp95Ms\tmaxMs\ttopChanged\ttopChangedRate")
@@ -418,6 +600,8 @@ def main() -> int:
         "reviewEvents": collect_review_events(lines, cutoff),
         "acceptedRanks": collect_accepted_events(lines, cutoff),
         "modelEffect": collect_model_effect(lines, cutoff),
+        "commitOutcomes": collect_commit_outcomes(lines, cutoff, examples=args.examples),
+        "commitDiagnostics": collect_commit_diagnostics(lines, cutoff),
         "slowest": [asdict(e) for e in sorted(events, key=lambda e: e.latency_ms, reverse=True)[: args.slow]],
         "examplesByOutcome": {
             outcome: [asdict(e) for e in grouped[: args.examples]]
@@ -437,6 +621,11 @@ def main() -> int:
     print(json.dumps(result["reviewEvents"], ensure_ascii=False, indent=2))
     print("\n## accepted ranks")
     print(json.dumps(result["acceptedRanks"], ensure_ascii=False, indent=2))
+    print("\n## commit outcomes (all commit paths)")
+    outcomes = {k: v for k, v in result["commitOutcomes"].items() if k != "examples"}
+    print(json.dumps(outcomes, ensure_ascii=False, indent=2))
+    print("\n## commit diagnostics (Commit outcome lines)")
+    print(json.dumps(result["commitDiagnostics"], ensure_ascii=False, indent=2))
     print("\n## model effect (vs heuristic-only order)")
     print(json.dumps(result["modelEffect"], ensure_ascii=False, indent=2))
     print("\n## slowest")

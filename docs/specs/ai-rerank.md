@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, ZenzRuntime.swift, ZenzRuntime+Scoring.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController+FastContextRerank.swift, FastContextTrace.swift
-> Last updated: 2026-09-13 (ADR-029: 背景 queue でのレビューと Space 合流)
+> Last updated: 2026-09-24 (全確定経路の Commit outcome ログと確定経路別の集計)
 
 ## 概要
 
@@ -98,7 +98,7 @@ fast-context rerank のモデル経路では、同梱モデルで候補を評価
 
 fast-context rerank の model opt-in 経路では latency と安全性を優先し、Swift heuristic の最上位候補だけを1回 review する。`fixRequiredPrefix` は既存候補に prefix 一致する場合だけ先頭移動に使うが、通常のprefix予測では1文字 prefix を採用しない（`こうほ -> 高品質` や `つか... -> つかっちゃ` のような広すぎる置換を誘発しやすいため）。また現在の最上位候補自身に一致する prefix は順位変更として扱わず、local order を維持する。
 
-読み完全一致の `.exact` / `.compound` 最上位候補は、原則として model review で prefix 予測候補へ沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`、`kinou` の `機能` / `昨日`）は exact 同音異義語レビューとして扱う（ADR-021）。この場合は `fixRequiredPrefix` 経由の置換ではなく、`exactHomophoneCandidateIndices` が返す protected exact 候補（既定上位3件、`aiRerankExactHomophoneMaxCandidates` で最大6）を `LlamaZenzContext.score` の条件付き平均logprobで**直接比較**する。未完成語幹（候補集合内に `語幹+い` または `っ` 終わり語幹の完成形が存在する候補、例: `ください` があるときの `くださ`）は比較対象から除外するため、モデルが未完成候補を昇格させることは構造上できない。また、**入力の生かな表記**（候補textが `request.hiragana` と一致するひらがなのみ候補）は、bestでない限り比較対象から除外する。文字レベルLMはかな列に系統的に高い確率を与えるため、`こみ` が `込み` に、`いっか` が `一家` に文脈と無関係に勝ってしまう（BUG-024）。生かな表記は heuristic 順・かな確定キー（`;` / `q`）から常に到達できるので失うものはなく、`ください`（入力 `kudasa` の生かな表記は `くださ`）のような正当なひらがな語は比較対象に残る。bestが生かな表記そのものの場合は除外せず、漢字同音異義語を上へ昇格できる。対称に、**記号のみの候補**（かな・漢字を1文字も含まないtext、例: `〇` `△` `×`）は比較対象から**無条件に**除外する。文字レベルLMは記号に系統的に低い確率を与えるため（`まる` の `〇`=-8.60 vs `円`=-2.91）、ユーザーが繰り返し選んだ記号でも毎回漢字同音異義語に上書きされてしまう（BUG-031）。bestが記号の場合は比較自体がスキップされ、記号がchallengerとして昇格することもない。`〇円` のようにかな・漢字を含む混在テキストは比較に残る。勝者が現在のbestを margin（`aiRerankExactHomophoneMargin`、既定0.10）**+ bestのcontextAffinity優位 × 2.0 + bestのstudy頻度優位 × 2.0**（logprob単位）以上上回った場合のみ先頭を入れ替える。頻度優位は `log2(best頻度 / 挑戦者頻度)`（挑戦者がstudy語でなければ頻度1扱い、負なら0）で、`selectExactHomophoneWinner(studyFrequencies:frequencyMarginWeight:)` が計算する（BUG-036: dogfood 2026-09-11 で `君`(31) を `キミ`(7) に、`指摘`(63) を `私的`(3) に上書きし、いずれもユーザーが戻していた。確定直前の結果別top1率は上書きあり 88.5% vs 上書きなし 98%）。ユーザーが部分一致文脈（affinity < skip閾値0.75）で学習済みの選好を、モデルが僅差で覆すことを防ぐ（dogfood 2026-07-14: 学習済み `仕様` をモデルが `使用` へ再降格していた）。ログ outcome は `exact-homophone-fixed`（入れ替え）/ `exact-homophone-kept-local`（勝者が別候補だがmargin不足）/ `exact-homophone-passed`（bestが勝者）/ `exact-homophone-unavailable`（scoring失敗）を使う。
+読み完全一致の `.exact` / `.compound` 最上位候補は、原則として model review で prefix 予測候補へ沈めない。ただし、左文脈があり、同じ読みの `.exact` / `.compound` 候補が複数ある場合（例: `muki` の `向き` / `無機`、`kinou` の `機能` / `昨日`）は exact 同音異義語レビューとして扱う（ADR-021）。この場合は `fixRequiredPrefix` 経由の置換ではなく、`exactHomophoneCandidateIndices` が返す protected exact 候補（既定上位3件、`aiRerankExactHomophoneMaxCandidates` で最大6）を `LlamaZenzContext.score` の条件付き平均logprobで**直接比較**する。未完成語幹（候補集合内に `語幹+い` または `っ` 終わり語幹の完成形が存在する候補、例: `ください` があるときの `くださ`。`い` / `た` / `だ` で終わる語は `+い` があっても完成語とみなす: BUG-025, BUG-043）は比較対象から除外するため、モデルが未完成候補を昇格させることは構造上できない。また、**入力の生かな表記**（候補textが `request.hiragana` と一致するひらがなのみ候補）は、bestでない限り比較対象から除外する。文字レベルLMはかな列に系統的に高い確率を与えるため、`こみ` が `込み` に、`いっか` が `一家` に文脈と無関係に勝ってしまう（BUG-024）。生かな表記は heuristic 順・かな確定キー（`;` / `q`）から常に到達できるので失うものはなく、`ください`（入力 `kudasa` の生かな表記は `くださ`）のような正当なひらがな語は比較対象に残る。bestが生かな表記そのものの場合は除外せず、漢字同音異義語を上へ昇格できる。対称に、**記号のみの候補**（かな・漢字を1文字も含まないtext、例: `〇` `△` `×`）は比較対象から**無条件に**除外する。文字レベルLMは記号に系統的に低い確率を与えるため（`まる` の `〇`=-8.60 vs `円`=-2.91）、ユーザーが繰り返し選んだ記号でも毎回漢字同音異義語に上書きされてしまう（BUG-031）。bestが記号の場合は比較自体がスキップされ、記号がchallengerとして昇格することもない。`〇円` のようにかな・漢字を含む混在テキストは比較に残る。勝者が現在のbestを margin（`aiRerankExactHomophoneMargin`、既定0.10）**+ bestのcontextAffinity優位 × 2.0 + bestのstudy頻度優位 × 2.0**（logprob単位）以上上回った場合のみ先頭を入れ替える。頻度優位は `log2(best頻度 / 挑戦者頻度)`（挑戦者がstudy語でなければ頻度1扱い、負なら0）で、`selectExactHomophoneWinner(studyFrequencies:frequencyMarginWeight:)` が計算する（BUG-036: dogfood 2026-09-11 で `君`(31) を `キミ`(7) に、`指摘`(63) を `私的`(3) に上書きし、いずれもユーザーが戻していた。確定直前の結果別top1率は上書きあり 88.5% vs 上書きなし 98%）。ユーザーが部分一致文脈（affinity < skip閾値0.75）で学習済みの選好を、モデルが僅差で覆すことを防ぐ（dogfood 2026-07-14: 学習済み `仕様` をモデルが `使用` へ再降格していた）。ログ outcome は `exact-homophone-fixed`（入れ替え）/ `exact-homophone-kept-local`（勝者が別候補だがmargin不足）/ `exact-homophone-passed`（bestが勝者）/ `exact-homophone-unavailable`（scoring失敗）を使う。
 
 **採点済みの2位以下への反映（ADR-028）**: 先頭の判定後、先頭以外の採点済み同音候補のスロット同士だけをモデルスコア降順で入れ替える。先頭の頻度/affinity/marginガード、採点上限（既定3件）、フィルタは変更しない。未採点・採点失敗・除外候補の位置はこの追加操作では固定し、同点は元順を維持する。先頭の採点失敗または有効スコア2件未満では全順を維持する。既存先頭判定が `fixed` の場合は同outcomeを維持し、先頭を変えず下位だけ変えた場合は `exact-homophone-tail-reranked` とする。`AIRerankResponse.review.topDecision` には元の先頭判定（`fixed` / `passed` / `kept-local` / `unavailable`）を保持する。スコアの追加計算はない。生スコア最大の挑戦者がガードを通らないとき次点の先頭昇格を試す変更や、頻度重みの調整は今回含めない。
 
@@ -167,7 +167,34 @@ dogfood中は確定のたびに `Fast context accepted: input=... word=... rank=
 
 CI品質ゲート（issue #57）として、`evaluate-fast-context-rerank.py --gate` を `run-unit-tests.sh` から実行する。`model-required` タグ以外のケースの top1 miss、任意ケースの unsafe top、`model-required` 以外の exact demotion があれば非ゼロ終了し、CIをfailさせる。`model-required` ケース（heuristicでは解けない文脈依存同音異義語）は意図的な伸びしろとしてtop1/demotionチェックから除外する。
 
-dogfoodの週次確認は `python3 Tools/ai-rerank/aggregate-fast-context-log.py --last-minutes 10080` で行い、acceptedRanks（acceptedTop1Rate / rank分布）と byOutcome（fix率・latency p95）を見る。
+dogfoodの週次確認は `python3 Tools/ai-rerank/aggregate-fast-context-log.py --last-minutes 10080` で行い、commitOutcomes（firstCandidateRate / strict・suspectedMissRate）を主指標として見る。acceptedRanks と byOutcome（fix率・latency p95）は補助。
+
+acceptedRanks は prefix mode の意図的確定だけを分母にするため、候補が悪いときにユーザーが取る逃げ道（Enter で完全一致モード、かな確定、Google 変換）が分母から消え、失敗ほど見えない。2026-09-13〜24 の実ログで acceptedTop1Rate 0.975 に対し、全確定経路の firstCandidateRate は 0.816 だった（「見た」が「見たい」の書きかけ判定で23位に落ち、完全一致モードへ逃げた例など）。
+
+### 確定経路別の集計（commitOutcomes / commitDiagnostics）
+
+`commitOutcomes` は既存のログ行（`search(..., prefix|exact)`・`Fixed:`・`Fixed as kana`・`Google Transliterate triggered`・`Study skipped (deactivation)`・rerank 行の `after`）から全確定を再構成するので旧ログにも使える。確定語を同じ入力の直前 rerank の辞書先頭8件と照合し、次に分類する。
+
+| 分類 | 意味 |
+|---|---|
+| `prefix-top1` / `kana-top1` | 辞書1位がそのまま欲しい語だった（hit） |
+| `prefix-lower` / `exact-escape` / `google` | 1位ではなかった（strict miss） |
+| `kana-other` / `kana-absent` | かな確定した語が辞書1位と異なる（suspected miss。表記の好みを含む） |
+| `prefix-raw` / `kana-no-dictionary` / `deactivation` | 判定対象外 |
+
+`firstCandidateRate = hit / (hit + strict + suspected)`。`strictMissRate` はかな確定をすべて意図的とみなした下限、`suspectedMissRate` は上限。commit 行に controller がないため、別フィールドの入力が交互に来ると照合が混ざり得る。
+
+`commitDiagnostics` は `Commit outcome: input=... payload={...}` 行（全確定経路で1行、`aiRerankFastContextLoggingEnabled=true` 時のみ）を読み、miss を prefix list 上の順位（`byPrefixRank`）・モデル採点集合への包含（`byScoredSet`: scored / notScored / noReview）・`modelOutcome` 別に数える。`notScored` の miss はモデルの質にかかわらず救えないので、採点集合・heuristic 側の問題として扱う。
+
+payload: `path`（prefix / exact / google / kana-hiragana / kana-katakana / deactivation）、`context`（モデルに渡すのと同じ末尾20文字）、`prefixCandidateCount`、`prefixRank`（直前の prefix list 上の順位。raw=0、先頭表示=1、なければ省略）、trace がある場合は `controller` / `composition` / `generation` / `modelState` / `heuristicRank` / `proposedRank`、レビュー結果がある場合は `modelOutcome` / `inDictionarySnapshot`（レビュー request の辞書候補に含まれたか）/ `scoredCount` / `inScoredSet`。完全一致モードや Google へ移るときは、直前の prefix trace と候補語リストを `escapedPrefixTrace` / `escapedPrefixWords` に退避し、確定時に使う。確定語以外の候補文字列は記録しない。
+
+### タイピングシミュレーション（ログなしの評価）
+
+`Tools/eval/run-typing-simulation.sh` は、正解付きの区切り列（`Tools/eval/typing-corpus.jsonl`、`build-typing-corpus.py` で生成）を `TypingSimulationTests` で本物の検索・`buildPrefixCandidates`（heuristic とモデルレビュー）に流し、区切りごとに正解の順位を記録する。ひらがなのみの区切りはかな確定、カタカナのみはカタカナ確定、それ以外は変換として扱い、確定後は `GyaimController` と同じく study / ContextDict を更新して次へ進む。予測リストにない語は完全一致モード、それにもなければ `absent` とし、Google 変換で得たとみなして学習する。
+
+各文は「普段の区切り」（dogfoodログで観測した、内容語ごとに変換し助詞はかな確定する打ち方）と「自然な区切り」（複合語・動詞+助動詞・名詞+する をまとめる）の2通りを持つ。両者の差は、ユーザーが癖で回避している弱点の大きさを示す。
+
+辞書・ContextDict・settings はすべて一時ディレクトリに置き、`loggingEnabled=false` で `~/.gyaim/gyaim.log` に書かない。`GYAIM_TYPING_SIM=1` のときだけ実行され、通常のユニットテストではスキップされる。`GYAIM_TYPING_SIM_EPOCHS` で複数回流して学習後の状態を、`GYAIM_TYPING_SIM_STUDYDICT` で既存の学習辞書の写しから始めた状態を測れる。コーパスは手書きの推定区切りなので、得られるのは実機の順位ではなく比較用の目安。
 
 ### モデル効果の評価（composition trace）
 
@@ -184,7 +211,7 @@ dogfoodの週次確認は `python3 Tools/ai-rerank/aggregate-fast-context-log.py
 - `model` / `modelOutcome` / `modelContext`: レビュー応答のモデル・結果・実際に渡した文脈
 - `review`: 実際のモデル評価がある場合のみ付く。`candidateIndices`（採点を試みた集合）、`scores`（成功した有限な平均logprobのみ）、`scoreOrder`（生スコア降順、同点はindex順）、`topDecision`（先頭判定）。通常prefixレビューは候補評価でありlogprob比較ではないためscores/scoreOrderは空
 
-確定detailは、clientを解決してinsertText等を呼んだ後、study/ContextDict更新の前に記録する。deactivation・かな専用確定・Google変換は従来どおり対象外。Esc/リセットや次の検索では古いtraceを破棄する。スキップを「モデルが承認した」と数えない。
+確定detailは、clientを解決してinsertText等を呼んだ後、study/ContextDict更新の前に記録する。deactivation・かな専用確定・Google変換は従来どおり対象外（これらは `Commit outcome` 行で数える）。Esc/リセットや次の検索では古いtraceを破棄する。スキップを「モデルが承認した」と数えない。
 
 `aggregate-fast-context-log.py` の `modelEffect.rankEffect` は、同じ確定選択について `heuristicRank - chosenRank` をrank改善量とし、改善/悪化/不変件数、`netImproved`、`rankGainSum`、`meanRankGain` を返す。`byOutcome` で下位のみ変更の効果も分離できる。`appliedChanged` は変更ありケースだけの互換集計。raw確定・非整数/負のrank・提案順位と適用順位の不整合は品質比較から除外し、v2の同一(controller, composition, generation)は重複排除する。
 

@@ -130,5 +130,101 @@ class RerankParsingTests(unittest.TestCase):
                          "exact-homophone-tail-reranked")
 
 
+def rerank(ts, inp, after):
+    return (f'[{ts}] [input] [info] Fast context rerank finished: input="{inp}" controller=C composition=1 gen=1 '
+            f'pass=review model=m outcome=heuristic topChanged=true candidates=2/2 context=present order=[0, 1] '
+            f'before={json.dumps(after, ensure_ascii=False)} after={json.dumps(after, ensure_ascii=False)} latency=0.1ms')
+
+
+def info(ts, text):
+    return f"[{ts}] [input] [info] {text}"
+
+
+class CommitOutcomeTests(unittest.TestCase):
+    def test_classifies_every_commit_path(self):
+        lines = [
+            # prefix top1 / lower / raw
+            info("2026-09-24 10:00:00", "search(ki, prefix): 1.0ms"),
+            rerank("2026-09-24 10:00:00", "ki", ["木", "気"]),
+            info("2026-09-24 10:00:01", 'Fixed: "木" (reading: "ki", index: 1/3, candidates: ["ki", "木", "気"])'),
+            info("2026-09-24 10:00:02", "search(ki, prefix): 1.0ms"),
+            info("2026-09-24 10:00:03", 'Fixed: "気" (reading: "ki", index: 2/3, candidates: ["ki", "木", "気"])'),
+            info("2026-09-24 10:00:04", "search(2, prefix): 1.0ms"),
+            info("2026-09-24 10:00:05", 'Fixed: "2" (reading: "2", index: 0/1, candidates: ["2"])'),
+            # exact escape: prefix head demoted 見た out of the top 8 (the 見た/見たい case)
+            info("2026-09-24 10:00:06", "search(mita, prefix): 1.0ms"),
+            rerank("2026-09-24 10:00:06", "mita", ["満た", "観た"]),
+            info("2026-09-24 10:00:07", "search(mita, exact): 1.0ms"),
+            info("2026-09-24 10:00:08", 'Fixed: "見た" (reading: "mita", index: 4/7, candidates: ["みた", "見た"])'),
+            # kana commits
+            rerank("2026-09-24 10:00:09", "site", ["して", "指摘"]),
+            info("2026-09-24 10:00:10", 'Fixed as kana(hiragana): "して" (input: "site", candidates: 3)'),
+            rerank("2026-09-24 10:00:11", "sita", ["下", "した"]),
+            info("2026-09-24 10:00:12", 'Fixed as kana(hiragana): "した" (input: "sita", candidates: 3)'),
+            rerank("2026-09-24 10:00:13", "to", ["時", "等"]),
+            info("2026-09-24 10:00:14", 'Fixed as kana(hiragana): "と" (input: "to", candidates: 3)'),
+            info("2026-09-24 10:00:15", 'Fixed as kana(hiragana): "おきましたよ" (input: "okimasitayo", candidates: 2)'),
+            # google
+            info("2026-09-24 10:00:16", 'Google Transliterate triggered: "toriniku"'),
+            info("2026-09-24 10:00:17", 'Fixed: "鶏肉" (reading: "toriniku", index: 1/3, candidates: ["toriniku", "鶏肉"])'),
+            # deactivation
+            info("2026-09-24 10:00:18", "search(ki, prefix): 1.0ms"),
+            info("2026-09-24 10:00:19", 'Fixed: "木" (reading: "ki", index: 1/3, candidates: ["ki", "木", "気"])'),
+            info("2026-09-24 10:00:19", 'Study skipped (deactivation): "木" (reading: "ki")'),
+        ]
+        result = MODULE.collect_commit_outcomes(lines, cutoff=None)
+
+        self.assertEqual(result["count"], 10)
+        self.assertEqual(result["byPath"], {
+            "prefix-top1": 1, "kana-top1": 1,
+            "prefix-lower": 1, "exact-escape": 1, "kana-other": 1, "kana-absent": 1, "google": 1,
+            "prefix-raw": 1, "kana-no-dictionary": 1, "deactivation": 1,
+        })
+        self.assertEqual(result["decidable"], 7)
+        self.assertEqual(result["firstCandidateRate"], round(2 / 7, 3))
+        self.assertEqual(result["strictMissRate"], round(3 / 7, 3))
+        self.assertEqual(result["suspectedMissRate"], round(5 / 7, 3))
+        self.assertEqual(result["exactEscapePrefixRank"], {"inHead": 0, "notInHead": 1})
+        self.assertEqual(result["examples"]["exact-escape"][0]["word"], "見た")
+
+    def test_cutoff_drops_older_commits(self):
+        lines = [
+            info("2026-09-24 09:00:00", 'Fixed: "木" (reading: "ki", index: 1/3, candidates: [])'),
+            info("2026-09-24 10:00:00", 'Fixed: "気" (reading: "ki", index: 2/3, candidates: [])'),
+        ]
+        result = MODULE.collect_commit_outcomes(lines, cutoff=datetime(2026, 9, 24, 9, 30))
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["byPath"]["prefix-lower"], 1)
+
+
+
+class CommitDiagnosticsTests(unittest.TestCase):
+    def test_misses_are_split_by_prefix_rank_and_scored_set(self):
+        def outcome(payload):
+            return info("2026-09-24 10:00:00", f'Commit outcome: input="x" payload={json.dumps(payload)}')
+        lines = [
+            outcome({"path": "prefix", "prefixRank": 1, "inScoredSet": True}),
+            outcome({"path": "prefix", "prefixRank": 0}),
+            outcome({"path": "kana-hiragana", "prefixRank": 1}),
+            outcome({"path": "deactivation", "prefixRank": 5}),
+            # misses
+            outcome({"path": "exact", "prefixRank": 23, "inScoredSet": False,
+                     "modelOutcome": "exact-homophone-fixed"}),
+            outcome({"path": "prefix", "prefixRank": 2, "inScoredSet": True,
+                     "modelOutcome": "exact-homophone-passed"}),
+            outcome({"path": "kana-hiragana", "modelState": "not-scheduled"}),
+            outcome({"path": "google"}),
+        ]
+        result = MODULE.collect_commit_diagnostics(lines, cutoff=None)
+
+        self.assertEqual(result["count"], 8)
+        self.assertEqual(result["missCount"], 4)
+        self.assertEqual(result["misses"]["byPrefixRank"], {"2-3": 1, "9+": 1, "absent": 2})
+        self.assertEqual(result["misses"]["byScoredSet"], {"noReview": 2, "notScored": 1, "scored": 1})
+        self.assertEqual(result["misses"]["byModelOutcome"], {
+            "exact-homophone-fixed": 1, "exact-homophone-passed": 1, "no-trace": 1, "not-scheduled": 1,
+        })
+
+
 if __name__ == "__main__":
     unittest.main()
