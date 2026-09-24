@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "context": "このモデルの",
+  "readingRoman": "kinou",
+  "readingHiragana": "きのう",
+  "candidates": [
+    {"text": "機能", "reading": "kinou", "source": "connection", "kind": "exact", "originalRank": 0, "studyFrequency": null, "contextAffinity": null, "exactReadingMatch": true},
+    {"text": "昨日", "reading": "kinou", "source": "connection", "kind": "exact", "originalRank": 1, "studyFrequency": null, "contextAffinity": null, "exactReadingMatch": true}
+  ]
+}

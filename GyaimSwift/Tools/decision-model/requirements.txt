@@ -1,0 +1,7 @@
+# Install into the existing GPU venv; preserve its platform-specific torch wheel.
+numpy>=1.26,<3
+PyYAML>=6,<7
+tokenizers>=0.22,<1
+onnx>=1.17,<2
+onnxruntime>=1.20,<2
+pytest>=8,<10

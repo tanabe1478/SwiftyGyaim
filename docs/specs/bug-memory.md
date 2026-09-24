@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-09-15 (bugs/ ディレクトリへ分割、索引化)
+> Last updated: 2026-09-19 (BUG-040/041/042: Decision dataset、checkpoint、ONNX量子化)
 
 ## 概要
 
@@ -73,3 +73,6 @@
 | BUG-037 | クリップボードの内容がログに生で残っていた |  | [BUG-037-clipboard-raw-in-logs.md](bugs/BUG-037-clipboard-raw-in-logs.md) |
 | BUG-038 | rerankの先頭変更率と評価traceの世代が不正確だった |  | [BUG-038-rerank-head-change-rate-wrong-generation.md](bugs/BUG-038-rerank-head-change-rate-wrong-generation.md) |
 | BUG-039 | clientなしの確定試行もacceptedログに含まれていた |  | [BUG-039-clientless-commits-counted-as-accepted.md](bugs/BUG-039-clientless-commits-counted-as-accepted.md) |
+| BUG-040 | 候補辞書へのgold self-miningでNONEの分布が変わる | 2026-09-19 | [BUG-040-decision-dataset-self-mining.md](bugs/BUG-040-decision-dataset-self-mining.md) |
+| BUG-041 | 単独checkpointにvalidation選定済み重みが含まれない | 2026-09-19 | [BUG-041-checkpoint-missing-selected-weights.md](bugs/BUG-041-checkpoint-missing-selected-weights.md) |
+| BUG-042 | ONNX共有重みのIdentity別名がINT8量子化を妨げる | 2026-09-19 | [BUG-042-shared-onnx-weight-quantization.md](bugs/BUG-042-shared-onnx-weight-quantization.md) |
