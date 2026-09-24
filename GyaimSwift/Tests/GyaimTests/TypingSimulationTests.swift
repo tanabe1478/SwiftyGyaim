@@ -17,7 +17,7 @@ final class TypingSimulationTests: XCTestCase {
         case convert, kanaHiragana = "kana-hiragana", kanaKatakana = "kana-katakana"
     }
 
-    private var tempDir: URL!
+    private var tempDir = FileManager.default.temporaryDirectory
 
     override func setUpWithError() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GYAIM_TYPING_SIM"] == "1",
@@ -35,7 +35,7 @@ final class TypingSimulationTests: XCTestCase {
     override func tearDownWithError() throws {
         GyaimSettings.settingsFilePathOverride = nil
         ContextDict.shared.configure(file: Config.contextDictFile)
-        if let tempDir { try? FileManager.default.removeItem(at: tempDir) }
+        try? FileManager.default.removeItem(at: tempDir)
     }
 
     func testReplayCorpus() throws {
@@ -135,35 +135,10 @@ final class TypingSimulationTests: XCTestCase {
             break
         }
 
-        let hiragana = rk.roma2hiragana(input)
-        let searchResults = ws.search(query: input, searchMode: 0)
-        let modelContext = GyaimController.limitedFastContext(context)
-        let heuristic = GyaimController.buildPrefixCandidates(
-            searchResults: searchResults, inputPat: input, clipboardCandidate: nil, selectedCandidate: nil,
-            hiragana: hiragana, context: context, allowModelReview: false)
-        var observation: FastContextObservation?
-        let start = CFAbsoluteTimeGetCurrent()
-        let reviewed = GyaimController.buildPrefixCandidates(
-            searchResults: searchResults, inputPat: input, clipboardCandidate: nil, selectedCandidate: nil,
-            hiragana: hiragana, context: context, allowModelReview: true, onRerank: { observation = $0 })
-        record["reviewMs"] = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
-        record["context"] = modelContext
-        record["top"] = Array(reviewed.dropFirst().prefix(5).map(\.word))
-        record["heuristicRank"] = heuristic.firstIndex { $0.word == segment.expected }
-        let rank = reviewed.firstIndex { $0.word == segment.expected }
-        record["rank"] = rank
-        if let observation {
-            record["model"] = observation.response.model
-            record["modelOutcome"] = GyaimController.fastContextRerankOutcome(model: observation.response.model ?? "")
-            if let review = observation.response.review {
-                let scored = Set(review.candidateIndices)
-                record["inScoredSet"] = observation.request.candidates
-                    .contains { scored.contains($0.index) && $0.text == segment.expected }
-            }
-        }
-
+        let (ranked, reviewed) = rankCandidates(input: input, expected: segment.expected, context: context, ws: ws, rk: rk)
+        record.merge(ranked) { _, new in new }
         var committed: SearchCandidate?
-        if let rank, rank >= 1 {
+        if let rank = record["rank"] as? Int, rank >= 1 {
             record["outcome"] = rank == 1 ? "prefix-top1" : "prefix-lower"
             committed = reviewed[rank]
         } else {
@@ -182,6 +157,39 @@ final class TypingSimulationTests: XCTestCase {
         ws.study(word: segment.expected, reading: reading)
         ContextDict.shared.record(context: context, reading: reading, word: segment.expected)
         return record
+    }
+
+    /// The prefix list the user sees after the model review, plus where the
+    /// expected word sat in it and in the heuristic-only order.
+    private func rankCandidates(input: String, expected: String, context: String,
+                                ws: WordSearch, rk: RomaKana) -> ([String: Any], [SearchCandidate]) {
+        let hiragana = rk.roma2hiragana(input)
+        let searchResults = ws.search(query: input, searchMode: 0)
+        let heuristic = GyaimController.buildPrefixCandidates(
+            searchResults: searchResults, inputPat: input, clipboardCandidate: nil, selectedCandidate: nil,
+            hiragana: hiragana, context: context, allowModelReview: false)
+        var observation: FastContextObservation?
+        let start = CFAbsoluteTimeGetCurrent()
+        let reviewed = GyaimController.buildPrefixCandidates(
+            searchResults: searchResults, inputPat: input, clipboardCandidate: nil, selectedCandidate: nil,
+            hiragana: hiragana, context: context, allowModelReview: true, onRerank: { observation = $0 })
+        var record: [String: Any] = [
+            "reviewMs": Int((CFAbsoluteTimeGetCurrent() - start) * 1000),
+            "context": GyaimController.limitedFastContext(context),
+            "top": Array(reviewed.dropFirst().prefix(5).map(\.word)),
+        ]
+        record["heuristicRank"] = heuristic.firstIndex { $0.word == expected }
+        record["rank"] = reviewed.firstIndex { $0.word == expected }
+        if let observation {
+            record["model"] = observation.response.model
+            record["modelOutcome"] = GyaimController.fastContextRerankOutcome(model: observation.response.model ?? "")
+            if let review = observation.response.review {
+                let scored = Set(review.candidateIndices)
+                record["inScoredSet"] = observation.request.candidates
+                    .contains { scored.contains($0.index) && $0.text == expected }
+            }
+        }
+        return (record, reviewed)
     }
 
     private func summarize(_ records: [[String: Any]], epochs: Int) -> [String: Any] {
