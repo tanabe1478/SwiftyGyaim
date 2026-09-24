@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-09-19 (BUG-040/041/042: Decision dataset、checkpoint、ONNX量子化)
+> Last updated: 2026-09-24 (BUG-043: 過去形「見た」が「見たい」で未完成語幹扱いされる)
 
 ## 概要
 
@@ -76,3 +76,4 @@
 | BUG-040 | 候補辞書へのgold self-miningでNONEの分布が変わる | 2026-09-19 | [BUG-040-decision-dataset-self-mining.md](bugs/BUG-040-decision-dataset-self-mining.md) |
 | BUG-041 | 単独checkpointにvalidation選定済み重みが含まれない | 2026-09-19 | [BUG-041-checkpoint-missing-selected-weights.md](bugs/BUG-041-checkpoint-missing-selected-weights.md) |
 | BUG-042 | ONNX共有重みのIdentity別名がINT8量子化を妨げる | 2026-09-19 | [BUG-042-shared-onnx-weight-quantization.md](bugs/BUG-042-shared-onnx-weight-quantization.md) |
+| BUG-043 | 過去形「見た」が「見たい」の存在で未完成語幹として沈む | 2026-09-24 | [BUG-043-past-tense-sunk-as-incomplete-stem.md](bugs/BUG-043-past-tense-sunk-as-incomplete-stem.md) |

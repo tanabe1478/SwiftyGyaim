@@ -122,6 +122,11 @@ class GyaimController: IMKInputController {
     /// logs to its commit together with the controller UUID and generation.
     private var compositionID = 0
     private var fastContextTrace: FastContextTrace?
+    /// Prefix-mode state kept when the user leaves it for exact mode or Google,
+    /// so the eventual commit can still say where the word was in the prefix
+    /// list (escapes were invisible to accepted-detail metrics).
+    private var escapedPrefixTrace: FastContextTrace?
+    private var escapedPrefixWords: [String] = []
     /// Diagnostics for very short activate → deactivate cycles caused by input source switching.
     private var lastActivationTime: CFAbsoluteTime?
     private var lastActivationSequence = 0
@@ -257,6 +262,8 @@ class GyaimController: IMKInputController {
     private func resetState() {
         cancelDeferredModelReview()
         fastContextTrace = nil
+        escapedPrefixTrace = nil
+        escapedPrefixWords = []
         inputPat = ""
         candidates = []
         nthCand = 0
@@ -830,6 +837,7 @@ class GyaimController: IMKInputController {
         guard !q.isEmpty else { return }
 
         cancelDeferredModelReview()
+        preservePrefixStateForEscape()
         fastContextTrace = nil
         pendingGoogleQuery = q
         searchMode = 2
@@ -857,11 +865,22 @@ class GyaimController: IMKInputController {
         }
     }
 
+    /// Only a live prefix trace is kept; a repeated exact/Google search must not
+    /// overwrite the prefix snapshot with nothing.
+    private func preservePrefixStateForEscape() {
+        guard let fastContextTrace else { return }
+        escapedPrefixTrace = fastContextTrace
+        escapedPrefixWords = candidates.map(\.word)
+    }
+
     private func searchAndShowCands(client sender: Any?) {
         guard let ws else { return }
         // Allocate the request generation BEFORE both passes. Scheduling must
         // not increment it again, or prereview/review/commit cannot be joined.
         cancelDeferredModelReview()
+        if searchMode == 1 || GoogleTransliterate.hasTriggerSuffix(inputPat) {
+            preservePrefixStateForEscape()
+        }
         fastContextTrace = nil
 
         if GoogleTransliterate.hasTriggerSuffix(inputPat) {
@@ -1031,6 +1050,7 @@ class GyaimController: IMKInputController {
                              selectionRange: NSRange(location: word.count, length: 0),
                              replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
         client.insertText(word, replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
+        logCommitOutcome(path: "kana-\(kanaType)", word: word)
         if Self.shouldStudyKanaConfirm(hiragana: hiragana) {
             ws?.study(word: word, reading: inputPat)
         } else {
@@ -1079,6 +1099,9 @@ class GyaimController: IMKInputController {
             client.insertText(word, replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
         }
 
+        let path = skipStudy ? "deactivation" : searchMode == 1 ? "exact" : searchMode == 2 ? "google" : "prefix"
+        logCommitOutcome(path: path, word: word)
+
         // Register or study logic (skip when deactivating — user didn't intentionally select)
         if skipStudy {
             Log.input.info("Study skipped (deactivation): \"\(word)\" (reading: \"\(reading)\")")
@@ -1104,6 +1127,54 @@ class GyaimController: IMKInputController {
                                                     trace: fastContextTrace) {
             Log.input.info("Fast context accepted detail: input=\"\(self.inputPat)\" payload=\(payload)")
         }
+    }
+
+    /// One line per commit on every path (prefix / exact / google / kana /
+    /// deactivation). Accepted detail stays prefix-only for preference pairs.
+    private func logCommitOutcome(path: String, word: String) {
+        guard Self.isFastContextRerankLoggingEnabled else { return }
+        let inPrefixMode = searchMode == 0
+        if let payload = Self.commitOutcomePayload(
+            path: path, chosenWord: word, context: Self.limitedFastContext(recentCommittedText),
+            prefixWords: inPrefixMode ? candidates.map(\.word) : escapedPrefixWords,
+            trace: inPrefixMode ? fastContextTrace : escapedPrefixTrace) {
+            Log.input.info("Commit outcome: input=\"\(inputPat)\" payload=\(payload)")
+        }
+    }
+
+    /// `prefixRank` is the chosen word's position in the last prefix-mode list
+    /// (raw=0, first displayed candidate=1, absent=nil). `inScoredSet` says
+    /// whether the model review scored that word at all: a miss outside the
+    /// scored set cannot be fixed by the model, whatever its quality.
+    static func commitOutcomePayload(path: String, chosenWord: String, context: String,
+                                     prefixWords: [String], trace: FastContextTrace?) -> String? {
+        var payload: [String: Any] = [
+            "path": path,
+            "context": context,
+            "prefixCandidateCount": prefixWords.count,
+        ]
+        payload["prefixRank"] = prefixWords.firstIndex(of: chosenWord)
+        if let trace {
+            payload["controller"] = trace.controllerID
+            payload["composition"] = trace.compositionID
+            payload["generation"] = trace.generation
+            payload["modelState"] = trace.modelState.rawValue
+            payload["heuristicRank"] = trace.heuristicRank(of: chosenWord)
+            payload["proposedRank"] = trace.proposedRank(of: chosenWord)
+            if let observation = trace.observation {
+                payload["modelOutcome"] = fastContextRerankOutcome(model: observation.response.model ?? "unknown")
+                payload["inDictionarySnapshot"] = observation.request.candidates.contains { $0.text == chosenWord }
+                if let review = observation.response.review {
+                    let scored = Set(review.candidateIndices)
+                    payload["scoredCount"] = scored.count
+                    payload["inScoredSet"] = observation.request.candidates
+                        .contains { scored.contains($0.index) && $0.text == chosenWord }
+                }
+            }
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8) else { return nil }
+        return json
     }
 
     private func learnCommittedCandidate(_ candidate: SearchCandidate) {
