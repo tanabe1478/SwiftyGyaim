@@ -36,12 +36,21 @@ final class FastContextReviewSchedulingTests: XCTestCase {
         UserDefaults.standard.set(true, forKey: "aiRerankUseModelForFastContext")
         XCTAssertTrue(GyaimController.shouldScheduleModelReview(inputPat: "shitagau"))
         XCTAssertFalse(GyaimController.shouldScheduleModelReview(inputPat: "si"), "below the model input-length gate")
+        // ADR-031: three-letter homophones (kai 会/回, hou 方/法) reach the model.
+        XCTAssertTrue(GyaimController.shouldScheduleModelReview(inputPat: "kai"))
 
         UserDefaults.standard.set(false, forKey: "aiRerankFastContextEnabled")
         XCTAssertFalse(GyaimController.shouldScheduleModelReview(inputPat: "kousin"))
         UserDefaults.standard.set(true, forKey: "aiRerankFastContextEnabled")
         UserDefaults.standard.set(false, forKey: "aiRerankUseBundledZenz")
         XCTAssertFalse(GyaimController.shouldScheduleModelReview(inputPat: "kousin"))
+    }
+
+    /// ADR-031: the correct homophone often sits at rank 4-8 (変える under
+    /// カエル/帰る/蛙), so the model compares up to six exact candidates.
+    func testExactHomophoneReviewScoresSixCandidatesByDefault() {
+        UserDefaults.standard.removeObject(forKey: "aiRerankExactHomophoneMaxCandidates")
+        XCTAssertEqual(BundledZenzRuntime.exactHomophoneMaxCandidates(), 6)
     }
 
     func testSynchronousPassStaysHeuristicWhenModelIsEnabled() {

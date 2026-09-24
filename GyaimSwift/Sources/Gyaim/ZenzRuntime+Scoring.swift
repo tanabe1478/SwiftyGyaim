@@ -282,7 +282,7 @@ extension BundledZenzRuntime {
 
     static func exactHomophoneMaxCandidates() -> Int {
         let configured = GyaimSettings.integer(forKey: "aiRerankExactHomophoneMaxCandidates")
-        return configured > 0 ? min(configured, 6) : 3
+        return configured > 0 ? min(configured, 6) : 6  // ADR-031
     }
 
     static func shouldReviewExactHomophones(best: AIRerankCandidate,
