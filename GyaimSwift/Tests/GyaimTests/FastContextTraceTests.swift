@@ -99,4 +99,38 @@ final class FastContextTraceTests: XCTestCase {
         let response = try JSONDecoder().decode(AIRerankResponse.self, from: Data("{\"order\":[0],\"model\":\"legacy\"}".utf8))
         XCTAssertNil(response.review)
     }
+
+    /// The 見た/見たい regression shape: the user escaped to exact mode for a
+    /// word the prefix list demoted below the model's scored set.
+    func testCommitOutcomeRecordsPrefixRankAndScoredSetMembership() throws {
+        var value = trace()
+        XCTAssertTrue(value.complete(words: ["kou", "公", "甲", "校"], observation: observation(
+            review: AIRerankReview(candidateIndices: [0, 1], scores: ["0": -1, "1": -2], topDecision: "fixed")),
+            generation: 7))
+
+        let payload = try XCTUnwrap(GyaimController.commitOutcomePayload(
+            path: "exact", chosenWord: "校", context: "を変換",
+            prefixWords: ["kou", "公", "甲", "校"], trace: value))
+        XCTAssertFalse(payload.contains("\n"), "payload must stay a single log line")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any])
+        XCTAssertEqual(object["path"] as? String, "exact")
+        XCTAssertEqual(object["context"] as? String, "を変換")
+        XCTAssertEqual(object["prefixRank"] as? Int, 3)
+        XCTAssertEqual(object["heuristicRank"] as? Int, 3)
+        XCTAssertEqual(object["modelState"] as? String, "applied-changed")
+        XCTAssertEqual(object["inDictionarySnapshot"] as? Bool, true)
+        XCTAssertEqual(object["inScoredSet"] as? Bool, false)
+        XCTAssertEqual(object["scoredCount"] as? Int, 2)
+        XCTAssertEqual(object["composition"] as? Int, 2)
+    }
+
+    func testCommitOutcomeWithoutPrefixStateOmitsRanks() throws {
+        let payload = try XCTUnwrap(GyaimController.commitOutcomePayload(
+            path: "kana-hiragana", chosenWord: "した", context: "", prefixWords: [], trace: nil))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any])
+        XCTAssertEqual(object["path"] as? String, "kana-hiragana")
+        XCTAssertEqual(object["prefixCandidateCount"] as? Int, 0)
+        XCTAssertNil(object["prefixRank"])
+        XCTAssertNil(object["modelState"])
+    }
 }

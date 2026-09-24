@@ -414,8 +414,9 @@ def is_incomplete_stem_completion(stem: str, completed: str) -> bool:
     if completed == stem or not completed.startswith(stem) or len(completed) != len(stem) + 1:
         return False
     # A stem already ending in い is not "missing" its い (BUG-025:
-    # garbage "してほしいい" must not demote "してほしい").
-    if completed[-1] == "い" and not stem.endswith("い"):
+    # garbage "してほしいい" must not demote "してほしい"). A past tense in
+    # た/だ is finished too: 見た → 見たい is the desiderative (BUG-043).
+    if completed[-1] == "い" and not stem.endswith(("い", "た", "だ")):
         return True
     return stem.endswith("っ")
 

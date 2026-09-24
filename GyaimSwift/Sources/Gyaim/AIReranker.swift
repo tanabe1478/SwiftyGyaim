@@ -280,12 +280,13 @@ enum AIReranker {
     /// A stem that already ends with い is NOT missing its い — the premise of
     /// the い rule doesn't apply. Without this guard, a garbage study entry
     /// like "してほしいい" made the legitimate "してほしい" look like an
-    /// incomplete stem and demoted it (BUG-025).
+    /// incomplete stem and demoted it (BUG-025). A past tense in た/だ is
+    /// finished for the same reason: 見た → 見たい is the desiderative (BUG-043).
     static func isIncompleteStemCompletion(stem: String, completed: String) -> Bool {
         guard completed != stem,
               completed.hasPrefix(stem),
               completed.dropFirst(stem.count).count == 1 else { return false }
-        if completed.last == "い", stem.last != "い" { return true }
+        if completed.last == "い", let last = stem.last, !"いただ".contains(last) { return true }
         if stem.last == "っ" { return true }
         return false
     }
