@@ -7,7 +7,7 @@ ADR はログ。新しい記録が積み重なるため、エージェントは�
 ## ファイル名
 
 ```text
-NNN-short-title.md   # 連番3桁（001-029 使用中）。テンプレは 000-template.md
+NNN-short-title.md   # 連番3桁（001-031 使用中）。テンプレは 000-template.md
 ```
 
 ## テンプレート

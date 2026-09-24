@@ -155,6 +155,23 @@ final class ConnectionDictTests: XCTestCase {
         XCTAssertTrue(deep.map(\.word).contains("局所化する"), "Expected 局所化する in \(deep.map(\.word))")
     }
 
+    /// ADR-030: UniDic サ変 nouns take する forms ("jissousimasu" -> 実装します);
+    /// non-サ変 nouns (要件, 時間) must not.
+    func testSahenNounsTakeSuruForms() throws {
+        assertExactMatches([
+            ("jissousimasu", "実装します"),
+            ("tourokusite", "登録して"),
+            ("kiyosita", "寄与した"),
+            ("kakuninnsimasu", "確認します"),
+        ])
+        for pat in ["youkennsimasu", "jikannsimasu"] {
+            var words: [String] = []
+            dict.search(pat: pat, searchMode: 1) { word, _, _ in words.append(word) }
+            XCTAssertFalse(words.contains { $0.hasSuffix("します") && $0.contains { ("\u{4E00}"..."\u{9FFF}").contains($0) } },
+                           "non-サ変 noun composed with する for '\(pat)': \(words)")
+        }
+    }
+
     private func assertExactMatches(_ expectations: [(String, String)], file: StaticString = #filePath, line: UInt = #line) {
         for (pat, expectedWord) in expectations {
             var words: [String] = []
