@@ -1,7 +1,7 @@
 # Spec: 設定ストア（settings.json）
 
 > Trigger: GyaimSettings.swift
-> Last updated: 2026-09-13 (aiRerankFastContextSelectionWaitMs 追加、ReviewDelayMs の意味変更)
+> Last updated: 2026-09-24 (ExactHomophoneMaxCandidates 既定6・FastContextModelMinInputLength 既定3 — ADR-031)
 
 ## 概要
 
@@ -59,7 +59,7 @@
 | `aiRerankFastContextEnabled` | Bool | true | ○ | heuristic 並べ替えの有効化 |
 | `aiRerankUseModelForFastContext` | Bool | false | ○ | 同梱モデルによるレビューを使う |
 | `aiRerankFastContextLoggingEnabled` | Bool | false | ○ | 入力ごとのレイテンシ・順序ログ |
-| `aiRerankFastContextModelMinInputLength` | Int | 4（1〜12） | – | モデルレビューを走らせる最小入力長 |
+| `aiRerankFastContextModelMinInputLength` | Int | 3（1〜12。ADR-031 で4から変更） | – | モデルレビューを走らせる最小入力長 |
 | `aiRerankFastContextNormalReviewMinInputLength` | Int | 5（1〜12） | – | 同音異義語以外の通常レビューの最小入力長 |
 | `aiRerankFastContextMaxContextLength` | Int | 20（1〜200） | – | モデルに渡す左文脈の末尾文字数 |
 | `aiRerankFastContextCandidateLimit` | Int | 24（2〜48） | – | 並べ替え対象の辞書候補数 |
@@ -74,7 +74,7 @@
 | `aiRerankZenzWeight` | Double | 0.30 | – | 全件 rerank 時のモデルスコア重み |
 | `aiRerankZenzMaxCandidates` | Int | 8 | – | 全件 rerank でモデル採点する上位件数 |
 | `aiRerankExactHomophoneMargin` | Double | 0.10 | – | 同音異義語上書きに必要な平均 logprob 差 |
-| `aiRerankExactHomophoneMaxCandidates` | Int | 3（〜6） | – | 同音異義語比較の候補数 |
+| `aiRerankExactHomophoneMaxCandidates` | Int | 6（〜6。ADR-031 で3から変更） | – | 同音異義語比較の候補数 |
 | `aiRerankExactHomophoneAffinityThreshold` | Double | 0.75（〜1.0） | – | この affinity 以上ならレビューをスキップ |
 | `aiRerankExactHomophoneFrequencyMarginWeight` | Double | 2.0 | – | best の study 頻度優位 1 doubling あたりの追加 margin（BUG-036） |
 

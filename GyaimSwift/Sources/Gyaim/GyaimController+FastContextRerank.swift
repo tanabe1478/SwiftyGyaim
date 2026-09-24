@@ -266,7 +266,7 @@ extension GyaimController {
 
     private static func minFastContextModelInputLength() -> Int {
         let configured = GyaimSettings.integer(forKey: "aiRerankFastContextModelMinInputLength")
-        guard configured > 0 else { return 4 }
+        guard configured > 0 else { return 3 }  // ADR-031
         return min(max(configured, 1), 12)
     }
 

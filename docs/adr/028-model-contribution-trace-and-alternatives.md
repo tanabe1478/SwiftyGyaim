@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-09-13)
+Accepted (2026-09-13). 採点件数（Decision 3）は ADR-031 で置き換え
 
 ## Decision
 
