@@ -27,6 +27,7 @@ SwiftyGyaim の領域別仕様書。CLAUDE.md/AGENTS.md の「Required Spec Work
 | `settings.md` | GyaimSettings.swift（設定キーを追加・変更する全ファイル） | 設定ストア、全キー一覧と既定値、ADR-027 |
 | `ai-rerank.md` | AIReranker*.swift, ZenzRuntime*.swift 等 | ヒューリスティック/モデル rerank、スコア統合 |
 | `zenz-model-tuning.md` | Zenz モデル・プロンプト調整 | モデル選定とチューニングの記録（Draft） |
+| `decision-model.md` | Tools/decision-model/ | Windowsでの候補選択モデル学習・校正・評価・export |
 | `project-setup.md` | project.yml, Scripts/*.sh, workflows 等 | ビルド・テスト・配布のセットアップ |
 | `bug-memory.md` | 全ファイル（デバッグ時） | バグ索引と運用ガイド（詳細は `bugs/`） |
 | `bugs/BUG-*.md` | 個別バグ | 再利用可能なバグ知識 |

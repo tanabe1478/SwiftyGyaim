@@ -1,0 +1,6 @@
+data/
+runs/
+artifacts/
+private/
+.pytest_cache/
+*.log

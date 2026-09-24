@@ -1,0 +1,30 @@
+schemaVersion: 1
+modelVersion: gyaim-decision-small-a-v1
+seed: 42
+model:
+  hidden_size: 192
+  layers: 3
+  heads: 4
+  vocab_size: 6000
+  dropout: 0.1
+  separate_encoder: false
+  metadata: all
+data:
+  directory: data/public-v2
+  tokenizer: data/tokenizer/tokenizer.json
+  max_context_tokens: 112
+  max_candidate_tokens: 48
+  segment_budgets: [64, 24, 24]
+  max_candidates: 24
+training:
+  batch_size: 16
+  learning_rate: 0.0003
+  weight_decay: 0.01
+  epochs: 4
+  precision: fp16
+  device: cuda
+  checkpoint_steps: 500
+  validation_steps: 500
+  benchmark_steps: 500
+  grad_clip: 1.0
+  cpu_threads: 4
