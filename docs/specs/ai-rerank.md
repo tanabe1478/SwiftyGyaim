@@ -188,6 +188,14 @@ acceptedRanks は prefix mode の意図的確定だけを分母にするため�
 
 payload: `path`（prefix / exact / google / kana-hiragana / kana-katakana / deactivation）、`context`（モデルに渡すのと同じ末尾20文字）、`prefixCandidateCount`、`prefixRank`（直前の prefix list 上の順位。raw=0、先頭表示=1、なければ省略）、trace がある場合は `controller` / `composition` / `generation` / `modelState` / `heuristicRank` / `proposedRank`、レビュー結果がある場合は `modelOutcome` / `inDictionarySnapshot`（レビュー request の辞書候補に含まれたか）/ `scoredCount` / `inScoredSet`。完全一致モードや Google へ移るときは、直前の prefix trace と候補語リストを `escapedPrefixTrace` / `escapedPrefixWords` に退避し、確定時に使う。確定語以外の候補文字列は記録しない。
 
+### タイピングシミュレーション（ログなしの評価）
+
+`Tools/eval/run-typing-simulation.sh` は、正解付きの区切り列（`Tools/eval/typing-corpus.jsonl`、`build-typing-corpus.py` で生成）を `TypingSimulationTests` で本物の検索・`buildPrefixCandidates`（heuristic とモデルレビュー）に流し、区切りごとに正解の順位を記録する。ひらがなのみの区切りはかな確定、カタカナのみはカタカナ確定、それ以外は変換として扱い、確定後は `GyaimController` と同じく study / ContextDict を更新して次へ進む。予測リストにない語は完全一致モード、それにもなければ `absent` とし、Google 変換で得たとみなして学習する。
+
+各文は「普段の区切り」（dogfoodログで観測した、内容語ごとに変換し助詞はかな確定する打ち方）と「自然な区切り」（複合語・動詞+助動詞・名詞+する をまとめる）の2通りを持つ。両者の差は、ユーザーが癖で回避している弱点の大きさを示す。
+
+辞書・ContextDict・settings はすべて一時ディレクトリに置き、`loggingEnabled=false` で `~/.gyaim/gyaim.log` に書かない。`GYAIM_TYPING_SIM=1` のときだけ実行され、通常のユニットテストではスキップされる。`GYAIM_TYPING_SIM_EPOCHS` で複数回流して学習後の状態を、`GYAIM_TYPING_SIM_STUDYDICT` で既存の学習辞書の写しから始めた状態を測れる。コーパスは手書きの推定区切りなので、得られるのは実機の順位ではなく比較用の目安。
+
 ### モデル効果の評価（composition trace）
 
 「モデルが何回変更したか」ではなく「同じ確定について heuristic 単独の順位より良くなった件数 − 悪くなった件数」で効果を測る。`GyaimController` は composition ごとに `FastContextTrace` を保持し、確定時の `Fast context accepted detail` payload に次を載せる。
