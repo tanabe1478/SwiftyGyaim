@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, ZenzRuntime.swift, ZenzRuntime+Scoring.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController+FastContextRerank.swift, FastContextTrace.swift
-> Last updated: 2026-09-24 (同音異義語レビューの採点6件・最小入力長3 — ADR-031)
+> Last updated: 2026-09-26 (確定経路の分類に exact-top1 / google-top1 / kana-intended を追加)
 
 ## 概要
 
@@ -178,13 +178,15 @@ acceptedRanks は prefix mode の意図的確定だけを分母にするため�
 | 分類 | 意味 |
 |---|---|
 | `prefix-top1` / `kana-top1` | 辞書1位がそのまま欲しい語だった（hit） |
+| `exact-top1` / `google-top1` | 予測で1位だった語を、Enter で完全一致モードへ移ってから / Google 変換で確定した（hit。操作の癖で、順位の失敗ではない） |
 | `prefix-lower` / `exact-escape` / `google` | 1位ではなかった（strict miss） |
-| `kana-other` / `kana-absent` | かな確定した語が辞書1位と異なる（suspected miss。表記の好みを含む） |
+| `kana-other` / `kana-absent` | かな確定した語が辞書1位と異なり、同じ読みを集計期間中に漢字でも確定している（suspected miss） |
+| `kana-intended` | かな確定した語が辞書1位と異なるが、その読みを漢字で確定したことがない（助詞を毎回かなキーで確定するなど。判定対象外） |
 | `prefix-raw` / `kana-no-dictionary` / `deactivation` | 判定対象外 |
 
 `firstCandidateRate = hit / (hit + strict + suspected)`。`strictMissRate` はかな確定をすべて意図的とみなした下限、`suspectedMissRate` は上限。commit 行に controller がないため、別フィールドの入力が交互に来ると照合が混ざり得る。
 
-`commitDiagnostics` は `Commit outcome: input=... payload={...}` 行（全確定経路で1行、`aiRerankFastContextLoggingEnabled=true` 時のみ）を読み、miss を prefix list 上の順位（`byPrefixRank`）・モデル採点集合への包含（`byScoredSet`: scored / notScored / noReview）・`modelOutcome` 別に数える。`notScored` の miss はモデルの質にかかわらず救えないので、採点集合・heuristic 側の問題として扱う。
+`commitDiagnostics` は `Commit outcome: input=... payload={...}` 行（全確定経路で1行、`aiRerankFastContextLoggingEnabled=true` 時のみ）を読み、上と同じ規則（予測1位の exact/google は miss にしない、漢字で確定したことのない読みのかな確定は `kanaIntended` として数える）で miss を prefix list 上の順位（`byPrefixRank`）・モデル採点集合への包含（`byScoredSet`: scored / notScored / noReview）・`modelOutcome` 別に数える。`notScored` の miss はモデルの質にかかわらず救えないので、採点集合・heuristic 側の問題として扱う。
 
 payload: `path`（prefix / exact / google / kana-hiragana / kana-katakana / deactivation）、`context`（モデルに渡すのと同じ末尾20文字）、`prefixCandidateCount`、`prefixRank`（直前の prefix list 上の順位。raw=0、先頭表示=1、なければ省略）、trace がある場合は `controller` / `composition` / `generation` / `modelState` / `heuristicRank` / `proposedRank`、レビュー結果がある場合は `modelOutcome` / `inDictionarySnapshot`（レビュー request の辞書候補に含まれたか）/ `scoredCount` / `inScoredSet`。完全一致モードや Google へ移るときは、直前の prefix trace と候補語リストを `escapedPrefixTrace` / `escapedPrefixWords` に退避し、確定時に使う。確定語以外の候補文字列は記録しない。
 
