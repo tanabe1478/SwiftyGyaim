@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-09-24)
+Accepted (2026-09-24). 採点件数は ADR-032 で全件採点に置き換え（最小入力長3は存続）
 
 ## Decision
 

@@ -245,6 +245,8 @@ extension GyaimController {
     static func fastContextRerankOutcome(model: String) -> String {
         let outcomes = [
             ("heuristic-prereview", "heuristic-prereview"),
+            ("review-llm-ranked-unavailable", "llm-rank-unavailable"),
+            ("review-llm-ranked", "llm-ranked"),
             ("review-affinity-skipped", "affinity-skip"),
             ("review-length-skipped", "short-input-skip"),
             ("review-skipped", "protected-exact-skip"),
