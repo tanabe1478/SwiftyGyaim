@@ -25,7 +25,7 @@ Accepted (2026-09-24)
 - シミュレータの自然な区切りで 1 位率 0.737 → 0.758（実装します・登録して が候補なし → 1 位）。普段の区切りの結果は不変。
 - 追加行は する の活用形まで入力したときだけ使われる。UniDic の判定誤り（例: 鼻歌・奉行 もサ変可能とされる）はその入力をしたときにしか現れない。
 - UniDic で複数語に分かれる複合語（再利用など）は対象外。名詞+名詞の複合語は別の判断（未対応）。
-- `Resources/THIRD_PARTY_NOTICES.txt` に UniDic の BSD 表示を同梱する。
+- `Resources/DICTIONARY_THIRD_PARTY_NOTICES.txt` に UniDic の BSD 表示を同梱する。
 
 ## References
 
