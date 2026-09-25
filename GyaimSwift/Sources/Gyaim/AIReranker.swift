@@ -116,17 +116,11 @@ enum AIReranker {
            !isRawHiraganaCandidate(candidate, request: request) {
             contributions["contextAffinityBonus"] = min(affinity, 1.0) * 1.50
         }
-        if candidate.source == "study", let frequency = candidate.studyFrequency, frequency > 1 {
-            // Cap at 0.60 so a heavily used homophone (更新 freq 101) can beat a
-            // rarely used one (行進 freq 11) even when both are exact-reading
-            // study entries — 0.30 saturated at freq 8 and made them tie (BUG-026).
-            contributions["studyFrequencyBonus"] = min(0.60, log2(Double(frequency)) * 0.10)
-        }
+        contributions["studyFrequencyBonus"] = studyFrequencyBonus(candidate)
         contributions["politeNegativePredictionPenalty"] = -politeNegativePredictionPenalty(candidate: candidate,
                                                                                              request: request)
-        if candidate.text.contains(where: isKanji) {
-            contributions["kanjiBonus"] = 0.10
-        }
+        contributions["kanjiBonus"] = candidate.text.contains(where: isKanji) ? 0.10 : 0
+        contributions["corpusFrequencyBonus"] = corpusFrequencyBonus(candidate)
         contributions["naturalFunctionWordPhraseBonus"] = naturalFunctionWordPhraseBonus(candidate.text)
         contributions["punctuationSuffixPenalty"] = -punctuationSuffixPenalty(candidate.text)
         contributions["punctuatedInputMismatchPenalty"] = -punctuatedInputMismatchPenalty(candidate: candidate,
@@ -142,6 +136,22 @@ enum AIReranker {
         contributions["scriptTransitionPenalty"] = -unnaturalScriptTransitionPenalty(candidate.text)
         let nonZero = contributions.filter { $0.value != 0 }
         return AIRerankScoreBreakdown(total: nonZero.values.reduce(0, +), contributions: nonZero)
+    }
+
+    private static func studyFrequencyBonus(_ candidate: AIRerankCandidate) -> Double {
+        guard candidate.source == "study", let frequency = candidate.studyFrequency, frequency > 1 else { return 0 }
+        // Cap at 0.60 so a heavily used homophone (更新 freq 101) can beat a
+        // rarely used one (行進 freq 11) even when both are exact-reading
+        // study entries — 0.30 saturated at freq 8 and made them tie (BUG-026).
+        return min(0.60, log2(Double(frequency)) * 0.10)
+    }
+
+    /// General frequency prior for dictionary candidates (CorpusFrequency, off at weight 0).
+    private static func corpusFrequencyBonus(_ candidate: AIRerankCandidate) -> Double {
+        let weight = CorpusFrequency.weight
+        guard weight > 0, candidate.source != "synthetic", candidate.source != "external",
+              let count = CorpusFrequency.shared.count(of: candidate.text) else { return 0 }
+        return weight * log10(1 + Double(count))
     }
 
     private static func localScore(candidate: AIRerankCandidate, request: AIRerankRequest) -> Double {
