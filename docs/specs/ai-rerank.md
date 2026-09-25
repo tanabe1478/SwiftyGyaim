@@ -204,7 +204,7 @@ heuristic を減らす検討用に、`GYAIM_TYPING_SIM_LLM_RANK=1` で `TypingSi
 
 ### 採点の一括化（scoreBatch）
 
-`LlamaZenzContext.score` は候補ごとに `llama_decode` を呼ぶ。プロンプト部分は KV キャッシュを共通接頭辞で使い回すが、decode 1回ごとに数 ms の固定コストがかかる（Release、24候補で約65ms）。`LlamaZenzContext+Batch.swift` の `scoreBatch(prompt:continuations:)` は、プロンプトを1回だけ decode してその最後の位置の log-softmax で全候補の1トークン目を採点し、2トークン目以降は候補ごとに別の sequence（プロンプトの KV セルを `llama_kv_cache_seq_cp` で共有）として1つの batch にまとめて decode する。Release で6候補 約20→8ms、24候補 約65→11ms（`LlamaScoringBenchmarkTests`、`GYAIM_LLAMA_BENCH=1`）。値は `score` と 5e-3 以内で一致する（batch カーネルの丸め差。`testBatchScoresMatchOneByOneScores`）。候補数が48を超える、またはトークン数が batch 容量（512）を超える場合は `score` に戻る。同音異義語レビュー（`exactHomophoneReviewRerank`）はこれを使う。コーパスは手書きの推定区切りなので、得られるのは実機の順位ではなく比較用の目安。
+`LlamaZenzContext.score` は候補ごとに `llama_decode` を呼ぶ。プロンプト部分は KV キャッシュを共通接頭辞で使い回すが、decode 1回ごとに数 ms の固定コストがかかる（Release、24候補で約65ms）。`LlamaZenzContext+Batch.swift` の `scoreBatch(prompt:continuations:)` は、プロンプトを1回だけ decode してその最後の位置の log-softmax で全候補の1トークン目を採点し、2トークン目以降は候補ごとに別の sequence（プロンプトの KV セルを `llama_kv_cache_seq_cp` で共有）として1つの batch にまとめて decode する。Release で6候補 約20→8ms、24候補 約65→11ms（`LlamaScoringBenchmarkTests`、`GYAIM_LLAMA_BENCH=1`）。値は `score` と Metal で 2e-3 以内、CPU バックエンド（CI）で 0.08 程度まで一致する（batch サイズでカーネルの丸めが変わるため。`testBatchScoresMatchOneByOneScores` は 0.1 で検査）。候補数が48を超える、またはトークン数が batch 容量（512）を超える場合は `score` に戻る。同音異義語レビュー（`exactHomophoneReviewRerank`）はこれを使う。コーパスは手書きの推定区切りなので、得られるのは実機の順位ではなく比較用の目安。
 
 ### モデル効果の評価（composition trace）
 
