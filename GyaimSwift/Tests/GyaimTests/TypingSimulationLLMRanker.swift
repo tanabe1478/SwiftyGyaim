@@ -28,7 +28,8 @@ final class TypingSimulationLLMRanker {
                                       context: GyaimController.limitedFastContext(leftContext), candidates: [])
         let prompt = BundledZenzRuntime.prompt(for: request)
         let start = CFAbsoluteTimeGetCurrent()
-        let scored = candidates.map { ($0, context.score(prompt: prompt, continuation: $0.word) ?? -99) }
+        let batch = context.scoreBatch(prompt: prompt, continuations: candidates.map(\.word))
+        let scored = zip(candidates, batch).map { ($0, $1 ?? -99) }
         var result: [String: Any] = ["llmMs": Int((CFAbsoluteTimeGetCurrent() - start) * 1000),
                                      "llmScored": scored.count]
         func rank(_ bonus: (SearchCandidate) -> Double) -> Int? {
