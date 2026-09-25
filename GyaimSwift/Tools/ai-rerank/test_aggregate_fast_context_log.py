@@ -159,11 +159,26 @@ class CommitOutcomeTests(unittest.TestCase):
             # kana commits
             rerank("2026-09-24 10:00:09", "site", ["して", "指摘"]),
             info("2026-09-24 10:00:10", 'Fixed as kana(hiragana): "して" (input: "site", candidates: 3)'),
+            # sita is also converted to kanji elsewhere, so its kana commit is suspected
+            info("2026-09-24 09:59:00", 'Fixed: "下" (reading: "sita", index: 1/3, candidates: ["sita", "下"])'),
             rerank("2026-09-24 10:00:11", "sita", ["下", "した"]),
             info("2026-09-24 10:00:12", 'Fixed as kana(hiragana): "した" (input: "sita", candidates: 3)'),
+            info("2026-09-24 09:59:01", 'Fixed: "時" (reading: "to", index: 1/3, candidates: ["to", "時"])'),
             rerank("2026-09-24 10:00:13", "to", ["時", "等"]),
             info("2026-09-24 10:00:14", 'Fixed as kana(hiragana): "と" (input: "to", candidates: 3)'),
             info("2026-09-24 10:00:15", 'Fixed as kana(hiragana): "おきましたよ" (input: "okimasitayo", candidates: 2)'),
+            # particle never converted to kanji: kana key on purpose
+            rerank("2026-09-24 10:00:15", "no", ["能", "野"]),
+            info("2026-09-24 10:00:15", 'Fixed as kana(hiragana): "の" (input: "no", candidates: 3)'),
+            # Enter on the raw input for a word the prefix list already ranked first
+            info("2026-09-24 10:00:15", "search(de, prefix): 1.0ms"),
+            rerank("2026-09-24 10:00:15", "de", ["出", "手"]),
+            info("2026-09-24 10:00:15", "search(de, exact): 1.0ms"),
+            info("2026-09-24 10:00:15", 'Fixed: "出" (reading: "de", index: 2/3, candidates: ["で", "デ", "出"])'),
+            # google for a word the prefix list already ranked first
+            rerank("2026-09-24 10:00:15", "youkakuninn", ["要確認"]),
+            info("2026-09-24 10:00:15", 'Google Transliterate triggered: "youkakuninn"'),
+            info("2026-09-24 10:00:15", 'Fixed: "要確認" (reading: "youkakuninn", index: 1/2, candidates: ["youkakuninn", "要確認"])'),
             # google
             info("2026-09-24 10:00:16", 'Google Transliterate triggered: "toriniku"'),
             info("2026-09-24 10:00:17", 'Fixed: "鶏肉" (reading: "toriniku", index: 1/3, candidates: ["toriniku", "鶏肉"])'),
@@ -174,16 +189,16 @@ class CommitOutcomeTests(unittest.TestCase):
         ]
         result = MODULE.collect_commit_outcomes(lines, cutoff=None)
 
-        self.assertEqual(result["count"], 10)
+        self.assertEqual(result["count"], 15)
         self.assertEqual(result["byPath"], {
-            "prefix-top1": 1, "kana-top1": 1,
+            "prefix-top1": 3, "kana-top1": 1, "exact-top1": 1, "google-top1": 1,
             "prefix-lower": 1, "exact-escape": 1, "kana-other": 1, "kana-absent": 1, "google": 1,
-            "prefix-raw": 1, "kana-no-dictionary": 1, "deactivation": 1,
+            "prefix-raw": 1, "kana-no-dictionary": 1, "kana-intended": 1, "deactivation": 1,
         })
-        self.assertEqual(result["decidable"], 7)
-        self.assertEqual(result["firstCandidateRate"], round(2 / 7, 3))
-        self.assertEqual(result["strictMissRate"], round(3 / 7, 3))
-        self.assertEqual(result["suspectedMissRate"], round(5 / 7, 3))
+        self.assertEqual(result["decidable"], 11)
+        self.assertEqual(result["firstCandidateRate"], round(6 / 11, 3))
+        self.assertEqual(result["strictMissRate"], round(3 / 11, 3))
+        self.assertEqual(result["suspectedMissRate"], round(5 / 11, 3))
         self.assertEqual(result["exactEscapePrefixRank"], {"inHead": 0, "notInHead": 1})
         self.assertEqual(result["examples"]["exact-escape"][0]["word"], "見た")
 
@@ -214,15 +229,19 @@ class CommitDiagnosticsTests(unittest.TestCase):
                      "modelOutcome": "exact-homophone-passed"}),
             outcome({"path": "kana-hiragana", "modelState": "not-scheduled"}),
             outcome({"path": "google"}),
+            # not misses: Enter on raw for a rank-1 word, kana for a reading never converted
+            outcome({"path": "exact", "prefixRank": 1}),
+            outcome({"path": "google", "prefixRank": 1}),
         ]
         result = MODULE.collect_commit_diagnostics(lines, cutoff=None)
 
-        self.assertEqual(result["count"], 8)
-        self.assertEqual(result["missCount"], 4)
-        self.assertEqual(result["misses"]["byPrefixRank"], {"2-3": 1, "9+": 1, "absent": 2})
-        self.assertEqual(result["misses"]["byScoredSet"], {"noReview": 2, "notScored": 1, "scored": 1})
+        self.assertEqual(result["count"], 10)
+        self.assertEqual(result["missCount"], 3)
+        self.assertEqual(result["kanaIntended"], 1)
+        self.assertEqual(result["misses"]["byPrefixRank"], {"2-3": 1, "9+": 1, "absent": 1})
+        self.assertEqual(result["misses"]["byScoredSet"], {"noReview": 1, "notScored": 1, "scored": 1})
         self.assertEqual(result["misses"]["byModelOutcome"], {
-            "exact-homophone-fixed": 1, "exact-homophone-passed": 1, "no-trace": 1, "not-scheduled": 1,
+            "exact-homophone-fixed": 1, "exact-homophone-passed": 1, "no-trace": 1,
         })
 
 
