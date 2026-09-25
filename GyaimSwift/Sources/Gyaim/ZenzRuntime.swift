@@ -276,9 +276,11 @@ final class BundledZenzRuntime: ZenzRuntime {
         Log.input.info("Zenz exact-homophone review start: input=\"\(request.inputPat)\" "
             + "best=\"\(best.text)\" indices=\(indices)")
         var scores: [Int: Double] = [:]
-        for index in indices {
-            guard let candidate = request.candidates.first(where: { $0.index == index }),
-                  let score = activeContext.score(prompt: prompt, continuation: candidate.text), score.isFinite else { continue }
+        let scoredCandidates = indices.compactMap { index in request.candidates.first { $0.index == index } }
+        let batchScores = activeContext.scoreBatch(prompt: prompt, continuations: scoredCandidates.map(\.text))
+        for (candidate, score) in zip(scoredCandidates, batchScores) {
+            guard let score, score.isFinite else { continue }
+            let index = candidate.index
             scores[index] = score
             Log.input.debug("Zenz exact-homophone score: input=\"\(request.inputPat)\" "
                 + "index=\(index) text=\"\(candidate.text)\" score=\(String(format: "%.4f", score))")

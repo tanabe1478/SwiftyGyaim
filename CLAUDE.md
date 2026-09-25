@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（315テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（317テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -130,6 +130,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | HomophoneFrequencyGuardTests | Tests/GyaimTests/ | 4 | 同音異義語上書きの頻度ガード（BUG-036、実ログ数値で固定） |
 | FastContextReviewSchedulingTests | Tests/GyaimTests/ | 8 | 背景モデルレビューの予約判定・スロットル/合流待ちのクランプ・同期パスがモデルを呼ばないこと・ticket の待機/一回適用（ADR-029） |
 | FastContextTraceTests / HomophoneAlternativeOrderTests / AcceptedDetailPayloadTests | Tests/GyaimTests/ | 25 | composition trace と確定 payload（全確定経路の Commit outcome を含む）、同音異義語の下位並べ替え（ADR-028） |
+| LlamaScoringBenchmarkTests | Tests/GyaimTests/ | 2 | 一括採点（scoreBatch）と1件ずつの採点の一致、採点時間のベンチマーク（通常はskip） |
 | TypingSimulationTests | Tests/GyaimTests/ | 1 | 正解付きコーパスを本物の検索・rerankに流して順位を測る（通常はskip。`Tools/eval/run-typing-simulation.sh` で実行） |
 | StudySuspectsTests | Tests/GyaimTests/ | 3 | 疑わしい学習エントリ検出（typo完成形・長期未使用・false positive 抑止） |
 | FileLoggerRotationTests | Tests/GyaimTests/ | 1 | ログ7世代ローテーションのシフト |
