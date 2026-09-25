@@ -14,7 +14,7 @@ UniDic is only needed to regenerate (not at IME runtime):
     /tmp/ud/bin/python Tools/dict/add-sahen-connection.py --write
 
 UniDic (unidic-lite 1.0.8 = UniDic 2.1.2) is used under its BSD license;
-see Resources/THIRD_PARTY_NOTICES.txt.
+see Resources/DICTIONARY_THIRD_PARTY_NOTICES.txt.
 """
 
 from __future__ import annotations
