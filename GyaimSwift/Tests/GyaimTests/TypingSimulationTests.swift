@@ -18,6 +18,7 @@ final class TypingSimulationTests: XCTestCase {
     }
 
     private var tempDir = FileManager.default.temporaryDirectory
+    private var llmRanker: TypingSimulationLLMRanker?
 
     override func setUpWithError() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GYAIM_TYPING_SIM"] == "1",
@@ -56,13 +57,18 @@ final class TypingSimulationTests: XCTestCase {
         let epochs = max(1, Int(env["GYAIM_TYPING_SIM_EPOCHS"] ?? "") ?? 1)
 
         let modelReady = BundledAIRerankModel.shared.loadIfAvailable(bundle: Bundle(for: Self.self))
+        if env["GYAIM_TYPING_SIM_LLM_RANK"] == "1" {
+            llmRanker = TypingSimulationLLMRanker(bundle: Bundle(for: Self.self))
+        }
         let corpus = try loadCorpus(path: corpusPath)
+        // Learning-only warm-up (not scored): measures carry-over to new sentences.
+        let training = try env["GYAIM_TYPING_SIM_TRAIN_CORPUS"].map { try loadCorpus(path: $0) } ?? [:]
         var report: [String: Any] = ["corpus": corpusPath, "modelMapped": modelReady, "epochs": epochs,
                                      "settings": env["GYAIM_TYPING_SIM_SETTINGS"] ?? "{}"]
         var bySegmentation: [String: Any] = [:]
         for name in corpus.keys.sorted() {
-            bySegmentation[name] = replay(sentences: corpus[name] ?? [], name: name, dictPath: dictPath,
-                                          epochs: epochs, studySeed: env["GYAIM_TYPING_SIM_STUDYDICT"])
+            bySegmentation[name] = replay(sentences: corpus[name] ?? [], training: training[name] ?? [], name: name,
+                                          dictPath: dictPath, epochs: epochs)
         }
         report["segmentations"] = bySegmentation
         let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
@@ -86,8 +92,10 @@ final class TypingSimulationTests: XCTestCase {
         return result
     }
 
-    private func replay(sentences: [(id: String, segments: [Segment])], name: String, dictPath: String,
-                        epochs: Int, studySeed: String?) -> [String: Any] {
+    private func replay(sentences: [(id: String, segments: [Segment])],
+                        training: [(id: String, segments: [Segment])], name: String, dictPath: String,
+                        epochs: Int) -> [String: Any] {
+        let studySeed = ProcessInfo.processInfo.environment["GYAIM_TYPING_SIM_STUDYDICT"]
         let runDir = tempDir.appendingPathComponent(name)
         try? FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
         let studyPath = runDir.appendingPathComponent("studydict.txt").path
@@ -97,6 +105,17 @@ final class TypingSimulationTests: XCTestCase {
                             localDictFile: runDir.appendingPathComponent("localdict.txt").path,
                             studyDictFile: studyPath)
         let rk = RomaKana()
+
+        let ranker = llmRanker
+        llmRanker = nil  // warm-up learns only; no LLM scoring cost
+        for sentence in training {
+            var context = ""
+            for segment in sentence.segments {
+                _ = simulate(segment, context: context, ws: ws, rk: rk)
+                context = String((context + segment.expected).suffix(80))
+            }
+        }
+        llmRanker = ranker
 
         var records: [[String: Any]] = []
         var counts: [String: Int] = [:]
@@ -219,6 +238,10 @@ final class TypingSimulationTests: XCTestCase {
                 record["inScoredSet"] = observation.request.candidates
                     .contains { scored.contains($0.index) && $0.text == expected }
             }
+        }
+        if let llmRanker {
+            record.merge(llmRanker.ranks(searchResults: searchResults, input: input, hiragana: hiragana,
+                                         leftContext: context, expected: expected)) { _, new in new }
         }
         return (record, reviewed)
     }

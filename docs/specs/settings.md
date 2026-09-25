@@ -1,7 +1,7 @@
 # Spec: 設定ストア（settings.json）
 
 > Trigger: GyaimSettings.swift
-> Last updated: 2026-09-24 (ExactHomophoneMaxCandidates 既定6・FastContextModelMinInputLength 既定3 — ADR-031)
+> Last updated: 2026-09-26 (実験用の aiRerankCorpusFrequencyPath / Weight を追加)
 
 ## 概要
 
@@ -77,6 +77,8 @@
 | `aiRerankExactHomophoneMaxCandidates` | Int | 6（〜6。ADR-031 で3から変更） | – | 同音異義語比較の候補数 |
 | `aiRerankExactHomophoneAffinityThreshold` | Double | 0.75（〜1.0） | – | この affinity 以上ならレビューをスキップ |
 | `aiRerankExactHomophoneFrequencyMarginWeight` | Double | 2.0 | – | best の study 頻度優位 1 doubling あたりの追加 margin（BUG-036） |
+| `aiRerankCorpusFrequencyPath` | String | ""（無効） | – | 実験用。一般コーパスの出現頻度表（`surface<TAB>count`、`Tools/dict/build-corpus-frequency.py` で生成）のパス |
+| `aiRerankCorpusFrequencyWeight` | Double | 0（無効） | – | 実験用。heuristic の `corpusFrequencyBonus = weight × log10(1 + count)` の重み |
 
 ### 削除済みキー
 

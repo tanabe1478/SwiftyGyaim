@@ -91,6 +91,31 @@ SENTENCES = [
 ]
 
 
+# Held-out set: the same words as SENTENCES in new contexts, for measuring what
+# learning from SENTENCES carries over (GYAIM_TYPING_SIM_TRAIN_CORPUS).
+HELDOUT = [
+    "sono:その kikai:機会 ni:に kikai:機械 +gakusyuu:学習 wo:を benkyou:勉強 +sita:した .:。",
+    "kouenn:公園 no:の benti:ベンチ de:で kouenn:講演 no:の siryou:資料 wo:を yonnda:読んだ .:。",
+    "kinou:昨日 tuika:追加 +sita:した kinou:機能 ga:が ugokanai:動かない .:。",
+    "rogu:ログ no:の keisiki:形式 wo:を kaeru:変える to:と ie:家 ni:に kaeru:帰る .:。",
+    "wakaranai:分からない tokoro:ところ ga:が ooi:多い node:ので sukosi:少し sirabemasu:調べます .:。",
+    "yokatta:良かった ra:ら kono:この houhou:方法 wo:を tukatte:使って kudasai:ください .:。",
+    "sono:その kusuri:薬 ha:は yoku:よく kiku:効く ga:が jikann:時間 ga:が kakaru:かかる .:。",
+    "sennsei:先生 ni:に situmonn:質問 wo:を kiku:聞く kikai:機会 ga:が nai:ない .:。",
+    "kyousou:競争 +aite:相手 no:の seihinn:製品 wo:を siyou:使用 +site:して mita:みた .:。",
+    "siyou:仕様 wo:を kakuninn:確認 +site:して kara:から jissou:実装 +simasu:します .:。",
+    "sikou:試行 no:の kaisuu:回数 wo:を fuyasu:増やす .:。",
+    "densya:電車 ga:が okurete:遅れて kaigi:会議 ni:に maniawanakatta:間に合わなかった .:。",
+    "konnsinn:懇親 +kai:会 de:で hanasita:話した hito:人 ni:に me-ru:メール wo:を okuru:送る .:。",
+    "kannsu:関数 no:の namae:名前 ga:が wakarinikui:分かりにくい .:。",
+    "de-ta:データ no:の ryou:量 ga:が ooi:多い to:と syori:処理 ga:が osoku:遅く naru:なる .:。",
+    "kono:この hou:方 ga:が yoi:良い to:と omoimasu:思います .:。",
+    "sukosi:少し matte:待って kara:から mouitido:もう一度 tamesimasu:試します .:。",
+    "hayai:速い kuruma:車 de:で iku:行く hou:方 ga:が raku:楽 desu:です .:。",
+    "keturonn:結論 ha:は raisyuu:来週 no:の kaigi:会議 de:で kimemasu:決めます .:。",
+    "hennkou:変更 wo:を kakuninn:確認 +sita:した ue:上 de:で ma-ji:マージ +simasu:します .:。",
+]
+
 def segments(sentence: str) -> tuple[list[list[str]], list[list[str]]]:
     habit: list[list[str]] = []
     natural: list[list[str]] = []
@@ -106,14 +131,17 @@ def segments(sentence: str) -> tuple[list[list[str]], list[list[str]]]:
 
 
 def main() -> int:
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("typing-corpus.jsonl")
-    with out.open("w", encoding="utf-8") as f:
-        for index, sentence in enumerate(SENTENCES, 1):
-            habit, natural = segments(sentence)
-            assert "".join(e for _, e in habit) == "".join(e for _, e in natural)
-            row = {"id": f"s{index:03d}", "segmentations": {"habit": habit, "natural": natural}}
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    print(f"wrote {len(SENTENCES)} sentences to {out}")
+    out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent
+    for name, sentences, prefix in [("typing-corpus.jsonl", SENTENCES, "s"),
+                                    ("typing-corpus-heldout.jsonl", HELDOUT, "h")]:
+        out = out_dir / name
+        with out.open("w", encoding="utf-8") as f:
+            for index, sentence in enumerate(sentences, 1):
+                habit, natural = segments(sentence)
+                assert "".join(e for _, e in habit) == "".join(e for _, e in natural)
+                row = {"id": f"{prefix}{index:03d}", "segmentations": {"habit": habit, "natural": natural}}
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        print(f"wrote {len(sentences)} sentences to {out}")
     return 0
 
 

@@ -51,6 +51,8 @@ enum GyaimSettings {
         "aiRerankExactHomophoneMaxCandidates",
         "aiRerankExactHomophoneAffinityThreshold",
         "aiRerankExactHomophoneFrequencyMarginWeight",
+        "aiRerankCorpusFrequencyPath",
+        "aiRerankCorpusFrequencyWeight",
     ]
 
     private static var settingsFilePath: String {
