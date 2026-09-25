@@ -141,56 +141,13 @@ final class BundledZenzRuntime: ZenzRuntime {
     #if canImport(llama)
     private func fastContextReviewRerank(_ request: AIRerankRequest,
                                          activeContext: LlamaZenzContext) -> AIRerankResponse? {
-        let runtimeStart = CFAbsoluteTimeGetCurrent()
         let heuristic = AIReranker.localRerank(request, model: identifier)
         let localOrder = AIReranker.validatedOrder(heuristic.order, candidateCount: request.candidates.count)
-        guard let bestIndex = localOrder.first,
-              let best = request.candidates.first(where: { $0.index == bestIndex }) else {
-            return heuristic
-        }
-
-        // Fast-context mode is latency-sensitive. Protect the strongest exact-reading
-        // decision and avoid evaluating every candidate. This mirrors Zenzai's
-        // review-style use: inspect the current best candidate once, then optionally
-        // convert the model's preferred prefix into an existing candidate order.
-        //
-        // Exception: exact-reading homophones such as "向き" / "無機" are already
-        // safe from prefix-prediction demotion. When left context exists, compare the
-        // exact-reading homophones directly by conditional log probability and move
-        // only another exact-reading homophone to the top. This keeps exact
-        // protection while enabling context-sensitive homophone choice.
-        if Self.isProtectedExactReadingCandidate(best, request: request) {
-            if Self.shouldReviewExactHomophones(best: best, request: request, localOrder: localOrder) {
-                return exactHomophoneReviewRerank(request,
-                                                  activeContext: activeContext,
-                                                  heuristic: heuristic,
-                                                  localOrder: localOrder,
-                                                  best: best,
-                                                  runtimeStart: runtimeStart)
-            }
-            Log.input.info("Zenz fast-context review skipped: input=\"\(request.inputPat)\" "
-                + "reason=protected-exact best=\"\(best.text)\"")
-            return AIRerankResponse(order: localOrder,
-                                    scores: heuristic.scores,
-                                    model: "swift-local-heuristic+zenz-review-skipped")
-        }
-
-        // Normal (non-homophone) review needs longer input to act: dogfood
-        // 2026-07-08 showed 81 reviews at input length 4 with 0 fixes (57
-        // kept-local / 24 passed), while all observed review-fixed value
-        // started at length 5. Homophone review stays at the global model
-        // gate (length 4) where its fix rate is ~30%.
-        guard Self.shouldRunNormalReview(inputPat: request.inputPat,
-                                         minimumLength: Self.normalReviewMinInputLength()) else {
-            Log.input.info("Zenz fast-context review skipped: input=\"\(request.inputPat)\" "
-                + "reason=short-input best=\"\(best.text)\"")
-            return AIRerankResponse(order: localOrder,
-                                    scores: heuristic.scores,
-                                    model: "swift-local-heuristic+zenz-review-length-skipped")
-        }
-
-        return normalReviewRerank(request, activeContext: activeContext, heuristic: heuristic,
-                                  best: best, runtimeStart: runtimeStart)
+        guard !localOrder.isEmpty else { return heuristic }
+        // ADR-032: the model orders every candidate. The exact-homophone and
+        // normal reviews below are kept, unused, until dogfood confirms the
+        // LLM-primary order; revert this call to restore them.
+        return llmPrimaryRerank(request, activeContext: activeContext, heuristic: heuristic, localOrder: localOrder)
     }
 
     private func normalReviewRerank(_ request: AIRerankRequest, activeContext: LlamaZenzContext,

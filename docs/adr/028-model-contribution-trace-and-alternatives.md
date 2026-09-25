@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-09-13). 採点件数（Decision 3）は ADR-031 で置き換え
+Accepted (2026-09-13). 採点件数（Decision 3）は ADR-031 で置き換え。下位並べ替え（Decision 2）は ADR-032 で LLM 主体の全件並べ替えに置き換え
 
 ## Decision
 

@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, ZenzRuntime.swift, ZenzRuntime+Scoring.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController+FastContextRerank.swift, FastContextTrace.swift
-> Last updated: 2026-09-26 (同音異義語の採点を scoreBatch で一括化)
+> Last updated: 2026-09-26 (候補の並べ替えを LLM 主体に — ADR-032)
 
 ## 概要
 
@@ -92,7 +92,13 @@ Swift heuristic rerank は source bias / kind bias / reading一致 / 漢字含�
 
 Swift runtime 側でも `AIReranker.localScoreBreakdown(candidate:request:)` が feature contribution と total score を返す。これにより、offline evaluator の `--show-features` と同じ観点で source bias / kind bias / exact reading bonus / prefix penalty / context bonus / context affinity bonus / study frequency bonus / kanji bonus / natural phrase bonus / punctuation penalty / punctuated input mismatch penalty / incomplete stem penalty / script transition penalty / zenz kanji bonus / raw ASCII penalty をテスト・debug できる。
 
-## Zenz candidate evaluation and constraints
+## LLM 主体の並べ替え（ADR-032、現行）
+
+モデル経路（入力3文字以上）では `BundledZenzRuntime.llmPrimaryRerank` が辞書候補すべてを `scoreBatch` で採点し、`llmPrimaryOrder` が次の合計で並べる。平均logprob + `aiRerankLLMStudyWeight`（既定2.0）× log2(1+学習頻度)（study 候補のみ）+ `aiRerankLLMContextWeight`（既定2.0）× ContextDict affinity + heuristic の安全策の減点（`incompleteStemPenalty` / `politeNegativePredictionPenalty` / `punctuatedInputMismatchPenalty` / `rawAsciiPenalty`）− 3.0（候補が入力のひらがなそのもの。かなキーで常に確定できるため）。同点・未採点は heuristic 順。ログ outcome は `llm-ranked`（採点できなければ `llm-rank-unavailable`）、`review.topDecision` は先頭が heuristic と変わったら `fixed`、同じなら `passed`。
+
+学習頻度の重み2.0は BUG-036（君31 / キミ7、LLM差 約3.4）で頻出語を守る値。以下の「Zenz candidate evaluation」「同音異義語レビュー」「通常review」は ADR-032 以前の経路で、コードは残置しているがこの経路からは呼ばれない。
+
+## Zenz candidate evaluation and constraints（ADR-032 以前）
 
 fast-context rerank のモデル経路では、同梱モデルで候補を評価する。azooKey/Zenzai と同じ方針で、candidate evaluation prompt に続く候補 token を1つずつ見て、モデル最尤 token と実候補 token が一致しない場合は `fixRequired(prefixConstraint:)` 相当の prefix を返す。一致している場合は、次点 token の確率比を alternative constraint として保持する。
 
@@ -141,8 +147,7 @@ SwiftyGyaim 本体は `order` を必ず検証する。
 背景 queue（最新の入力だけ。cancelled な ticket はモデルを呼ばない）
   -> buildPrefixCandidates(allowModelReview: true)
        -> InProcessAIReranker.rerank(mode=fast-context-rerank)
-            protected exact best: 同音異義語レビュー or skip
-            それ以外: 最上位候補の evaluateCandidate（入力長 >= 5）
+            llmPrimaryRerank: 全辞書候補を scoreBatch で採点し LLM + 学習頻度 + 文脈学習 + 安全策で並べる（ADR-032）
   -> ticket に結果を格納 → main.async applyReview()
        -> 世代・入力・nthCand == 0 が不変なら candidates を差し替えて showCands()
 
