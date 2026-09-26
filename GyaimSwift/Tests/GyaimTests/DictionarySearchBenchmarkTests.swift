@@ -76,13 +76,26 @@ final class DictionarySearchBenchmarkTests: XCTestCase {
         measureWithMozc(dictPath: dictPath, mozcPath: projectDir.appendingPathComponent("Resources/mozc-dict.txt").path)
     }
 
+    /// Resident memory of this process, for the dictionary's footprint.
+    private func residentMegabytes() -> Double {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? Double(info.resident_size) / 1_048_576 : -1
+    }
+
     private func measureWithMozc(dictPath: String, mozcPath: String) {
         guard FileManager.default.fileExists(atPath: mozcPath) else { return }
+        let before = residentMegabytes()
         let bothStart = CFAbsoluteTimeGetCurrent()
         let both = ConnectionDict(dictFiles: [dictPath, mozcPath])
-        print(String(format: "bench dict.txt + mozc-dict.txt load %.0fms entries=%d",
-                     (CFAbsoluteTimeGetCurrent() - bothStart) * 1000, both.entryCount))
-        measure("dict.txt + mozc prefix (cap 2000)") { query in
+        print(String(format: "bench dict.txt + mozc-dict.txt load %.0fms entries=%d resident %.0fMB -> %.0fMB",
+                     (CFAbsoluteTimeGetCurrent() - bothStart) * 1000, both.entryCount, before, residentMegabytes()))
+        measure("dict.txt + mozc prefix (cap \(WordSearch.maxConnectionCandidates))") { query in
             var count = 0
             both.searchDetailed(pat: query, searchMode: 0, maxResults: WordSearch.maxConnectionCandidates) { _ in count += 1 }
             return count
@@ -92,5 +105,17 @@ final class DictionarySearchBenchmarkTests: XCTestCase {
             both.searchDetailed(pat: query, searchMode: 1) { _ in count += 1 }
             return count
         }
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("gyaim-dict-bench-mozc-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let studyPath = tempDir.appendingPathComponent("studydict.txt").path
+        try? writeStudyDict(from: dictPath, to: studyPath)
+        let localPath = tempDir.appendingPathComponent("localdict.txt").path
+        try? "".write(toFile: localPath, atomically: true, encoding: .utf8)
+        WordSearch.resetConnectionDict()
+        let search = WordSearch(connectionDictFiles: [dictPath, mozcPath], localDictFile: localPath, studyDictFile: studyPath)
+        measure("WordSearch prefix, dict.txt + mozc, 5k study") { search.search(query: $0, searchMode: 0).count }
+        search.finish()
+        WordSearch.resetConnectionDict()
     }
 }

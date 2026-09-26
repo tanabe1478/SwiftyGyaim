@@ -380,10 +380,11 @@ class WordSearch {
         return candidates
     }
 
-    /// The dictionary-order tail of a one-letter query is never displayed, so a
-    /// large connection dictionary (ADR-033) must not turn it into thousands of
-    /// SearchCandidate allocations per keystroke.
-    static let maxConnectionCandidates = 2000
+    /// The dictionary-order tail of a one-letter query is never displayed (9 per
+    /// page, the model sees the first 24), so a large connection dictionary
+    /// (ADR-034) must not turn it into thousands of SearchCandidate allocations
+    /// per keystroke: 2,000 cost 20-50 ms on two-letter inputs in dogfood.
+    static let maxConnectionCandidates = 1000
 
     /// Hiragana of a study/local reading, converted once per distinct reading.
     /// The per-keystroke scan of ~5k study entries used to reconvert every

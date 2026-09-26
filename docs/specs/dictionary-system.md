@@ -47,17 +47,17 @@ romaji surface inConnection outConnection
 
 一般名詞（`3 4`）は助詞類にしか接続しない。する の活用形（し / して / します / した …、入力接続 51）へつなぐにはサ変クラスの行（`50 51`）が要る。同梱辞書では、UniDic が `サ変可能` / `サ変形状詞可能` とする一般名詞に `Tools/dict/add-sahen-connection.py` で `50 51` 行を追加している（ADR-030。例: `jissousimasu` → `実装します`）。UniDic は生成時だけ使い、実行時には依存しない。辞書を Gictionary から取り込み直した場合は、このスクリプトを再実行する。名詞+名詞の複合語（`要件定義`）は、名詞を受ける入力接続がないため合成しない。
 
-`constrainedCompositions(pat:maxResults:maxDepth:)`（ADR-022）は同じ遷移探索の**有界版**で、完全変換の表層のみを重複なく列挙し、結果上限（既定12）と深さ上限（既定8）で再帰を打ち切る。`searchDetailed` は `maxResults`（`WordSearch` からは 2,000）で打ち切る。1 文字入力で数千件出る接続候補の末尾は辞書順のノイズで、表示（9 件 × ページ送り）には届かない。
+`constrainedCompositions(pat:maxResults:maxDepth:)`（ADR-022）は同じ遷移探索の**有界版**で、完全変換の表層のみを重複なく列挙し、結果上限（既定12）と深さ上限（既定8）で再帰を打ち切る。`searchDetailed` は `maxResults`（`WordSearch` からは 1,000）で打ち切る。1〜2 文字入力で数千件出る接続候補の末尾は辞書順のノイズで、表示（9 件 × ページ送り、モデルが見るのは上位 24 件）には届かない。2,000 では 2 文字入力が dogfood で 20〜50 ms かかった。
 
 ### Mozc 由来の語彙（ADR-034）
 
 `Resources/mozc-dict.txt` は Mozc の公開辞書（`src/data/dictionary_oss`）から `Tools/dict/build-mozc-connection-dict.py` で生成した名詞類の一覧（約 28 万語、かなキー、コスト順）。Mozc の右接続 ID で接続クラスを付ける: 名詞,サ変接続 → `3 4` + `50 51`、名詞,形容動詞語幹 → `3 4` + `18 19`、その他の名詞 → `3 4`、副詞 → `24 0`。左 ID が名詞 / 接頭詞（再+起動 の複合語）/ 副詞 / 感動詞の行だけを対象にし、動詞・形容詞は Gictionary の活用行に任せる。コストは 7,500 以下（地名・人名は 6,000 以下）、読みと同じひらがな表記の行は除く。
 
-`Config.activeConnectionDictFiles` が読み込み順を決める: Gictionary 由来の辞書（取り込んだ `~/.gyaim/connectiondict.txt` があればそれ、なければ `dict.txt`）、続けて `mozc-dict.txt`。`ConnectionDict(dictFiles:)` は 1 つの辞書として索引し、同じ (かな, 表記, クラス) の行は先のファイルが勝つ。共有キャッシュ（`WordSearch.sharedConnectionDict(for:)`）はファイル一覧で判定し、ロックで直列化する。`AppDelegate` が起動時にバックグラウンドで同じ関数を呼んで先読みするため、最初のコントローラは読み込み（Release で約 0.8 秒）を待たずに済むことが多い。ライセンス表示（Mozc BSD-3、IPAdic、ICOT、沖縄辞書）は `Resources/DICTIONARY_THIRD_PARTY_NOTICES.txt`。再生成の手順はスクリプトの docstring にある（Mozc の commit を `--commit` で記録する）。
+`Config.activeConnectionDictFiles` が読み込み順を決める: Gictionary 由来の辞書（取り込んだ `~/.gyaim/connectiondict.txt` があればそれ、なければ `dict.txt`）、続けて `mozc-dict.txt`。`ConnectionDict(dictFiles:)` は 1 つの辞書として索引し、同じ (かな, 表記, クラス) の行は先のファイルが勝つ。共有キャッシュ（`WordSearch.sharedConnectionDict(for:)`）はファイル一覧で判定し、ロックで直列化する。`AppDelegate` が起動時にバックグラウンドで同じ関数を呼んで先読みするため、最初のコントローラは読み込み（Release で約 0.6 秒）を待たずに済むことが多い。ライセンス表示（Mozc BSD-3、IPAdic、ICOT、沖縄辞書）は `Resources/DICTIONARY_THIRD_PARTY_NOTICES.txt`。再生成の手順はスクリプトの docstring にある（Mozc の commit を `--commit` で記録する）。
 
 ### かなキー索引（ADR-033）
 
-エントリは読みの「かな」で索引する。行の読みは読み込み時に `RomaKana.roma2kanaKey` でひらがなに変換し（ローマ字は表引き、かな行はひらがなへ正規化、数字・記号はそのまま残す）、同じ (かな, 表記, inConnection, outConnection) の行は最初の 1 行に統合する。これにより `shuusei` / `syuusei` のような綴りの行は 1 エントリになり、辞書に 1 つの綴りしかない語も別の綴りで引ける。
+エントリは読みの「かな」で索引する。索引は、開始できるエントリの集合と接続クラスごとの集合それぞれについて「かな順に並べたエントリ番号の配列」（完全一致・接頭部分は二分探索）と「先頭かなごとの辞書順リスト」だけを持つ。かなをキーにしたハッシュ表とエントリごとのかな配列は、Mozc 込みで常駐メモリを約 120 MB 余分に使ったため持たない。行の読みは読み込み時に `RomaKana.roma2kanaKey` でひらがなに変換し（ローマ字は表引き、かな行はひらがなへ正規化、数字・記号はそのまま残す）、同じ (かな, 表記, inConnection, outConnection) の行は最初の 1 行に統合する。これにより `shuusei` / `syuusei` のような綴りの行は 1 エントリになり、辞書に 1 つの綴りしかない語も別の綴りで引ける。
 
 検索時は入力ローマ字を `RomaKana.roma2kanaPrefix` で「確定したかな」と「未完成の末尾文字」（`kak` → か + `k`、`kan` → か + `n`、`ky` → 空 + `ky`）に分ける。末尾の `n` は な行にもなり得るので ん にはしない（`kann` は かん）。各段階で次を集め、辞書ファイル順に並べて深さ優先で処理する（旧実装の連結リスト走査と同じ順序）。
 
@@ -71,7 +71,7 @@ romaji surface inConnection outConnection
 
 ### 検索の性能
 
-dogfood（2026-09-13〜24）では前方一致検索が 1 打鍵 p50 56 ms / p95 102 ms で、原因は学習辞書の走査（エントリごとの正規表現照合とローマ字→かな変換）だった。ADR-033 で、読みのかな変換は `WordSearch.hiragana(ofReading:)` が読みごとに 1 回だけ行って記憶し、照合は前方一致・等価比較にした。Release のベンチマーク（`DictionarySearchBenchmarkTests`、`GYAIM_DICT_BENCH=1`、同梱辞書 + 合成した学習辞書 5,000 件）で前方一致 39 → 1.7 ms、完全一致 37 → 0.3 ms。接続辞書の検索は 0.2 → 0.8 ms（1 文字入力の最大 5.4 ms）、読み込みは `dict.txt` 単体で 70 → 150 ms、`mozc-dict.txt` を含めて約 800 ms（プロセスごとに 1 回、起動時に先読み）。
+dogfood（2026-09-13〜24）では前方一致検索が 1 打鍵 p50 56 ms / p95 102 ms で、原因は学習辞書の走査（エントリごとの正規表現照合とローマ字→かな変換）だった。ADR-033 で、読みのかな変換は `WordSearch.hiragana(ofReading:)` が読みごとに 1 回だけ行って記憶し、照合は前方一致・等価比較にした。Release のベンチマーク（`DictionarySearchBenchmarkTests`、`GYAIM_DICT_BENCH=1`、同梱辞書 + 合成した学習辞書 5,000 件）で前方一致 39 → 1.7 ms、完全一致 37 → 0.3 ms。接続辞書の検索は 0.2 → 0.8 ms（1 文字入力の最大 5.9 ms）、読み込みは `dict.txt` 単体で 70 → 150 ms、`mozc-dict.txt` を含めて約 600 ms（プロセスごとに 1 回、起動時に先読み）。Mozc 込みの `WordSearch` 前方一致（学習辞書 5,000 件）は平均 2.7 ms、最大 10.7 ms。常駐メモリは Mozc 込みで約 90 MB 増える（テストプロセスで 86 → 173 MB）。
 
 `Tools/dict/suggest-connection-entries.py`（接続辞書の Python 移植）はローマ字照合のままで、かなキーにも `mozc-dict.txt` にも追従していない（Mozc に既にある語も提案し得る）。
 
