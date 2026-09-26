@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift, GyaimController+FastContextRerank.swift
-> Last updated: 2026-09-24 (全確定経路の Commit outcome ログ)
+> Last updated: 2026-09-26 (モデルレビューを LLM 主体の並べ替えに — ADR-032)
 
 ## 概要
 
@@ -57,7 +57,7 @@ handle(_:client:) → routeEvent() → HandleResult
 
 **評価と下位候補（ADR-028）**: 検索開始前にリクエスト世代を確定し、レビュー予約時には進めない。controllerごとのUUIDとcomposition IDを含む同じ識別子でprereview/review/確定を紐付ける。確定キーで保留分をcancelしても、比較対象のtraceは元の世代とheuristic順位を保持する。同期実行（delay=0）もheuristic単独順を保存する。実際の採点なしのskip/fallbackと採点失敗を、モデル承認から区別する。確定detailはclient取得・insertText等の後、辞書学習の前に記録する（clientなしの確定試行を品質ラベルにしない）。詳細スキーマと指標はai-rerank.mdを参照。
 
-同音異義語レビューでは、従来の先頭ガードを適用した後、採点済み候補の2位以下のスロット同士だけをスコア順へ並べる。先頭・未採点候補の位置はこの追加操作で変更せず、同点は元順。採点件数/頻度係数/affinity skipは変更しない。先頭不変で下位のみ変われば `exact-homophone-tail-reranked`。`topChanged` は辞書の先頭変更を表し、下位だけの変更は含めない。
+**LLM 主体の並べ替え（ADR-032）**: 背景 queue のレビューは、辞書候補すべてを同梱モデルで一括採点し、LLM スコア + 学習頻度 + 文脈学習 + heuristic の安全策で並べる（ai-rerank.md）。以下は ADR-032 以前の同音異義語レビューの記述（コードは残置・未使用）。同音異義語レビューでは、従来の先頭ガードを適用した後、採点済み候補の2位以下のスロット同士だけをスコア順へ並べる。先頭・未採点候補の位置はこの追加操作で変更せず、同点は元順。採点件数/頻度係数/affinity skipは変更しない。先頭不変で下位のみ変われば `exact-homophone-tail-reranked`。`topChanged` は辞書の先頭変更を表し、下位だけの変更は含めない。
 
 モデル推論は引き続きメインスレッド。80ms待機中のキャンセルで呼び出し回数は減るが、採点開始後の打鍵待ちを解消したわけではない。バックグラウンド化・設定/affinityまで含むsnapshot化は別作業とする。
 

@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（313テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（324テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -123,13 +123,15 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | WordSearchTests | Tests/GyaimTests/ | 49 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ） |
 | ContextDictTests | Tests/GyaimTests/ | 9 | 文脈条件付き学習（contextKey・affinity・永続化・削除・減衰・上限） |
 | StudyEntryTests | Tests/GyaimTests/ | 6 | StudyEntryスコア計算・EvictionMode既定値・ファイルI/O |
-| ConnectionDictTests | Tests/GyaimTests/ | 9 | 連接辞書の検索・同梱辞書の語彙回帰・制約付き合成 |
+| ConnectionDictTests | Tests/GyaimTests/ | 10 | 連接辞書の検索・同梱辞書の語彙回帰・制約付き合成・サ変名詞+する（ADR-030） |
 | ConnectionDictSharingTests | Tests/GyaimTests/ | 3 | 連接辞書のプロセス内共有（同一パス再利用・パス切替・reset） |
 | GyaimSettingsTests | Tests/GyaimTests/ | 11 | settings.json 永続化・mtimeキャッシュ・UserDefaults一方向移行・書き込み先の単一性・knownKeysとソースの一致 |
 | AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests / IncompleteStemPastTenseTests | Tests/GyaimTests/ | 42 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択・過去形を未完成語幹とみなさない（BUG-043） |
 | HomophoneFrequencyGuardTests | Tests/GyaimTests/ | 4 | 同音異義語上書きの頻度ガード（BUG-036、実ログ数値で固定） |
-| FastContextReviewSchedulingTests | Tests/GyaimTests/ | 7 | 背景モデルレビューの予約判定・スロットル/合流待ちのクランプ・同期パスがモデルを呼ばないこと・ticket の待機/一回適用（ADR-029） |
+| FastContextReviewSchedulingTests | Tests/GyaimTests/ | 8 | 背景モデルレビューの予約判定・スロットル/合流待ちのクランプ・同期パスがモデルを呼ばないこと・ticket の待機/一回適用（ADR-029） |
 | FastContextTraceTests / HomophoneAlternativeOrderTests / AcceptedDetailPayloadTests | Tests/GyaimTests/ | 25 | composition trace と確定 payload（全確定経路の Commit outcome を含む）、同音異義語の下位並べ替え（ADR-028） |
+| LLMPrimaryOrderTests | Tests/GyaimTests/ | 7 | LLM 主体の並べ替え（モデル順・頻出語の保護・文脈学習・書きかけ語幹・入力のひらがなを先頭にしない。ADR-032） |
+| LlamaScoringBenchmarkTests | Tests/GyaimTests/ | 2 | 一括採点（scoreBatch）と1件ずつの採点の一致、採点時間のベンチマーク（通常はskip） |
 | TypingSimulationTests | Tests/GyaimTests/ | 1 | 正解付きコーパスを本物の検索・rerankに流して順位を測る（通常はskip。`Tools/eval/run-typing-simulation.sh` で実行） |
 | StudySuspectsTests | Tests/GyaimTests/ | 3 | 疑わしい学習エントリ検出（typo完成形・長期未使用・false positive 抑止） |
 | FileLoggerRotationTests | Tests/GyaimTests/ | 1 | ログ7世代ローテーションのシフト |
@@ -187,7 +189,10 @@ docs/adr/
 ├── 026-deferred-model-review.md (Superseded by ADR-029)
 ├── 027-settings-file-as-single-write-target.md
 ├── 028-model-contribution-trace-and-alternatives.md
-└── 029-async-model-review.md
+├── 029-async-model-review.md
+├── 030-sahen-noun-connection-from-unidic.md
+├── 031-wider-homophone-review.md
+└── 032-llm-primary-candidate-ranking.md
 ```
 
 ## Logging & Monitoring
@@ -263,7 +268,7 @@ pi エージェントには同じワークフローが pi-context-workflow 拡�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-029）。目次と運用ルールは `docs/adr/README.md`
+- `docs/adr/` — 設計判断の経緯（000-032）。目次と運用ルールは `docs/adr/README.md`
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 

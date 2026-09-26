@@ -24,9 +24,9 @@ enum LlamaZenzContextError: LocalizedError {
 /// `llama_init_from_model`, then keep model/context/vocab resident.
 final class LlamaZenzContext {
     private var model: OpaquePointer
-    private var context: OpaquePointer
+    var context: OpaquePointer  // internal: LlamaZenzContext+Batch.swift
     private var vocab: OpaquePointer
-    private let evalSeqId: llama_seq_id = 0
+    let evalSeqId: llama_seq_id = 0
     private let generationSeqId: llama_seq_id = 1
     private var previousTokensBySeq: [llama_seq_id: [llama_token]] = [:]
 
@@ -35,7 +35,7 @@ final class LlamaZenzContext {
     /// returns (dogfood 2026-07-05: identical reviews within 1s); the model is
     /// frozen so cached results never go stale. Access is serialized by
     /// BundledZenzRuntime's lock.
-    private struct BoundedCache<Value> {
+    struct BoundedCache<Value> {
         private var storage: [String: Value] = [:]
         private var insertionOrder: [String] = []
         private let capacity: Int
@@ -59,7 +59,7 @@ final class LlamaZenzContext {
         }
     }
 
-    private var scoreCache = BoundedCache<Double>(capacity: 256)
+    var scoreCache = BoundedCache<Double>(capacity: 256)
     private var evaluationCache = BoundedCache<CandidateEvaluation>(capacity: 256)
 
     private struct TokenScore {
@@ -231,7 +231,7 @@ final class LlamaZenzContext {
         return String(text.dropFirst(promptText.count))
     }
 
-    private func encode(_ text: String, addBOS: Bool) -> [llama_token] {
+    func encode(_ text: String, addBOS: Bool) -> [llama_token] {
         tokenize(text: preprocess(text), addBOS: addBOS)
     }
 
@@ -258,7 +258,7 @@ final class LlamaZenzContext {
         return (0..<tokenCount).map { tokens[Int($0)] }
     }
 
-    private func logits(tokens: [llama_token], startOffset: Int, seqId: llama_seq_id) -> UnsafeMutablePointer<Float>? {
+    func logits(tokens: [llama_token], startOffset: Int, seqId: llama_seq_id) -> UnsafeMutablePointer<Float>? {
         let previousTokens = previousTokensBySeq[seqId] ?? []
         let commonPrefixCount = min(commonPrefix(previousTokens, tokens), startOffset)
         llama_kv_cache_seq_rm(context, seqId, llama_pos(commonPrefixCount), -1)
@@ -279,7 +279,7 @@ final class LlamaZenzContext {
         return llama_get_logits(context)
     }
 
-    private func add(_ batch: inout llama_batch,
+    func add(_ batch: inout llama_batch,
                      token: llama_token,
                      position: llama_pos,
                      seqIds: [llama_seq_id],
@@ -333,7 +333,7 @@ final class LlamaZenzContext {
         return String(bytes: buffer.prefix(Int(count)).map { UInt8(bitPattern: $0) }, encoding: .utf8)
     }
 
-    private func logSumExp(logits: UnsafeMutablePointer<Float>, startIndex: Int, count: Int) -> Float {
+    func logSumExp(logits: UnsafeMutablePointer<Float>, startIndex: Int, count: Int) -> Float {
         var maxLogit = -Float.infinity
         for index in startIndex..<(startIndex + count) {
             maxLogit = max(maxLogit, logits[index])

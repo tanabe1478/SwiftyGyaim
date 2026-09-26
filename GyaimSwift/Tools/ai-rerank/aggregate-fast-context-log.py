@@ -397,11 +397,25 @@ KANA_FIXED_RE = re.compile(
 DEACTIVATION_RE = re.compile(r'\] \[input\] \[info\] Study skipped \(deactivation\): "(?P<word>[^"]*)"')
 
 # Commit paths that mean the prefix-mode list did not offer the wanted word
-# first. `kana-other` / `kana-absent` are suspected misses: the user may have
-# preferred the kana spelling on purpose.
+# first. `kana-other` / `kana-absent` are suspected misses: kana commits for a
+# reading the user also converts to kanji. Kana commits for readings never
+# converted to kanji (particles typed with the kana key) are `kana-intended`.
+# `exact-top1` / `google-top1` escape to exact mode or Google for a word the
+# prefix list already ranked first: a habit, not a ranking miss.
 COMMIT_MISS = ("prefix-lower", "exact-escape", "kana-other", "kana-absent", "google")
-COMMIT_HIT = ("prefix-top1", "kana-top1")
-COMMIT_EXCLUDED = ("prefix-raw", "kana-no-dictionary", "deactivation")
+COMMIT_HIT = ("prefix-top1", "kana-top1", "exact-top1", "google-top1")
+COMMIT_EXCLUDED = ("prefix-raw", "kana-no-dictionary", "kana-intended", "deactivation")
+KANJI_RE = re.compile(r"[\u4e00-\u9fff々]")
+
+
+def kanji_readings(lines: Iterable[str]) -> set[str]:
+    """Readings the user committed at least once as a word containing kanji."""
+    readings: set[str] = set()
+    for line in lines:
+        fixed = FIXED_RE.match(line.rstrip("\n"))
+        if fixed and KANJI_RE.search(fixed.group("word")):
+            readings.add(fixed.group("reading"))
+    return readings
 
 
 def collect_commit_outcomes(lines: Iterable[str], cutoff: datetime | None, examples: int = 5) -> dict:
@@ -413,6 +427,8 @@ def collect_commit_outcomes(lines: Iterable[str], cutoff: datetime | None, examp
     the most recent `Fast context rerank finished` line for the same input;
     lines carry no controller for commits, so interleaved fields can mix.
     """
+    lines = list(lines)
+    converted = kanji_readings(lines)
     last_head: dict[str, list[str]] = {}
     mode = "prefix"
     commits: list[dict] = []
@@ -444,9 +460,9 @@ def collect_commit_outcomes(lines: Iterable[str], cutoff: datetime | None, examp
         if (fixed := FIXED_RE.match(line)) is not None:
             word, reading, index = fixed.group("word"), fixed.group("reading"), int(fixed.group("index"))
             if mode == "google":
-                path = "google"
+                path = "google-top1" if prefix_rank(reading, word) == 1 else "google"
             elif mode == "exact":
-                path = "exact-escape"
+                path = "exact-top1" if prefix_rank(reading, word) == 1 else "exact-escape"
             elif index == 0:
                 path = "prefix-raw"
             else:
@@ -462,6 +478,8 @@ def collect_commit_outcomes(lines: Iterable[str], cutoff: datetime | None, examp
                 path = "kana-no-dictionary"
             elif head[0] == word:
                 path = "kana-top1"
+            elif reading not in converted:
+                path = "kana-intended"
             else:
                 path = "kana-other" if word in head else "kana-absent"
             commits.append({"timestamp": kana.group("timestamp"), "path": path, "input": reading,
@@ -520,8 +538,9 @@ def collect_commit_diagnostics(lines: Iterable[str], cutoff: datetime | None) ->
     """Explain misses from `Commit outcome` lines (every commit path).
 
     A miss is any commit whose word was not the first prefix candidate:
-    exact/google escapes, prefix rank>=2, and kana commits whose word was not
-    rank 1. For misses it reports where the word sat in the prefix list and
+    exact/google escapes (unless the word was already rank 1), prefix rank>=2,
+    and kana commits whose word was not rank 1 for a reading the user also
+    converts to kanji (see COMMIT_MISS). For misses it reports where the word sat in the prefix list and
     whether the model review scored it (`inScoredSet=false` means the model
     could not have fixed it, whatever its quality).
     """
@@ -529,7 +548,9 @@ def collect_commit_diagnostics(lines: Iterable[str], cutoff: datetime | None) ->
     buckets: dict[str, dict[str, int]] = {
         "byPrefixRank": defaultdict(int), "byScoredSet": defaultdict(int), "byModelOutcome": defaultdict(int),
     }
-    misses = 0
+    misses = kana_intended = 0
+    lines = list(lines)
+    converted = kanji_readings(lines)
     for line in lines:
         match = COMMIT_OUTCOME_RE.match(line.rstrip("\n"))
         if not match:
@@ -549,7 +570,10 @@ def collect_commit_diagnostics(lines: Iterable[str], cutoff: datetime | None) ->
         rank = payload.get("prefixRank")
         if path == "deactivation" or (path == "prefix" and rank in (0, 1)):
             continue
-        if path.startswith("kana-") and rank == 1:
+        if rank == 1 and (path.startswith("kana-") or path in ("exact", "google")):
+            continue
+        if path.startswith("kana-") and match.group("input") not in converted:
+            kana_intended += 1
             continue
         misses += 1
         buckets["byPrefixRank"][_rank_bucket(rank)] += 1
@@ -562,6 +586,7 @@ def collect_commit_diagnostics(lines: Iterable[str], cutoff: datetime | None) ->
         "count": sum(by_path.values()),
         "byPath": dict(sorted(by_path.items())),
         "missCount": misses,
+        "kanaIntended": kana_intended,
         "misses": {name: dict(sorted(values.items())) for name, values in buckets.items()},
     }
 

@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-09-12 (設定キーの表記を settings.json に統一 — ADR-027)
+> Last updated: 2026-09-24 (UniDic 由来のサ変名詞接続を追加 — ADR-030)
 
 ## 概要
 
@@ -44,6 +44,8 @@ romaji surface inConnection outConnection
 - 表記に含まれる `*` は内部接続用マーカー。`ConnectionDict` はこれを `canStart` / `canTerminate` / `contributesSurface` に正規化して扱う
 
 例: `けいおう 大学名 大学名接続` と `だいがく 大学名接続 名詞接続` があれば、`けいおうだいがく` から `慶應大学` を生成できる。動詞活用も同様に `むす -> 結`、`べ -> *べ*`、`ない -> *ない` のような接続で `結べない` を生成する。
+
+一般名詞（`3 4`）は助詞類にしか接続しない。する の活用形（し / して / します / した …、入力接続 51）へつなぐにはサ変クラスの行（`50 51`）が要る。同梱辞書では、UniDic が `サ変可能` / `サ変形状詞可能` とする一般名詞に `Tools/dict/add-sahen-connection.py` で `50 51` 行を追加している（ADR-030。例: `jissousimasu` → `実装します`）。UniDic は生成時だけ使い、実行時には依存しない。辞書を Gictionary から取り込み直した場合は、このスクリプトを再実行する。名詞+名詞の複合語（`要件定義`）は、名詞を受ける入力接続がないため合成しない。
 
 `constrainedCompositions(pat:maxResults:maxDepth:)`（ADR-022）は同じ遷移探索の**有界版**で、完全変換の表層のみを重複なく列挙し、結果上限（既定12）と深さ上限（既定8）で再帰を打ち切る。辞書制約付きZenz生成の制約集合として使われる。`searchDetailed` 側の探索は従来どおり無制限（通常候補の互換性維持のため）。
 
