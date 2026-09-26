@@ -5,8 +5,6 @@ struct DictEntry {
     /// Reading as hiragana. Romaji rows are converted at load; several romaji
     /// spellings of one reading (shuusei / syuusei) collapse into one entry.
     let kana: String
-    /// `kana` as unicode scalar values, for O(1) indexing and ordering.
-    let scalars: [UInt32]
     let word: String
     let inConnection: Int
     let outConnection: Int
@@ -16,7 +14,6 @@ struct DictEntry {
 
     init(kana: String, word: String, inConnection: Int, outConnection: Int) {
         self.kana = kana
-        self.scalars = kana.unicodeScalars.map(\.value)
         self.word = word.utf8.contains(UInt8(ascii: "*")) ? word.replacingOccurrences(of: "*", with: "") : word
         self.inConnection = inConnection
         self.outConnection = outConnection
@@ -56,21 +53,18 @@ struct ConnectionComposition: Equatable {
 /// Ported from ConnectionDict.rb (Toshiyuki Masui, 2011). Since ADR-033 the
 /// entries are indexed by kana: a typed romaji query is converted to kana (plus
 /// the incomplete trailing letters) and matched against every spelling at once.
+///
+/// Memory (ADR-034, 340k entries): each group keeps only an array of entry
+/// indices in kana order, searched by bisection, and per-first-kana lists in
+/// dictionary order. Hash maps keyed by kana cost ~70 MB more.
 class ConnectionDict {
     /// Kana lookup over one group of entries: everything that can start a
     /// composition, or everything a connection class accepts.
     struct KanaIndex {
-        var byKana: [String: [Int]] = [:]
         /// Entry indices ordered by kana (scalar order), then dictionary order.
         var sorted: [Int] = []
         /// Entry indices in dictionary order, by first kana scalar.
         var byFirstScalar: [UInt32: [Int]] = [:]
-
-        /// Dictionary-order lists; `sorted` is filled from the global kana order.
-        mutating func insert(_ index: Int, entry: DictEntry) {
-            byKana[entry.kana, default: []].append(index)
-            if let first = entry.scalars.first { byFirstScalar[first, default: []].append(index) }
-        }
     }
 
     private struct Query {
@@ -84,10 +78,6 @@ class ConnectionDict {
         func typedRomaji(upToKana count: Int) -> String {
             guard count > 0, count <= romajiEnds.count else { return "" }
             return String(romaji.prefix(romajiEnds[count - 1]))
-        }
-
-        func kanaString(_ range: Range<Int>) -> String {
-            String(String.UnicodeScalarView(scalars[range].compactMap(Unicode.Scalar.init)))
         }
     }
 
@@ -103,6 +93,13 @@ class ConnectionDict {
         case compound(length: Int)
     }
 
+    private struct EntryKey: Hashable {
+        let kana: String
+        let word: String
+        let inConnection: Int
+        let outConnection: Int
+    }
+
     private(set) var dict: [DictEntry] = []
     private(set) var startIndex = KanaIndex()
     private(set) var connectionIndex: [Int: KanaIndex] = [:]
@@ -114,13 +111,6 @@ class ConnectionDict {
 
     /// Later files extend earlier ones; entries keep file order, which is the
     /// order results are emitted in.
-    private struct EntryKey: Hashable {
-        let kana: String
-        let word: String
-        let inConnection: Int
-        let outConnection: Int
-    }
-
     init(dictFiles: [String]) {
         var seen: Set<EntryKey> = []  // across all files: the first file's row wins
         for file in dictFiles { readDict(file, seen: &seen) }
@@ -158,14 +148,14 @@ class ConnectionDict {
 
     private func buildIndex() {
         for (index, entry) in dict.enumerated() {
-            if entry.canStart { startIndex.insert(index, entry: entry) }
-            connectionIndex[entry.inConnection, default: KanaIndex()].insert(index, entry: entry)
+            guard let first = entry.kana.unicodeScalars.first?.value else { continue }
+            if entry.canStart { startIndex.byFirstScalar[first, default: []].append(index) }
+            connectionIndex[entry.inConnection, default: KanaIndex()].byFirstScalar[first, default: []].append(index)
         }
-        // One global kana sort, then one pass distributing the order to every
-        // group (sorting each of the ~300k-entry groups separately doubled load time).
-        let order = dict.indices.sorted { [dict] lhs, rhs in
-            Self.precedes(dict[lhs].scalars, dict[rhs].scalars, tieBreak: lhs < rhs)
-        }
+        // One global kana sort on temporary scalar arrays, then one pass
+        // distributing the order to every group.
+        let keys = dict.map { $0.kana.unicodeScalars.map(\.value) }
+        let order = dict.indices.sorted { lhs, rhs in Self.precedes(keys[lhs], keys[rhs], tieBreak: lhs < rhs) }
         for index in order {
             let entry = dict[index]
             if entry.canStart { startIndex.sorted.append(index) }
@@ -183,30 +173,67 @@ class ConnectionDict {
         return lhs.count == rhs.count ? tieBreak() : lhs.count < rhs.count
     }
 
-    /// Entries of `index` whose kana extends `prefix` and whose next kana unit
-    /// can be spelled starting with `tail`, in dictionary order. Entries that
-    /// share the next unit are adjacent in kana order, so the unit is checked
-    /// once per run rather than once per entry.
-    private func longerEntries(in index: KanaIndex, prefix: ArraySlice<UInt32>, tail: String) -> [Int] {
-        var low = 0, high = index.sorted.count
+    /// Lexicographic comparison of an entry's kana with query scalars:
+    /// negative when the kana sorts first, zero when equal.
+    private static func compare(_ kana: String, with target: ArraySlice<UInt32>) -> Int {
+        var targetIndex = target.startIndex
+        for scalar in kana.unicodeScalars {
+            guard targetIndex < target.endIndex else { return 1 }
+            if scalar.value != target[targetIndex] { return scalar.value < target[targetIndex] ? -1 : 1 }
+            targetIndex += 1
+        }
+        return targetIndex == target.endIndex ? 0 : -1
+    }
+
+    private static func hasPrefix(_ kana: String, _ prefix: ArraySlice<UInt32>) -> Bool {
+        var prefixIndex = prefix.startIndex
+        for scalar in kana.unicodeScalars {
+            if prefixIndex == prefix.endIndex { return true }
+            if scalar.value != prefix[prefixIndex] { return false }
+            prefixIndex += 1
+        }
+        return prefixIndex == prefix.endIndex
+    }
+
+    /// Position of the first entry of `sorted` whose kana is not before `target`.
+    private func lowerBound(_ sorted: [Int], _ target: ArraySlice<UInt32>) -> Int {
+        var low = 0, high = sorted.count
         while low < high {
             let mid = (low + high) / 2
-            if dict[index.sorted[mid]].scalars.lexicographicallyPrecedes(prefix) { low = mid + 1 } else { high = mid }
+            if Self.compare(dict[sorted[mid]].kana, with: target) < 0 { low = mid + 1 } else { high = mid }
         }
+        return low
+    }
+
+    /// Entries of `index` whose kana equals `target`, in dictionary order.
+    func entries(in index: KanaIndex, matching target: ArraySlice<UInt32>) -> [Int] {
+        var position = lowerBound(index.sorted, target)
         var result: [Int] = []
-        var currentUnit: ArraySlice<UInt32>?
+        while position < index.sorted.count, Self.compare(dict[index.sorted[position]].kana, with: target) == 0 {
+            result.append(index.sorted[position])
+            position += 1
+        }
+        return result
+    }
+
+    /// Entries whose kana extends `prefix` and whose next kana unit can be
+    /// spelled starting with `tail`, in dictionary order. Entries that share the
+    /// next unit are adjacent in kana order, so a unit is checked once per run.
+    private func longerEntries(in index: KanaIndex, prefix: ArraySlice<UInt32>, tail: String) -> [Int] {
+        var position = lowerBound(index.sorted, prefix)
+        var result: [Int] = []
+        var currentUnit: KanaUnit?
         var unitMatches = true
-        while low < index.sorted.count {
-            let entry = dict[index.sorted[low]]
-            guard entry.scalars.starts(with: prefix) else { break }
-            low += 1
-            guard entry.scalars.count > prefix.count else { continue }
-            let unit = RomaKana.kanaUnit(in: entry.scalars, at: prefix.count)
+        while position < index.sorted.count {
+            let entry = dict[index.sorted[position]]
+            position += 1
+            guard Self.hasPrefix(entry.kana, prefix) else { break }
+            guard let unit = RomaKana.kanaUnit(in: entry.kana.unicodeScalars, at: prefix.count) else { continue }
             if unit != currentUnit {
                 currentUnit = unit
                 unitMatches = romaKana.unitMatches(tail: tail, unit: unit)
             }
-            if unitMatches { result.append(index.sorted[low - 1]) }
+            if unitMatches { result.append(index.sorted[position - 1]) }
         }
         return result.sorted()
     }
@@ -215,10 +242,7 @@ class ConnectionDict {
     /// dictionary order, at most `limit` (a one-letter query on a large
     /// dictionary has tens of thousands; only the head is ever shown).
     private func entriesStarting(in index: KanaIndex, tail: String, limit: Int) -> [Int] {
-        var lists: [[Int]] = []
-        for scalar in romaKana.firstScalars(compatibleWith: tail) {
-            if let list = index.byFirstScalar[scalar] { lists.append(list) }
-        }
+        let lists = romaKana.firstScalars(compatibleWith: tail).compactMap { index.byFirstScalar[$0] }
         var positions = [Int](repeating: 0, count: lists.count)
         var result: [Int] = []
         while result.count < limit {
@@ -231,8 +255,8 @@ class ConnectionDict {
             guard let best else { break }
             let candidate = lists[best][positions[best]]
             positions[best] += 1
-            let entry = dict[candidate]
-            if romaKana.unitMatches(tail: tail, unit: RomaKana.kanaUnit(in: entry.scalars, at: 0)) {
+            if let unit = RomaKana.kanaUnit(in: dict[candidate].kana.unicodeScalars, at: 0),
+               romaKana.unitMatches(tail: tail, unit: unit) {
                 result.append(candidate)
             }
         }
@@ -274,20 +298,19 @@ class ConnectionDict {
         var found: [(entry: Int, kind: MatchKind)] = []
         let remainingCount = query.scalars.count - offset
         if remainingCount > 0 {
-            if query.tail.isEmpty, let hits = index.byKana[query.kanaString(offset..<query.scalars.count)] {
-                found += hits.map { ($0, .exact) }
+            let remaining = query.scalars[offset...]
+            if query.tail.isEmpty {
+                found += entries(in: index, matching: remaining).map { ($0, .exact) }
             }
             // An entry that consumes the whole remaining kana continues the
             // composition only while incomplete letters are still pending.
             let longestCompound = query.tail.isEmpty ? remainingCount - 1 : remainingCount
             for length in stride(from: 1, through: longestCompound, by: 1) {
-                if let hits = index.byKana[query.kanaString(offset..<(offset + length))] {
-                    found += hits.map { ($0, .compound(length: length)) }
-                }
+                found += entries(in: index, matching: query.scalars[offset..<(offset + length)])
+                    .map { ($0, .compound(length: length)) }
             }
             if query.predictions {
-                found += longerEntries(in: index, prefix: query.scalars[offset...], tail: query.tail)
-                    .prefix(limit).map { ($0, .prediction) }
+                found += longerEntries(in: index, prefix: remaining, tail: query.tail).prefix(limit).map { ($0, .prediction) }
             }
         } else if query.predictions, !query.tail.isEmpty {
             found += entriesStarting(in: index, tail: query.tail, limit: limit).map { ($0, .prediction) }

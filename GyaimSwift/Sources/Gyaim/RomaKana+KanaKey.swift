@@ -12,6 +12,20 @@ struct KanaPrefixConversion: Equatable {
     let romajiEnds: [Int]
 }
 
+/// One to three kana scalars that a trailing romaji fragment must fit
+/// (か, きゃ, っか, っきゃ). Fixed size so scanning entries allocates nothing.
+struct KanaUnit: Equatable {
+    var first: UInt32
+    var second: UInt32 = 0
+    var third: UInt32 = 0
+
+    var count: Int { third != 0 ? 3 : (second != 0 ? 2 : 1) }
+
+    var string: String {
+        String(String.UnicodeScalarView([first, second, third].prefix(count).compactMap(Unicode.Scalar.init)))
+    }
+}
+
 /// Kana-keyed readings for the connection dictionary (ADR-033): dictionary rows
 /// and typed queries are compared as kana, so every romaji spelling of a reading
 /// (shuusei / syuusei, kan / kann) reaches the same entry.
@@ -85,17 +99,22 @@ extension RomaKana {
     // MARK: - Kana units (what a trailing romaji fragment has to fit)
 
     /// The kana unit starting at `position`: a sokuon binds to the following
-    /// kana and a small kana to the preceding one (っか, きゃ, っきゃ).
-    static func kanaUnit(in scalars: [UInt32], at position: Int) -> ArraySlice<UInt32> {
-        guard position < scalars.count else { return scalars[scalars.count...] }
-        var end = position + 1
-        if sokuon.contains(scalars[position]), end < scalars.count { end += 1 }
-        if end < scalars.count, smallKana.contains(scalars[end]) { end += 1 }
-        return scalars[position..<end]
-    }
-
-    private static func string(_ scalars: ArraySlice<UInt32>) -> String {
-        String(String.UnicodeScalarView(scalars.compactMap(Unicode.Scalar.init)))
+    /// kana and a small kana to the preceding one (っか, きゃ, っきゃ). Nil past
+    /// the end. Walks the scalar view without allocating.
+    static func kanaUnit(in kana: String.UnicodeScalarView, at position: Int) -> KanaUnit? {
+        var iterator = kana.makeIterator()
+        for _ in 0..<position { guard iterator.next() != nil else { return nil } }
+        guard let first = iterator.next()?.value else { return nil }
+        var unit = KanaUnit(first: first)
+        var next = iterator.next()?.value
+        if sokuon.contains(first), let second = next {
+            unit.second = second
+            next = iterator.next()?.value
+        }
+        if let following = next, smallKana.contains(following) {
+            if unit.second == 0 { unit.second = following } else { unit.third = following }
+        }
+        return unit
     }
 
     /// Romaji spellings of one kana unit (memoized; there are a few hundred units).
@@ -115,27 +134,26 @@ extension RomaKana {
     /// Canonical romaji of a kana string, unit by unit: the shortest spelling
     /// of each unit (si, ti, tu rather than shi, chi, tsu), ties alphabetical.
     func canonicalRomaji(ofKana kana: String) -> String {
-        let scalars = kana.unicodeScalars.map(\.value)
         var position = 0
         var romaji = ""
-        while position < scalars.count {
-            let unit = Self.string(Self.kanaUnit(in: scalars, at: position))
-            romaji += romajiVariants(ofUnit: unit).min { ($0.count, $0) < ($1.count, $1) } ?? unit
-            position += unit.unicodeScalars.count
+        while let unit = Self.kanaUnit(in: kana.unicodeScalars, at: position) {
+            let text = unit.string
+            romaji += romajiVariants(ofUnit: text).min { ($0.count, $0) < ($1.count, $1) } ?? text
+            position += unit.count
         }
         return romaji
     }
 
     /// True when the kana unit can be spelled starting with `tail`.
-    func unitMatches(tail: String, unit: ArraySlice<UInt32>) -> Bool {
+    func unitMatches(tail: String, unit: KanaUnit) -> Bool {
         guard !tail.isEmpty else { return true }
-        guard !unit.isEmpty else { return false }
-        return romajiVariants(ofUnit: Self.string(unit)).contains { $0.hasPrefix(tail) }
+        return romajiVariants(ofUnit: unit.string).contains { $0.hasPrefix(tail) }
     }
 
     /// Convenience for tests: the unit at `position` of `kana` fits `tail`.
     func chunkMatches(tail: String, inKana kana: String, at position: Int) -> Bool {
-        unitMatches(tail: tail, unit: Self.kanaUnit(in: kana.unicodeScalars.map(\.value), at: position))
+        guard let unit = Self.kanaUnit(in: kana.unicodeScalars, at: position) else { return false }
+        return unitMatches(tail: tail, unit: unit)
     }
 
     /// First kana scalars an entry may start with when the whole typed input is

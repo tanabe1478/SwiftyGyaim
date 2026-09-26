@@ -34,9 +34,8 @@ extension ConnectionDict {
         let remainingCount = state.scalars.count - step.offset
         var found: [(entry: Int, length: Int)] = []
         for length in 1...remainingCount {
-            let key = String(String.UnicodeScalarView(state.scalars[step.offset..<(step.offset + length)]
-                .compactMap(Unicode.Scalar.init)))
-            if let hits = index.byKana[key] { found += hits.map { ($0, length) } }
+            found += entries(in: index, matching: state.scalars[step.offset..<(step.offset + length)])
+                .map { ($0, length) }
         }
         for match in found.sorted(by: { $0.entry < $1.entry }) {
             guard state.results.count < state.maxResults else { return }
