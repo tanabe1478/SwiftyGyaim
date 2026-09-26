@@ -248,15 +248,14 @@ class GyaimController: IMKInputController {
     /// WordSearchを構築する。共有ConnectionDictはパスが同じ限り再利用され、
     /// プロセス内の初回だけロードが走る。
     private func setupWordSearch() {
-        guard let bundleDictPath = Bundle.main.path(forResource: "dict", ofType: "txt") else {
+        guard let dictFiles = Config.bundledConnectionDictFiles() else {
             Log.input.error("dict.txt not found in bundle")
             return
         }
-        let dictPath = Config.activeConnectionDictFile(bundleDictPath: bundleDictPath)
-        ws = WordSearch(connectionDictFile: dictPath,
+        ws = WordSearch(connectionDictFiles: dictFiles,
                         localDictFile: Config.localDictFile,
                         studyDictFile: Config.studyDictFile)
-        Log.dict.info("Connection dictionary activated: \(dictPath)")
+        Log.dict.info("Connection dictionaries activated: \(dictFiles)")
     }
 
     private func resetState() {

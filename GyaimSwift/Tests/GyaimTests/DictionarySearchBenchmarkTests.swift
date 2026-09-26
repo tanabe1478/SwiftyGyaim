@@ -72,5 +72,25 @@ final class DictionarySearchBenchmarkTests: XCTestCase {
         measure("WordSearch prefix, 5k study") { full.search(query: $0, searchMode: 0).count }
         measure("WordSearch exact, 5k study") { full.search(query: $0, searchMode: 1).count }
         full.finish()
+
+        measureWithMozc(dictPath: dictPath, mozcPath: projectDir.appendingPathComponent("Resources/mozc-dict.txt").path)
+    }
+
+    private func measureWithMozc(dictPath: String, mozcPath: String) {
+        guard FileManager.default.fileExists(atPath: mozcPath) else { return }
+        let bothStart = CFAbsoluteTimeGetCurrent()
+        let both = ConnectionDict(dictFiles: [dictPath, mozcPath])
+        print(String(format: "bench dict.txt + mozc-dict.txt load %.0fms entries=%d",
+                     (CFAbsoluteTimeGetCurrent() - bothStart) * 1000, both.entryCount))
+        measure("dict.txt + mozc prefix (cap 2000)") { query in
+            var count = 0
+            both.searchDetailed(pat: query, searchMode: 0, maxResults: WordSearch.maxConnectionCandidates) { _ in count += 1 }
+            return count
+        }
+        measure("dict.txt + mozc exact") { query in
+            var count = 0
+            both.searchDetailed(pat: query, searchMode: 1) { _ in count += 1 }
+            return count
+        }
     }
 }

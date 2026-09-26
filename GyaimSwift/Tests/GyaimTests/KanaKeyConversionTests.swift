@@ -28,18 +28,19 @@ final class KanaKeyConversionTests: XCTestCase {
         XCTAssertEqual(rk.roma2kanaPrefix("n"), KanaPrefixConversion(kana: "", tail: "n", romajiEnds: []))
     }
 
-    func testTailMatchesTheNextKanaChunk() {
-        XCTAssertTrue(rk.chunkMatches(tail: "k", in: Array("かくにん"), at: 1))
-        XCTAssertFalse(rk.chunkMatches(tail: "k", in: Array("かえる"), at: 1))
-        XCTAssertTrue(rk.chunkMatches(tail: "n", in: Array("かんすう"), at: 1), "ん spelled nn")
-        XCTAssertTrue(rk.chunkMatches(tail: "n", in: Array("かな"), at: 1))
-        XCTAssertTrue(rk.chunkMatches(tail: "t", in: Array("かった"), at: 1), "っ binds to the next kana: tta")
-        XCTAssertTrue(rk.chunkMatches(tail: "ky", in: Array("きゃく"), at: 0))
-        XCTAssertFalse(rk.chunkMatches(tail: "ky", in: Array("きた"), at: 0))
-        XCTAssertTrue(rk.chunkMatches(tail: "sh", in: Array("しゅうせい"), at: 0), "either spelling of しゅ")
-        XCTAssertTrue(rk.chunkMatches(tail: "sy", in: Array("しゅうせい"), at: 0))
-        XCTAssertTrue(rk.firstKanaCharacters(compatibleWith: "n").isSuperset(of: ["な", "に", "ん"]))
-        XCTAssertFalse(rk.firstKanaCharacters(compatibleWith: "k").contains("さ"))
+    func testTailMatchesTheNextKanaUnit() {
+        XCTAssertTrue(rk.chunkMatches(tail: "k", inKana: "かくにん", at: 1))
+        XCTAssertFalse(rk.chunkMatches(tail: "k", inKana: "かえる", at: 1))
+        XCTAssertTrue(rk.chunkMatches(tail: "n", inKana: "かんすう", at: 1), "ん spelled nn")
+        XCTAssertTrue(rk.chunkMatches(tail: "n", inKana: "かな", at: 1))
+        XCTAssertTrue(rk.chunkMatches(tail: "t", inKana: "かった", at: 1), "っ binds to the next kana: tta")
+        XCTAssertTrue(rk.chunkMatches(tail: "ky", inKana: "きゃく", at: 0))
+        XCTAssertFalse(rk.chunkMatches(tail: "ky", inKana: "きた", at: 0))
+        XCTAssertTrue(rk.chunkMatches(tail: "sh", inKana: "しゅうせい", at: 0), "either spelling of しゅ")
+        XCTAssertTrue(rk.chunkMatches(tail: "sy", inKana: "しゅうせい", at: 0))
+        let scalars = { (text: String) in Set(text.unicodeScalars.map(\.value)) }
+        XCTAssertTrue(Set(rk.firstScalars(compatibleWith: "n")).isSuperset(of: scalars("なにん")))
+        XCTAssertFalse(rk.firstScalars(compatibleWith: "k").contains(scalars("さ").first!))
     }
 
     func testCanonicalRomajiRoundTrips() {
@@ -96,6 +97,35 @@ final class ConnectionDictKanaKeyTests: XCTestCase {
         let dict = try makeDict("3\t3\t56\t56\nko\t個\t56\t4\nko\t子\t3\t4\n")
         XCTAssertEqual(words(dict, "3ko", mode: 1).map(\.0), ["3個"])
         XCTAssertEqual(words(dict, "3k", mode: 0).map(\.0), ["3個"])
+    }
+
+    /// ADR-034: several files load into one dictionary, later files after earlier ones.
+    func testLaterFilesExtendEarlierOnes() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kana-key-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let first = dir.appendingPathComponent("a.txt"), second = dir.appendingPathComponent("b.txt")
+        try "kannsu\t関数\t3\t4\n".write(to: first, atomically: true, encoding: .utf8)
+        try "# generated\nかんす\t函数\t3\t4\nかんす\t関数\t3\t4\n".write(to: second, atomically: true, encoding: .utf8)
+        let dict = ConnectionDict(dictFiles: [first.path, second.path])
+        XCTAssertEqual(dict.entryCount, 2, "the duplicate 関数 row collapses into the first file's entry")
+        XCTAssertEqual(words(dict, "kansu", mode: 1).map(\.0), ["関数", "函数"])
+    }
+
+    /// AppDelegate prewarms on a background thread; a later WordSearch must reuse that instance.
+    func testSharedConnectionDictIsLoadedOnce() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kana-key-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("dict.txt")
+        try "ka\t蚊\t3\t4\n".write(to: file, atomically: true, encoding: .utf8)
+        WordSearch.resetConnectionDict()
+        defer { WordSearch.resetConnectionDict() }
+        let prewarmed = WordSearch.sharedConnectionDict(for: [file.path])
+        let empty = dir.appendingPathComponent("empty.txt").path
+        try "".write(toFile: empty, atomically: true, encoding: .utf8)
+        let search = WordSearch(connectionDictFiles: [file.path], localDictFile: empty, studyDictFile: empty)
+        XCTAssertTrue(WordSearch.sharedConnectionDict === prewarmed)
+        XCTAssertEqual(search.search(query: "ka", searchMode: 1).map(\.word), ["蚊"])
+        search.finish()
     }
 
     func testResultCapStopsTheWalk() throws {

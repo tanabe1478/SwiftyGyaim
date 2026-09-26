@@ -8,10 +8,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Config.setup()
         Log.config.info("Gyaim launched")
         Self.enableHiddenRomanInputModeIfNeeded()
+        prewarmConnectionDictionary()
 
         // Clipboard polling (60s interval)
         clipboardTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { _ in
             CopyText.set(NSPasteboard.general.string(forType: .string))
+        }
+    }
+
+    /// Load the connection dictionaries (~0.8s with mozc-dict.txt, ADR-034)
+    /// before the first controller needs them. A controller created earlier
+    /// waits on the same lock instead of loading a second copy.
+    private func prewarmConnectionDictionary() {
+        guard let files = Config.bundledConnectionDictFiles() else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = WordSearch.sharedConnectionDict(for: files)
         }
     }
 

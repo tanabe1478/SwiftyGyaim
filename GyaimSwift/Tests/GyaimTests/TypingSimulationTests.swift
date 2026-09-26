@@ -54,6 +54,10 @@ final class TypingSimulationTests: XCTestCase {
             ?? projectDir.appendingPathComponent("Tools/eval/typing-corpus.jsonl").path
         let outputPath = env["GYAIM_TYPING_SIM_OUTPUT"] ?? tempDir.appendingPathComponent("report.json").path
         let dictPath = projectDir.appendingPathComponent("Resources/dict.txt").path
+        let mozcPath = projectDir.appendingPathComponent("Resources/mozc-dict.txt").path
+        // GYAIM_TYPING_SIM_NO_MOZC=1 measures the Gictionary dictionary alone.
+        let dictFiles = FileManager.default.fileExists(atPath: mozcPath) && env["GYAIM_TYPING_SIM_NO_MOZC"] != "1"
+            ? [dictPath, mozcPath] : [dictPath]
         let epochs = max(1, Int(env["GYAIM_TYPING_SIM_EPOCHS"] ?? "") ?? 1)
 
         let modelReady = BundledAIRerankModel.shared.loadIfAvailable(bundle: Bundle(for: Self.self))
@@ -64,11 +68,12 @@ final class TypingSimulationTests: XCTestCase {
         // Learning-only warm-up (not scored): measures carry-over to new sentences.
         let training = try env["GYAIM_TYPING_SIM_TRAIN_CORPUS"].map { try loadCorpus(path: $0) } ?? [:]
         var report: [String: Any] = ["corpus": corpusPath, "modelMapped": modelReady, "epochs": epochs,
+                                     "dictFiles": dictFiles.map { ($0 as NSString).lastPathComponent },
                                      "settings": env["GYAIM_TYPING_SIM_SETTINGS"] ?? "{}"]
         var bySegmentation: [String: Any] = [:]
         for name in corpus.keys.sorted() {
             bySegmentation[name] = replay(sentences: corpus[name] ?? [], training: training[name] ?? [], name: name,
-                                          dictPath: dictPath, epochs: epochs)
+                                          dictFiles: dictFiles, epochs: epochs)
         }
         report["segmentations"] = bySegmentation
         let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
@@ -93,7 +98,7 @@ final class TypingSimulationTests: XCTestCase {
     }
 
     private func replay(sentences: [(id: String, segments: [Segment])],
-                        training: [(id: String, segments: [Segment])], name: String, dictPath: String,
+                        training: [(id: String, segments: [Segment])], name: String, dictFiles: [String],
                         epochs: Int) -> [String: Any] {
         let studySeed = ProcessInfo.processInfo.environment["GYAIM_TYPING_SIM_STUDYDICT"]
         let runDir = tempDir.appendingPathComponent(name)
@@ -101,7 +106,7 @@ final class TypingSimulationTests: XCTestCase {
         let studyPath = runDir.appendingPathComponent("studydict.txt").path
         if let studySeed { try? FileManager.default.copyItem(atPath: studySeed, toPath: studyPath) }
         ContextDict.shared.configure(file: runDir.appendingPathComponent("contextdict.txt").path)
-        let ws = WordSearch(connectionDictFile: dictPath,
+        let ws = WordSearch(connectionDictFiles: dictFiles,
                             localDictFile: runDir.appendingPathComponent("localdict.txt").path,
                             studyDictFile: studyPath)
         let rk = RomaKana()
