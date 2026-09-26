@@ -121,29 +121,44 @@ class WordSearch {
     // studyDict と同じくプロセス全体で1インスタンスを共有する。
     private(set) static var sharedConnectionDict: ConnectionDict?
     private(set) static var sharedConnectionDictFile: String = ""
+    /// Serializes loading so a prewarm on a background thread and a controller
+    /// init on the main thread never load the same dictionary twice.
+    private static let sharedConnectionLock = NSLock()
 
     /// 共有接続辞書を破棄して次の init() で再読み込みさせる。
     /// Gictionaryインポートは同じパスへ新しい内容を書き込むため、明示
     /// リロード（GyaimController.reloadConnectionDictionary）は必ずこれを
     /// 先に呼ぶこと。パス一致だけのキャッシュ判定では反映されない。
     static func resetConnectionDict() {
+        sharedConnectionLock.lock()
+        defer { sharedConnectionLock.unlock() }
         sharedConnectionDict = nil
         sharedConnectionDictFile = ""
     }
 
-    init(connectionDictFile: String, localDictFile: String, studyDictFile: String) {
+    /// The process-wide connection dictionary for `files`, loaded on first use.
+    /// With mozc-dict.txt the load takes ~0.8s (ADR-034); AppDelegate calls this
+    /// off the main thread at launch so the first controller finds it ready.
+    static func sharedConnectionDict(for files: [String]) -> ConnectionDict {
+        sharedConnectionLock.lock()
+        defer { sharedConnectionLock.unlock() }
+        let key = files.joined(separator: "\n")
+        if sharedConnectionDictFile == key, let cached = sharedConnectionDict { return cached }
+        let loaded = PerfLog.measure("ConnectionDict load", logger: Log.dict) { ConnectionDict(dictFiles: files) }
+        sharedConnectionDict = loaded
+        sharedConnectionDictFile = key
+        return loaded
+    }
+
+    convenience init(connectionDictFile: String, localDictFile: String, studyDictFile: String) {
+        self.init(connectionDictFiles: [connectionDictFile], localDictFile: localDictFile, studyDictFile: studyDictFile)
+    }
+
+    /// `connectionDictFiles` are loaded in order into one ConnectionDict
+    /// (ADR-034: Gictionary-derived dict.txt, then mozc-dict.txt).
+    init(connectionDictFiles: [String], localDictFile: String, studyDictFile: String) {
         self.localDictFile = localDictFile
-        if Self.sharedConnectionDictFile == connectionDictFile,
-           let cached = Self.sharedConnectionDict {
-            self.connectionDict = cached
-        } else {
-            let loaded = PerfLog.measure("ConnectionDict load", logger: Log.dict) {
-                ConnectionDict(dictFile: connectionDictFile)
-            }
-            self.connectionDict = loaded
-            Self.sharedConnectionDict = loaded
-            Self.sharedConnectionDictFile = connectionDictFile
-        }
+        self.connectionDict = Self.sharedConnectionDict(for: connectionDictFiles)
         self.localDict = Self.loadDict(dictFile: localDictFile)
         self.localDictTime = Self.fileModTime(localDictFile)
         // studyDict はプロセス内で1回だけロードする。
@@ -218,10 +233,6 @@ class WordSearch {
         }
 
         // Normal search
-        let escaped = NSRegularExpression.escapedPattern(for: q)
-        let pattern = searchMode > 0 ? "^\(escaped)$" : "^\(escaped)"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return candidates }
-
         let exactPriority = searchMode == 0 && Self.isExactReadingMatchPriority
         // Romaji spelling variants of the same kana must count as exact reading
         // matches in both directions: a study entry learned as "yondeite" is
@@ -230,11 +241,10 @@ class WordSearch {
         let queryHiragana = rk.roma2hiragana(q)
         func isKanaEquivalentReading(_ reading: String) -> Bool {
             guard !queryHiragana.isEmpty, reading != q else { return false }
-            return rk.roma2hiragana(reading) == queryHiragana
+            return Self.hiragana(ofReading: reading, romaKana: rk) == queryHiragana
         }
         func matchesQuery(_ reading: String) -> Bool {
-            let range = NSRange(reading.startIndex..., in: reading)
-            return regex.firstMatch(in: reading, range: range) != nil || isKanaEquivalentReading(reading)
+            (searchMode > 0 ? reading == q : reading.hasPrefix(q)) || isKanaEquivalentReading(reading)
         }
         func matchKind(for reading: String) -> CandidateKind {
             searchMode > 0 || reading == q || isKanaEquivalentReading(reading) ? .exact : .prefix
@@ -347,7 +357,8 @@ class WordSearch {
         }
 
         // Search connection dict
-        connectionDict.searchDetailed(pat: q, searchMode: searchMode) { result in
+        connectionDict.searchDetailed(pat: q, searchMode: searchMode,
+                                      maxResults: limit > 0 ? limit : Self.maxConnectionCandidates) { result in
             if limit > 0 { guard candidates.count < limit else { return } }
             let w = result.word
             if Self.isSuspiciousConnectionSurface(w) { return }
@@ -367,6 +378,28 @@ class WordSearch {
         }
 
         return candidates
+    }
+
+    /// The dictionary-order tail of a one-letter query is never displayed (9 per
+    /// page, the model sees the first 24), so a large connection dictionary
+    /// (ADR-034) must not turn it into thousands of SearchCandidate allocations
+    /// per keystroke: 2,000 cost 20-50 ms on two-letter inputs in dogfood.
+    static let maxConnectionCandidates = 1000
+
+    /// Hiragana of a study/local reading, converted once per distinct reading.
+    /// The per-keystroke scan of ~5k study entries used to reconvert every
+    /// reading through the romaji table (dogfood 2026-09: prefix search p50
+    /// 56ms, about 36ms of it here).
+    private static var readingHiraganaCache: [String: String] = [:]
+    private static let readingHiraganaLock = NSLock()
+
+    static func hiragana(ofReading reading: String, romaKana: RomaKana) -> String {
+        readingHiraganaLock.lock()
+        defer { readingHiraganaLock.unlock() }
+        if let cached = readingHiraganaCache[reading] { return cached }
+        let hiragana = romaKana.roma2hiragana(reading)
+        readingHiraganaCache[reading] = hiragana
+        return hiragana
     }
 
     private static let connectionInternalSurfaceSuffixes: Set<String> = [

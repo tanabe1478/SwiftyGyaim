@@ -43,6 +43,23 @@ enum Config {
         return bundleDictPath
     }
 
+    /// Connection dictionaries in load order (ADR-034): the Gictionary-derived
+    /// file (an imported ~/.gyaim/connectiondict.txt replaces the bundled
+    /// dict.txt), then the Mozc-derived vocabulary when the bundle has it.
+    static func activeConnectionDictFiles(bundleDictPath: String, mozcDictPath: String?) -> [String] {
+        var files = [activeConnectionDictFile(bundleDictPath: bundleDictPath)]
+        if let mozcDictPath { files.append(mozcDictPath) }
+        return files
+    }
+
+    /// The connection dictionaries of the running app bundle, or nil when the
+    /// bundle has no dict.txt (tests and broken installs).
+    static func bundledConnectionDictFiles(bundle: Bundle = .main) -> [String]? {
+        guard let dictPath = bundle.path(forResource: "dict", ofType: "txt") else { return nil }
+        return activeConnectionDictFiles(bundleDictPath: dictPath,
+                                         mozcDictPath: bundle.path(forResource: "mozc-dict", ofType: "txt"))
+    }
+
     static let copyTextFile: String = {
         "\(gyaimDir)/copytext"
     }()
