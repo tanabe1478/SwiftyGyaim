@@ -218,10 +218,6 @@ class WordSearch {
         }
 
         // Normal search
-        let escaped = NSRegularExpression.escapedPattern(for: q)
-        let pattern = searchMode > 0 ? "^\(escaped)$" : "^\(escaped)"
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return candidates }
-
         let exactPriority = searchMode == 0 && Self.isExactReadingMatchPriority
         // Romaji spelling variants of the same kana must count as exact reading
         // matches in both directions: a study entry learned as "yondeite" is
@@ -230,11 +226,10 @@ class WordSearch {
         let queryHiragana = rk.roma2hiragana(q)
         func isKanaEquivalentReading(_ reading: String) -> Bool {
             guard !queryHiragana.isEmpty, reading != q else { return false }
-            return rk.roma2hiragana(reading) == queryHiragana
+            return Self.hiragana(ofReading: reading, romaKana: rk) == queryHiragana
         }
         func matchesQuery(_ reading: String) -> Bool {
-            let range = NSRange(reading.startIndex..., in: reading)
-            return regex.firstMatch(in: reading, range: range) != nil || isKanaEquivalentReading(reading)
+            (searchMode > 0 ? reading == q : reading.hasPrefix(q)) || isKanaEquivalentReading(reading)
         }
         func matchKind(for reading: String) -> CandidateKind {
             searchMode > 0 || reading == q || isKanaEquivalentReading(reading) ? .exact : .prefix
@@ -347,7 +342,8 @@ class WordSearch {
         }
 
         // Search connection dict
-        connectionDict.searchDetailed(pat: q, searchMode: searchMode) { result in
+        connectionDict.searchDetailed(pat: q, searchMode: searchMode,
+                                      maxResults: limit > 0 ? limit : Self.maxConnectionCandidates) { result in
             if limit > 0 { guard candidates.count < limit else { return } }
             let w = result.word
             if Self.isSuspiciousConnectionSurface(w) { return }
@@ -367,6 +363,27 @@ class WordSearch {
         }
 
         return candidates
+    }
+
+    /// The dictionary-order tail of a one-letter query is never displayed, so a
+    /// large connection dictionary (ADR-033) must not turn it into thousands of
+    /// SearchCandidate allocations per keystroke.
+    static let maxConnectionCandidates = 2000
+
+    /// Hiragana of a study/local reading, converted once per distinct reading.
+    /// The per-keystroke scan of ~5k study entries used to reconvert every
+    /// reading through the romaji table (dogfood 2026-09: prefix search p50
+    /// 56ms, about 36ms of it here).
+    private static var readingHiraganaCache: [String: String] = [:]
+    private static let readingHiraganaLock = NSLock()
+
+    static func hiragana(ofReading reading: String, romaKana: RomaKana) -> String {
+        readingHiraganaLock.lock()
+        defer { readingHiraganaLock.unlock() }
+        if let cached = readingHiraganaCache[reading] { return cached }
+        let hiragana = romaKana.roma2hiragana(reading)
+        readingHiraganaCache[reading] = hiragana
+        return hiragana
     }
 
     private static let connectionInternalSurfaceSuffixes: Set<String> = [

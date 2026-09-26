@@ -1,6 +1,12 @@
 import Foundation
 
+/// One entry of the connection dictionary, keyed by its kana reading (ADR-033).
 struct DictEntry {
+    /// Reading as hiragana. Romaji rows are converted at load; several romaji
+    /// spellings of one reading (shuusei / syuusei) collapse into one entry.
+    let kana: String
+    let kanaCharacters: [Character]
+    /// First romaji spelling seen for this entry (tools and logs only).
     let pat: String
     let rawWord: String
     let word: String
@@ -9,10 +15,10 @@ struct DictEntry {
     let canStart: Bool
     let canTerminate: Bool
     let contributesSurface: Bool
-    var keyLink: Int?
-    var connectionLink: Int?
 
-    init(pat: String, word: String, inConnection: Int, outConnection: Int) {
+    init(kana: String, pat: String, word: String, inConnection: Int, outConnection: Int) {
+        self.kana = kana
+        self.kanaCharacters = Array(kana)
         self.pat = pat
         self.rawWord = word
         self.word = word.replacingOccurrences(of: "*", with: "")
@@ -50,17 +56,76 @@ struct ConnectionComposition: Equatable {
 }
 
 /// Morphological connection dictionary for compound word matching.
-/// Ported from ConnectionDict.rb (Toshiyuki Masui, 2011)
+/// Ported from ConnectionDict.rb (Toshiyuki Masui, 2011). Since ADR-033 the
+/// entries are indexed by kana: a typed romaji query is converted to kana (plus
+/// the incomplete trailing letters) and matched against every spelling at once.
 class ConnectionDict {
-    private var dict: [DictEntry] = []
-    private var keyLink: [Int: Int] = [:]        // first char unicode scalar -> dict index
-    private var connectionLink: [Int: Int] = [:]  // inConnection value -> dict index
+    /// Kana lookup over one group of entries: everything that can start a
+    /// composition, or everything a connection class accepts.
+    private struct KanaIndex {
+        var byKana: [String: [Int]] = [:]
+        var sorted: [Int] = []
+        var byFirstCharacter: [Character: [Int]] = [:]
 
-    init(dictFile: String) {
-        readDict(dictFile)
-        initLink()
-        Log.dict.info("ConnectionDict loaded: \(dict.count) entries")
+        mutating func insert(_ index: Int, entry: DictEntry) {
+            byKana[entry.kana, default: []].append(index)
+            sorted.append(index)
+            if let first = entry.kanaCharacters.first { byFirstCharacter[first, default: []].append(index) }
+        }
     }
+
+    private struct Query {
+        let romaji: String
+        let kana: [Character]
+        let tail: String
+        let romajiEnds: [Int]
+        let predictions: Bool
+
+        /// The typed romaji that produced the first `count` kana characters.
+        func typedRomaji(upToKana count: Int) -> String {
+            guard count > 0, count <= romajiEnds.count else { return "" }
+            return String(romaji.prefix(romajiEnds[count - 1]))
+        }
+    }
+
+    private struct Step {
+        let offset: Int
+        let foundWord: String
+        let depth: Int
+    }
+
+    private enum MatchKind {
+        case exact
+        case prediction
+        case compound(length: Int)
+    }
+
+    private struct Enumeration {
+        let kana: [Character]
+        let maxResults: Int
+        let maxDepth: Int
+        var seen: Set<String>
+        var results: [ConnectionComposition] = []
+    }
+
+    private var dict: [DictEntry] = []
+    private var startIndex = KanaIndex()
+    private var connectionIndex: [Int: KanaIndex] = [:]
+    private let romaKana = RomaKana()
+
+    convenience init(dictFile: String) {
+        self.init(dictFiles: [dictFile])
+    }
+
+    /// Later files extend earlier ones; entries keep file order, which is the
+    /// order results are emitted in.
+    init(dictFiles: [String]) {
+        for file in dictFiles { readDict(file) }
+        buildIndex()
+        Log.dict.info("ConnectionDict loaded: \(dict.count) entries from \(dictFiles.count) file(s)")
+    }
+
+    var entryCount: Int { dict.count }
 
     private func readDict(_ path: String) {
         let content: String
@@ -70,6 +135,7 @@ class ConnectionDict {
             Log.dict.error("Failed to read connection dict \(path): \(error.localizedDescription)")
             return
         }
+        var seen: Set<String> = []
         for line in content.split(separator: "\n", omittingEmptySubsequences: false) {
             let s = String(line)
             if s.hasPrefix("#") || s.trimmingCharacters(in: .whitespaces).isEmpty { continue }
@@ -79,42 +145,46 @@ class ConnectionDict {
             let word = String(parts[1])
             let inConn = parts.count > 2 ? Int(parts[2]) ?? 0 : 0
             let outConn = parts.count > 3 ? Int(parts[3]) ?? 0 : 0
-            dict.append(DictEntry(pat: pat, word: word,
-                                  inConnection: inConn, outConnection: outConn))
+            let kana = romaKana.roma2kanaKey(pat)
+            guard !kana.isEmpty, seen.insert("\(kana)\u{1}\(word)\u{1}\(inConn)\u{1}\(outConn)").inserted else { continue }
+            dict.append(DictEntry(kana: kana, pat: pat, word: word, inConnection: inConn, outConnection: outConn))
         }
     }
 
-    private func initLink() {
-        // Build keyLink: first character → linked list through dict
-        var curKey: [Int: Int] = [:]
-        for i in 0..<dict.count {
-            if !dict[i].canStart { continue }
-            guard let firstScalar = dict[i].pat.unicodeScalars.first else { continue }
-            let ind = Int(firstScalar.value)
-            if keyLink[ind] == nil {
-                keyLink[ind] = i
-                curKey[ind] = i
-            } else {
-                dict[curKey[ind]!].keyLink = i
-                curKey[ind] = i
-            }
-            dict[i].keyLink = nil
+    private func buildIndex() {
+        for (index, entry) in dict.enumerated() {
+            if entry.canStart { startIndex.insert(index, entry: entry) }
+            connectionIndex[entry.inConnection, default: KanaIndex()].insert(index, entry: entry)
         }
-
-        // Build connectionLink: inConnection → linked list through dict
-        var curConn: [Int: Int] = [:]
-        for i in 0..<dict.count {
-            let ind = dict[i].inConnection
-            if connectionLink[ind] == nil {
-                connectionLink[ind] = i
-                curConn[ind] = i
-            } else {
-                dict[curConn[ind]!].connectionLink = i
-                curConn[ind] = i
-            }
-            dict[i].connectionLink = nil
+        let order: (Int, Int) -> Bool = { [dict] lhs, rhs in
+            let left = dict[lhs].kana.unicodeScalars, right = dict[rhs].kana.unicodeScalars
+            return left.elementsEqual(right) ? lhs < rhs : left.lexicographicallyPrecedes(right)
         }
+        startIndex.sorted.sort(by: order)
+        for key in connectionIndex.keys { connectionIndex[key]?.sorted.sort(by: order) }
     }
+
+    /// Entries of `index` whose kana starts with `prefix` and is longer than it.
+    private func longerEntries(in index: KanaIndex, withPrefix prefix: [Character]) -> [Int] {
+        let scalars = String(prefix).unicodeScalars
+        var low = 0, high = index.sorted.count
+        while low < high {
+            let mid = (low + high) / 2
+            if dict[index.sorted[mid]].kana.unicodeScalars.lexicographicallyPrecedes(scalars) {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        var result: [Int] = []
+        while low < index.sorted.count, dict[index.sorted[low]].kana.unicodeScalars.starts(with: scalars) {
+            if dict[index.sorted[low]].kanaCharacters.count > prefix.count { result.append(index.sorted[low]) }
+            low += 1
+        }
+        return result
+    }
+
+    // MARK: - Search
 
     /// Search the dictionary for matches.
     /// - Parameters:
@@ -129,122 +199,118 @@ class ConnectionDict {
     }
 
     /// Search the dictionary and include metadata about the connection path.
-    func searchDetailed(pat: String, searchMode: Int,
+    /// Results come in dictionary order, depth first, as the original linked-list
+    /// walk emitted them; `maxResults` stops the walk (the tail of a one-letter
+    /// query is never displayed).
+    func searchDetailed(pat: String, searchMode: Int, maxResults: Int = .max,
                         callback: (_ result: ConnectionSearchResult) -> Void) {
-        generateCand(connection: nil, pat: pat, foundWord: "", foundPat: "", depth: 0,
-                     searchMode: searchMode, callback: callback)
+        let conversion = searchMode == 0
+            ? romaKana.roma2kanaPrefix(pat)
+            : KanaPrefixConversion(kana: romaKana.roma2kanaKey(pat), tail: "", romajiEnds: [])
+        guard !conversion.kana.isEmpty || !conversion.tail.isEmpty else { return }
+        let query = Query(romaji: pat, kana: Array(conversion.kana), tail: conversion.tail,
+                          romajiEnds: conversion.romajiEnds, predictions: searchMode == 0)
+        var budget = maxResults
+        generate(startIndex, query, Step(offset: 0, foundWord: "", depth: 0), budget: &budget, callback: callback)
     }
+
+    private func matches(in index: KanaIndex, _ query: Query, offset: Int) -> [(entry: Int, kind: MatchKind)] {
+        var found: [(entry: Int, kind: MatchKind)] = []
+        let remainingCount = query.kana.count - offset
+        if remainingCount > 0 {
+            let remaining = Array(query.kana[offset...])
+            if query.tail.isEmpty, let hits = index.byKana[String(remaining)] {
+                found += hits.map { ($0, .exact) }
+            }
+            // An entry that consumes the whole remaining kana continues the
+            // composition only while incomplete letters are still pending.
+            let longestCompound = query.tail.isEmpty ? remainingCount - 1 : remainingCount
+            for length in stride(from: 1, through: longestCompound, by: 1) {
+                if let hits = index.byKana[String(remaining[..<length])] {
+                    found += hits.map { ($0, .compound(length: length)) }
+                }
+            }
+            if query.predictions {
+                found += longerEntries(in: index, withPrefix: remaining)
+                    .filter { romaKana.chunkMatches(tail: query.tail, in: dict[$0].kanaCharacters, at: remainingCount) }
+                    .map { ($0, .prediction) }
+            }
+        } else if query.predictions, !query.tail.isEmpty {
+            for first in romaKana.firstKanaCharacters(compatibleWith: query.tail) {
+                found += (index.byFirstCharacter[first] ?? [])
+                    .filter { romaKana.chunkMatches(tail: query.tail, in: dict[$0].kanaCharacters, at: 0) }
+                    .map { ($0, .prediction) }
+            }
+        }
+        return found.sorted { $0.entry < $1.entry }
+    }
+
+    private func generate(_ index: KanaIndex, _ query: Query, _ step: Step, budget: inout Int,
+                          callback: (_ result: ConnectionSearchResult) -> Void) {
+        for match in matches(in: index, query, offset: step.offset) {
+            guard budget > 0 else { return }
+            let entry = dict[match.entry]
+            let nextWord = entry.contributesSurface ? step.foundWord + entry.word : step.foundWord
+            switch match.kind {
+            case .exact:
+                guard entry.canTerminate else { continue }
+                budget -= 1
+                callback(ConnectionSearchResult(word: nextWord, pat: query.romaji,
+                                                outConnection: entry.outConnection, depth: step.depth + 1))
+            case .prediction:
+                guard entry.canTerminate else { continue }
+                budget -= 1
+                let pat = query.typedRomaji(upToKana: step.offset) + romaKana.canonicalRomaji(ofKana: entry.kana)
+                callback(ConnectionSearchResult(word: nextWord, pat: pat,
+                                                outConnection: entry.outConnection, depth: step.depth + 1))
+            case .compound(let length):
+                guard let next = connectionIndex[entry.outConnection] else { continue }
+                generate(next, query, Step(offset: step.offset + length, foundWord: nextWord, depth: step.depth + 1),
+                         budget: &budget, callback: callback)
+            }
+        }
+    }
+
+    // MARK: - Bounded enumeration of complete compositions
 
     /// Enumerate complete compositions of `pat` with bounded work (issue #59,
     /// ADR-022). Unlike `searchDetailed`, this emits only exact full-reading
     /// conversions, deduplicates surfaces, and stops at `maxResults` /
     /// `maxDepth` so long or ambiguous readings cannot explode the recursion.
-    /// The result set is the "grammar" for dictionary-constrained generation:
-    /// the model may only choose among these surfaces.
     /// `excluding` surfaces are skipped during enumeration without consuming
-    /// result slots (BUG-028): capping first and filtering afterwards returned
-    /// an empty set, because the bounded enumeration walks the same dictionary
-    /// in the same order as normal search and its first N compositions are
-    /// exactly the candidates the caller already has.
+    /// result slots (BUG-028).
     func constrainedCompositions(pat: String,
                                  maxResults: Int = 12,
                                  maxDepth: Int = 8,
                                  excluding: Set<String> = []) -> [ConnectionComposition] {
         guard maxResults > 0, maxDepth > 0 else { return [] }
-        var seen = excluding
-        var results: [ConnectionComposition] = []
-        enumerateCompositions(connection: nil, pat: pat, foundWord: "", depth: 0,
-                              maxResults: maxResults, maxDepth: maxDepth,
-                              seen: &seen, results: &results)
-        return results
+        let kana = Array(romaKana.roma2kanaKey(pat))
+        guard !kana.isEmpty else { return [] }
+        var enumeration = Enumeration(kana: kana, maxResults: maxResults, maxDepth: maxDepth, seen: excluding)
+        enumerate(startIndex, Step(offset: 0, foundWord: "", depth: 0), &enumeration)
+        return enumeration.results
     }
 
-    private func enumerateCompositions(connection: Int?, pat: String,
-                                       foundWord: String, depth: Int,
-                                       maxResults: Int, maxDepth: Int,
-                                       seen: inout Set<String>,
-                                       results: inout [ConnectionComposition]) {
-        guard results.count < maxResults, depth < maxDepth,
-              let firstScalar = pat.unicodeScalars.first else { return }
-        var d: Int?
-        if let conn = connection {
-            d = connectionLink[conn]
-        } else {
-            d = keyLink[Int(firstScalar.value)]
-        }
-
-        while let idx = d {
-            guard results.count < maxResults else { return }
-            let entry = dict[idx]
-            let nextWord = entry.contributesSurface ? foundWord + entry.word : foundWord
-            if pat == entry.pat {
-                if entry.canTerminate, !nextWord.isEmpty, seen.insert(nextWord).inserted {
-                    results.append(ConnectionComposition(word: nextWord, depth: depth + 1))
-                }
-            } else if pat.hasPrefix(entry.pat), !entry.pat.isEmpty {
-                enumerateCompositions(connection: entry.outConnection,
-                                      pat: String(pat.dropFirst(entry.pat.count)),
-                                      foundWord: nextWord,
-                                      depth: depth + 1,
-                                      maxResults: maxResults, maxDepth: maxDepth,
-                                      seen: &seen, results: &results)
-            }
-
-            if connection != nil {
-                d = dict[idx].connectionLink
-            } else {
-                d = dict[idx].keyLink
+    private func enumerate(_ index: KanaIndex, _ step: Step, _ state: inout Enumeration) {
+        guard state.results.count < state.maxResults, step.depth < state.maxDepth,
+              step.offset < state.kana.count else { return }
+        let remainingCount = state.kana.count - step.offset
+        var found: [(entry: Int, length: Int)] = []
+        for length in 1...remainingCount {
+            if let hits = index.byKana[String(state.kana[step.offset..<(step.offset + length)])] {
+                found += hits.map { ($0, length) }
             }
         }
-    }
-
-    private func generateCand(connection: Int?, pat: String,
-                               foundWord: String, foundPat: String, depth: Int,
-                               searchMode: Int,
-                               callback: (_ result: ConnectionSearchResult) -> Void) {
-        guard let firstScalar = pat.unicodeScalars.first else { return }
-        var d: Int?
-        if let conn = connection {
-            d = connectionLink[conn]
-        } else {
-            d = keyLink[Int(firstScalar.value)]
-        }
-
-        while let idx = d {
-            let entry = dict[idx]
-            let nextWord = entry.contributesSurface ? foundWord + entry.word : foundWord
-            let nextPat = foundPat + entry.pat
-            let nextDepth = depth + 1
-            if pat == entry.pat {
-                // Exact match
-                if entry.canTerminate {
-                    callback(ConnectionSearchResult(word: nextWord,
-                                                    pat: nextPat,
-                                                    outConnection: entry.outConnection,
-                                                    depth: nextDepth))
+        for match in found.sorted(by: { $0.entry < $1.entry }) {
+            guard state.results.count < state.maxResults else { return }
+            let entry = dict[match.entry]
+            let nextWord = entry.contributesSurface ? step.foundWord + entry.word : step.foundWord
+            if match.length == remainingCount {
+                if entry.canTerminate, !nextWord.isEmpty, state.seen.insert(nextWord).inserted {
+                    state.results.append(ConnectionComposition(word: nextWord, depth: step.depth + 1))
                 }
-            } else if entry.pat.hasPrefix(pat) {
-                // Dict entry starts with pattern (prefix match)
-                if searchMode == 0, entry.canTerminate {
-                    callback(ConnectionSearchResult(word: nextWord,
-                                                    pat: nextPat,
-                                                    outConnection: entry.outConnection,
-                                                    depth: nextDepth))
-                }
-            } else if pat.hasPrefix(entry.pat) {
-                // Pattern starts with dict entry (potential compound via connection)
-                let restPat = String(pat.dropFirst(entry.pat.count))
-                generateCand(connection: entry.outConnection, pat: restPat,
-                             foundWord: nextWord,
-                             foundPat: nextPat,
-                             depth: nextDepth,
-                             searchMode: searchMode, callback: callback)
-            }
-
-            if connection != nil {
-                d = dict[idx].connectionLink
-            } else {
-                d = dict[idx].keyLink
+            } else if let next = connectionIndex[entry.outConnection] {
+                enumerate(next, Step(offset: step.offset + match.length, foundWord: nextWord, depth: step.depth + 1), &state)
             }
         }
     }
