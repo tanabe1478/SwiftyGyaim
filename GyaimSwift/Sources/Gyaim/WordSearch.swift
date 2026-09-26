@@ -121,29 +121,44 @@ class WordSearch {
     // studyDict と同じくプロセス全体で1インスタンスを共有する。
     private(set) static var sharedConnectionDict: ConnectionDict?
     private(set) static var sharedConnectionDictFile: String = ""
+    /// Serializes loading so a prewarm on a background thread and a controller
+    /// init on the main thread never load the same dictionary twice.
+    private static let sharedConnectionLock = NSLock()
 
     /// 共有接続辞書を破棄して次の init() で再読み込みさせる。
     /// Gictionaryインポートは同じパスへ新しい内容を書き込むため、明示
     /// リロード（GyaimController.reloadConnectionDictionary）は必ずこれを
     /// 先に呼ぶこと。パス一致だけのキャッシュ判定では反映されない。
     static func resetConnectionDict() {
+        sharedConnectionLock.lock()
+        defer { sharedConnectionLock.unlock() }
         sharedConnectionDict = nil
         sharedConnectionDictFile = ""
     }
 
-    init(connectionDictFile: String, localDictFile: String, studyDictFile: String) {
+    /// The process-wide connection dictionary for `files`, loaded on first use.
+    /// With mozc-dict.txt the load takes ~0.8s (ADR-034); AppDelegate calls this
+    /// off the main thread at launch so the first controller finds it ready.
+    static func sharedConnectionDict(for files: [String]) -> ConnectionDict {
+        sharedConnectionLock.lock()
+        defer { sharedConnectionLock.unlock() }
+        let key = files.joined(separator: "\n")
+        if sharedConnectionDictFile == key, let cached = sharedConnectionDict { return cached }
+        let loaded = PerfLog.measure("ConnectionDict load", logger: Log.dict) { ConnectionDict(dictFiles: files) }
+        sharedConnectionDict = loaded
+        sharedConnectionDictFile = key
+        return loaded
+    }
+
+    convenience init(connectionDictFile: String, localDictFile: String, studyDictFile: String) {
+        self.init(connectionDictFiles: [connectionDictFile], localDictFile: localDictFile, studyDictFile: studyDictFile)
+    }
+
+    /// `connectionDictFiles` are loaded in order into one ConnectionDict
+    /// (ADR-034: Gictionary-derived dict.txt, then mozc-dict.txt).
+    init(connectionDictFiles: [String], localDictFile: String, studyDictFile: String) {
         self.localDictFile = localDictFile
-        if Self.sharedConnectionDictFile == connectionDictFile,
-           let cached = Self.sharedConnectionDict {
-            self.connectionDict = cached
-        } else {
-            let loaded = PerfLog.measure("ConnectionDict load", logger: Log.dict) {
-                ConnectionDict(dictFile: connectionDictFile)
-            }
-            self.connectionDict = loaded
-            Self.sharedConnectionDict = loaded
-            Self.sharedConnectionDictFile = connectionDictFile
-        }
+        self.connectionDict = Self.sharedConnectionDict(for: connectionDictFiles)
         self.localDict = Self.loadDict(dictFile: localDictFile)
         self.localDictTime = Self.fileModTime(localDictFile)
         // studyDict はプロセス内で1回だけロードする。

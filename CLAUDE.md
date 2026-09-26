@@ -57,7 +57,7 @@ Working directory for build commands: `GyaimSwift/`
 
 ### Three-Tier Dictionary System (WordSearch.swift + ConnectionDict.swift)
 
-1. **Connection Dictionary** (`GyaimSwift/Resources/dict.txt`) — Fixed morphological dictionary with conjugation support. Tab-separated format: `romaji[TAB]surface[TAB]input_connection[TAB]output_connection`.
+1. **Connection Dictionary** (`GyaimSwift/Resources/dict.txt` + `mozc-dict.txt`) — Fixed morphological dictionary with conjugation support. Tab-separated format: `reading[TAB]surface[TAB]input_connection[TAB]output_connection` (reading is romaji or kana; matched as kana, ADR-033). `mozc-dict.txt` is generated from the Mozc open-source dictionary (ADR-034).
 2. **Local Dictionary** (`~/.gyaim/localdict.txt`) — User-registered words, highest priority. Hot reload via mtime check.
 3. **Study Dictionary** (`~/.gyaim/studydict.txt`) — Score-based learning (max 10,000 entries; 「淘汰なし」mode is uncapped, ADR-025). 4-column TSV: `reading[TAB]word[TAB]timestamp[TAB]frequency`. Eviction mode selectable in Preferences (MRU / None / Score-based). Default: score-based (Mozc-style). See ADR-014.
 
@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（335テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（336テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -124,7 +124,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | ContextDictTests | Tests/GyaimTests/ | 9 | 文脈条件付き学習（contextKey・affinity・永続化・削除・減衰・上限） |
 | StudyEntryTests | Tests/GyaimTests/ | 6 | StudyEntryスコア計算・EvictionMode既定値・ファイルI/O |
 | ConnectionDictTests | Tests/GyaimTests/ | 10 | 連接辞書の検索・同梱辞書の語彙回帰・制約付き合成・サ変名詞+する（ADR-030） |
-| KanaKeyConversionTests / ConnectionDictKanaKeyTests | Tests/GyaimTests/ | 9 | ローマ字→かなキー変換（末尾文字の扱い）と、綴りの揺れが同じエントリに届くこと（ADR-033） |
+| KanaKeyConversionTests / ConnectionDictKanaKeyTests | Tests/GyaimTests/ | 10 | ローマ字→かなキー変換（末尾文字の扱い）、綴りの揺れが同じエントリに届くこと、複数ファイルの読み込み順（ADR-033 / 034） |
 | DictionarySearchGoldenTests | Tests/GyaimTests/ | 1 | 変更前の検索結果（268クエリ×上位150件）が同じ相対順で含まれること |
 | DictionarySearchBenchmarkTests | Tests/GyaimTests/ | 1 | 辞書検索の内訳ベンチマーク（`GYAIM_DICT_BENCH=1` のときだけ実行） |
 | ConnectionDictSharingTests | Tests/GyaimTests/ | 3 | 連接辞書のプロセス内共有（同一パス再利用・パス切替・reset） |
@@ -196,7 +196,8 @@ docs/adr/
 ├── 030-sahen-noun-connection-from-unidic.md
 ├── 031-wider-homophone-review.md
 ├── 032-llm-primary-candidate-ranking.md
-└── 033-kana-keyed-connection-dictionary.md
+├── 033-kana-keyed-connection-dictionary.md
+└── 034-mozc-dictionary-import.md
 ```
 
 ## Logging & Monitoring
@@ -272,7 +273,7 @@ pi エージェントには同じワークフローが pi-context-workflow 拡�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-033）。目次と運用ルールは `docs/adr/README.md`
+- `docs/adr/` — 設計判断の経緯（000-034）。目次と運用ルールは `docs/adr/README.md`
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 

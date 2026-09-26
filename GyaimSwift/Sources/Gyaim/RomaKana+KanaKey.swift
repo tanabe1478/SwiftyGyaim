@@ -18,8 +18,8 @@ struct KanaPrefixConversion: Equatable {
 extension RomaKana {
     private static let consonants: Set<Character> = Set("bcdfghjklmnpqrstvwxz")
     private static let doubleConsonants: Set<Character> = Set("bcdfghjklmpqrstvwxyz")
-    private static let smallKana: Set<Character> = Set("ぁぃぅぇぉゃゅょゎァィゥェォャュョヮ")
-    private static let sokuon: Set<Character> = ["っ", "ッ"]
+    private static let smallKana: Set<UInt32> = Set("ぁぃぅぇぉゃゅょゎァィゥェォャュョヮ".unicodeScalars.map(\.value))
+    private static let sokuon: Set<UInt32> = Set("っッ".unicodeScalars.map(\.value))
 
     /// Key for a complete reading: like `roma2hiragana`, but keeps what it
     /// cannot convert and turns a final "n" into ん. Readings already written
@@ -75,76 +75,89 @@ extension RomaKana {
     }
 
     static func hiraganized(_ text: String) -> String {
-        String(String.UnicodeScalarView(text.unicodeScalars.map { scalar in
-            (0x30A1...0x30F6).contains(scalar.value) ? Unicode.Scalar(scalar.value - 0x60) ?? scalar : scalar
+        let katakana: ClosedRange<UInt32> = 0x30A1...0x30F6
+        guard text.unicodeScalars.contains(where: { katakana.contains($0.value) }) else { return text }
+        return String(String.UnicodeScalarView(text.unicodeScalars.map { scalar in
+            katakana.contains(scalar.value) ? Unicode.Scalar(scalar.value - 0x60) ?? scalar : scalar
         }))
     }
 
-    // MARK: - Kana chunks (the unit a trailing romaji fragment has to fit)
+    // MARK: - Kana units (what a trailing romaji fragment has to fit)
 
     /// The kana unit starting at `position`: a sokuon binds to the following
     /// kana and a small kana to the preceding one (っか, きゃ, っきゃ).
-    static func kanaChunk(in kana: [Character], at position: Int) -> String? {
-        guard position < kana.count else { return nil }
+    static func kanaUnit(in scalars: [UInt32], at position: Int) -> ArraySlice<UInt32> {
+        guard position < scalars.count else { return scalars[scalars.count...] }
         var end = position + 1
-        if sokuon.contains(kana[position]), end < kana.count { end += 1 }
-        if end < kana.count, smallKana.contains(kana[end]) { end += 1 }
-        return String(kana[position..<end])
+        if sokuon.contains(scalars[position]), end < scalars.count { end += 1 }
+        if end < scalars.count, smallKana.contains(scalars[end]) { end += 1 }
+        return scalars[position..<end]
     }
 
-    /// Romaji spellings of one kana chunk (memoized; there are a few hundred chunks).
-    func romajiVariants(ofChunk chunk: String) -> [String] {
-        Self.chunkCache.lock.lock()
-        defer { Self.chunkCache.lock.unlock() }
-        if let cached = Self.chunkCache.variants[chunk] { return cached }
-        var variants = hiragana2roma(chunk)
-        if variants.isEmpty, let first = chunk.unicodeScalars.first, (0x30A0...0x30FF).contains(first.value) {
-            variants = katakana2roma(chunk)
+    private static func string(_ scalars: ArraySlice<UInt32>) -> String {
+        String(String.UnicodeScalarView(scalars.compactMap(Unicode.Scalar.init)))
+    }
+
+    /// Romaji spellings of one kana unit (memoized; there are a few hundred units).
+    func romajiVariants(ofUnit unit: String) -> [String] {
+        Self.unitCache.lock.lock()
+        defer { Self.unitCache.lock.unlock() }
+        if let cached = Self.unitCache.variants[unit] { return cached }
+        var variants = hiragana2roma(unit)
+        if variants.isEmpty, let first = unit.unicodeScalars.first, (0x30A0...0x30FF).contains(first.value) {
+            variants = katakana2roma(unit)
         }
-        if variants.isEmpty { variants = [chunk] }  // digits / symbols spell themselves
-        Self.chunkCache.variants[chunk] = variants
+        if variants.isEmpty { variants = [unit] }  // digits / symbols spell themselves
+        Self.unitCache.variants[unit] = variants
         return variants
     }
 
-    /// Canonical romaji of a kana string, chunk by chunk: the shortest spelling
-    /// of each chunk (si, ti, tu rather than shi, chi, tsu), ties alphabetical.
+    /// Canonical romaji of a kana string, unit by unit: the shortest spelling
+    /// of each unit (si, ti, tu rather than shi, chi, tsu), ties alphabetical.
     func canonicalRomaji(ofKana kana: String) -> String {
-        let characters = Array(kana)
+        let scalars = kana.unicodeScalars.map(\.value)
         var position = 0
         var romaji = ""
-        while let chunk = Self.kanaChunk(in: characters, at: position) {
-            romaji += romajiVariants(ofChunk: chunk).min { ($0.count, $0) < ($1.count, $1) } ?? chunk
-            position += chunk.count
+        while position < scalars.count {
+            let unit = Self.string(Self.kanaUnit(in: scalars, at: position))
+            romaji += romajiVariants(ofUnit: unit).min { ($0.count, $0) < ($1.count, $1) } ?? unit
+            position += unit.unicodeScalars.count
         }
         return romaji
     }
 
-    /// True when the kana chunk at `position` can be spelled starting with `tail`.
-    func chunkMatches(tail: String, in kana: [Character], at position: Int) -> Bool {
+    /// True when the kana unit can be spelled starting with `tail`.
+    func unitMatches(tail: String, unit: ArraySlice<UInt32>) -> Bool {
         guard !tail.isEmpty else { return true }
-        guard let chunk = Self.kanaChunk(in: kana, at: position) else { return false }
-        return romajiVariants(ofChunk: chunk).contains { $0.hasPrefix(tail) }
+        guard !unit.isEmpty else { return false }
+        return romajiVariants(ofUnit: Self.string(unit)).contains { $0.hasPrefix(tail) }
     }
 
-    /// First kana characters an entry may start with when the whole typed
-    /// input is still an incomplete syllable (`tail` only).
-    func firstKanaCharacters(compatibleWith tail: String) -> Set<Character> {
-        Self.chunkCache.lock.lock()
-        defer { Self.chunkCache.lock.unlock() }
-        if let cached = Self.chunkCache.firstCharacters[tail] { return cached }
-        var result: Set<Character> = []
+    /// Convenience for tests: the unit at `position` of `kana` fits `tail`.
+    func chunkMatches(tail: String, inKana kana: String, at position: Int) -> Bool {
+        unitMatches(tail: tail, unit: Self.kanaUnit(in: kana.unicodeScalars.map(\.value), at: position))
+    }
+
+    /// First kana scalars an entry may start with when the whole typed input is
+    /// still an incomplete syllable (`tail` only), in scalar order.
+    func firstScalars(compatibleWith tail: String) -> [UInt32] {
+        Self.unitCache.lock.lock()
+        defer { Self.unitCache.lock.unlock() }
+        if let cached = Self.unitCache.firstScalars[tail] { return cached }
+        var result: Set<UInt32> = []
         for (kana, spellings) in hiraganaToRoma where spellings.contains(where: { $0.hasPrefix(tail) }) {
-            if let first = kana.first { result.insert(first) }
+            if let first = kana.unicodeScalars.first { result.insert(first.value) }
         }
-        if let first = tail.first, Self.doubleConsonants.contains(first) { result.insert("っ") }
-        Self.chunkCache.firstCharacters[tail] = result
-        return result
+        if let first = tail.first, Self.doubleConsonants.contains(first) { result.insert("っ".unicodeScalars.first!.value) }
+        let sorted = result.sorted()
+        Self.unitCache.firstScalars[tail] = sorted
+        return sorted
     }
 
-    private final class ChunkCache {
+    private final class UnitCache {
         let lock = NSLock()
         var variants: [String: [String]] = [:]
-        var firstCharacters: [String: Set<Character>] = [:]
+        var firstScalars: [String: [UInt32]] = [:]
     }
-    private static let chunkCache = ChunkCache()
+    private static let unitCache = UnitCache()
 }
