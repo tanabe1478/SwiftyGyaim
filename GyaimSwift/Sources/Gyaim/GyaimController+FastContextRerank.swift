@@ -245,6 +245,8 @@ extension GyaimController {
     static func fastContextRerankOutcome(model: String) -> String {
         let outcomes = [
             ("heuristic-prereview", "heuristic-prereview"),
+            ("review-llm-ranked-unavailable", "llm-rank-unavailable"),
+            ("review-llm-ranked", "llm-ranked"),
             ("review-affinity-skipped", "affinity-skip"),
             ("review-length-skipped", "short-input-skip"),
             ("review-skipped", "protected-exact-skip"),
@@ -266,7 +268,7 @@ extension GyaimController {
 
     private static func minFastContextModelInputLength() -> Int {
         let configured = GyaimSettings.integer(forKey: "aiRerankFastContextModelMinInputLength")
-        guard configured > 0 else { return 4 }
+        guard configured > 0 else { return 3 }  // ADR-031
         return min(max(configured, 1), 12)
     }
 

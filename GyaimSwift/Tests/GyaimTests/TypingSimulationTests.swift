@@ -14,10 +14,11 @@ final class TypingSimulationTests: XCTestCase {
     }
 
     private enum CommitPath: String {
-        case convert, kanaHiragana = "kana-hiragana", kanaKatakana = "kana-katakana"
+        case convert, raw, kanaHiragana = "kana-hiragana", kanaKatakana = "kana-katakana"
     }
 
     private var tempDir = FileManager.default.temporaryDirectory
+    private var llmRanker: TypingSimulationLLMRanker?
 
     override func setUpWithError() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["GYAIM_TYPING_SIM"] == "1",
@@ -27,8 +28,15 @@ final class TypingSimulationTests: XCTestCase {
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         let settings = tempDir.appendingPathComponent("settings.json")
         // Same model switches as the dogfood settings; logging stays off so
-        // nothing reaches ~/.gyaim/gyaim.log.
-        try Data(#"{"loggingEnabled": false, "aiRerankUseModelForFastContext": true}"#.utf8).write(to: settings)
+        // nothing reaches ~/.gyaim/gyaim.log. GYAIM_TYPING_SIM_SETTINGS (a JSON
+        // object) overrides keys for experiments.
+        var values: [String: Any] = ["loggingEnabled": false, "aiRerankUseModelForFastContext": true]
+        if let extra = ProcessInfo.processInfo.environment["GYAIM_TYPING_SIM_SETTINGS"],
+           let object = try JSONSerialization.jsonObject(with: Data(extra.utf8)) as? [String: Any] {
+            values.merge(object) { _, new in new }
+        }
+        values["loggingEnabled"] = false
+        try JSONSerialization.data(withJSONObject: values).write(to: settings)
         GyaimSettings.settingsFilePathOverride = settings.path
     }
 
@@ -49,12 +57,18 @@ final class TypingSimulationTests: XCTestCase {
         let epochs = max(1, Int(env["GYAIM_TYPING_SIM_EPOCHS"] ?? "") ?? 1)
 
         let modelReady = BundledAIRerankModel.shared.loadIfAvailable(bundle: Bundle(for: Self.self))
+        if env["GYAIM_TYPING_SIM_LLM_RANK"] == "1" {
+            llmRanker = TypingSimulationLLMRanker(bundle: Bundle(for: Self.self))
+        }
         let corpus = try loadCorpus(path: corpusPath)
-        var report: [String: Any] = ["corpus": corpusPath, "modelMapped": modelReady, "epochs": epochs]
+        // Learning-only warm-up (not scored): measures carry-over to new sentences.
+        let training = try env["GYAIM_TYPING_SIM_TRAIN_CORPUS"].map { try loadCorpus(path: $0) } ?? [:]
+        var report: [String: Any] = ["corpus": corpusPath, "modelMapped": modelReady, "epochs": epochs,
+                                     "settings": env["GYAIM_TYPING_SIM_SETTINGS"] ?? "{}"]
         var bySegmentation: [String: Any] = [:]
         for name in corpus.keys.sorted() {
-            bySegmentation[name] = replay(sentences: corpus[name] ?? [], name: name, dictPath: dictPath,
-                                          epochs: epochs, studySeed: env["GYAIM_TYPING_SIM_STUDYDICT"])
+            bySegmentation[name] = replay(sentences: corpus[name] ?? [], training: training[name] ?? [], name: name,
+                                          dictPath: dictPath, epochs: epochs)
         }
         report["segmentations"] = bySegmentation
         let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
@@ -78,8 +92,10 @@ final class TypingSimulationTests: XCTestCase {
         return result
     }
 
-    private func replay(sentences: [(id: String, segments: [Segment])], name: String, dictPath: String,
-                        epochs: Int, studySeed: String?) -> [String: Any] {
+    private func replay(sentences: [(id: String, segments: [Segment])],
+                        training: [(id: String, segments: [Segment])], name: String, dictPath: String,
+                        epochs: Int) -> [String: Any] {
+        let studySeed = ProcessInfo.processInfo.environment["GYAIM_TYPING_SIM_STUDYDICT"]
         let runDir = tempDir.appendingPathComponent(name)
         try? FileManager.default.createDirectory(at: runDir, withIntermediateDirectories: true)
         let studyPath = runDir.appendingPathComponent("studydict.txt").path
@@ -89,6 +105,17 @@ final class TypingSimulationTests: XCTestCase {
                             localDictFile: runDir.appendingPathComponent("localdict.txt").path,
                             studyDictFile: studyPath)
         let rk = RomaKana()
+
+        let ranker = llmRanker
+        llmRanker = nil  // warm-up learns only; no LLM scoring cost
+        for sentence in training {
+            var context = ""
+            for segment in sentence.segments {
+                _ = simulate(segment, context: context, ws: ws, rk: rk)
+                context = String((context + segment.expected).suffix(80))
+            }
+        }
+        llmRanker = ranker
 
         var records: [[String: Any]] = []
         var counts: [String: Int] = [:]
@@ -109,7 +136,8 @@ final class TypingSimulationTests: XCTestCase {
         return ["summary": summarize(records, epochs: epochs), "records": records]
     }
 
-    private func commitPath(for word: String) -> CommitPath {
+    private func commitPath(for word: String, input: String) -> CommitPath {
+        if word == input { return .raw }  // digits / ASCII typed as-is
         if word.unicodeScalars.allSatisfy({ (0x3041...0x309F).contains($0.value) || "、。！？ー".unicodeScalars.contains($0) }) {
             return .kanaHiragana
         }
@@ -123,16 +151,8 @@ final class TypingSimulationTests: XCTestCase {
     private func simulate(_ segment: Segment, context: String, ws: WordSearch, rk: RomaKana) -> [String: Any] {
         let input = segment.romaji
         var record: [String: Any] = ["input": input, "expected": segment.expected]
-        switch commitPath(for: segment.expected) {
-        case .kanaHiragana:
-            record["outcome"] = "kana-hiragana"
-            return record
-        case .kanaKatakana:
-            record["outcome"] = "kana-katakana"
-            ws.study(word: segment.expected, reading: input)
-            return record
-        case .convert:
-            break
+        if let direct = commitWithoutConversion(segment, ws: ws) {
+            return record.merging(direct) { _, new in new }
         }
 
         let (ranked, reviewed) = rankCandidates(input: input, expected: segment.expected, context: context, ws: ws, rk: rk)
@@ -140,15 +160,18 @@ final class TypingSimulationTests: XCTestCase {
         var committed: SearchCandidate?
         if let rank = record["rank"] as? Int, rank >= 1 {
             record["outcome"] = rank == 1 ? "prefix-top1" : "prefix-lower"
+            record["ops"] = rank + 1  // Space x rank, then commit
             committed = reviewed[rank]
         } else {
-            let exact = ws.search(query: input, searchMode: 1)
+            let exact = exactModeCandidates(input: input, ws: ws, rk: rk)
             if let index = exact.firstIndex(where: { $0.word == segment.expected }) {
                 record["outcome"] = "exact-escape"
                 record["exactRank"] = index
+                record["ops"] = 1 + index + 1  // Enter into exact mode, Space x index, commit
                 committed = exact[index]
             } else {
                 record["outcome"] = "absent"
+                record["ops"] = 3  // Tab (Google), Space to its first result (assumed right), commit
             }
         }
         // Absent words are what Google Transliterate would supply; learning
@@ -157,6 +180,33 @@ final class TypingSimulationTests: XCTestCase {
         ws.study(word: segment.expected, reading: reading)
         ContextDict.shared.record(context: context, reading: reading, word: segment.expected)
         return record
+    }
+
+    /// Raw (digits typed as-is) and kana-key commits: one key, no ranking.
+    /// Katakana commits are studied, hiragana ones are not (GyaimController).
+    private func commitWithoutConversion(_ segment: Segment, ws: WordSearch) -> [String: Any]? {
+        switch commitPath(for: segment.expected, input: segment.romaji) {
+        case .raw:
+            return ["outcome": "raw", "ops": 1]
+        case .kanaHiragana:
+            return ["outcome": "kana-hiragana", "ops": 1]
+        case .kanaKatakana:
+            ws.study(word: segment.expected, reading: segment.romaji)
+            return ["outcome": "kana-katakana", "ops": 1]
+        case .convert:
+            return nil
+        }
+    }
+
+    /// Exact-mode list as GyaimController builds it: hiragana, katakana, then
+    /// the exact dictionary matches (the first row is selected on entry).
+    private func exactModeCandidates(input: String, ws: WordSearch, rk: RomaKana) -> [SearchCandidate] {
+        var candidates = ws.search(query: input, searchMode: 1)
+        for kana in [rk.roma2katakana(input), rk.roma2hiragana(input)] where !kana.isEmpty {
+            candidates.removeAll { $0.word == kana }
+            candidates.insert(SearchCandidate(word: kana, reading: input, kind: .kana), at: 0)
+        }
+        return candidates
     }
 
     /// The prefix list the user sees after the model review, plus where the
@@ -189,6 +239,10 @@ final class TypingSimulationTests: XCTestCase {
                     .contains { scored.contains($0.index) && $0.text == expected }
             }
         }
+        if let llmRanker {
+            record.merge(llmRanker.ranks(searchResults: searchResults, input: input, hiragana: hiragana,
+                                         leftContext: context, expected: expected)) { _, new in new }
+        }
         return (record, reviewed)
     }
 
@@ -198,7 +252,10 @@ final class TypingSimulationTests: XCTestCase {
             let rows = records.filter { ($0["epoch"] as? Int) == epoch }
             var outcomes: [String: Int] = [:]
             for row in rows { outcomes[row["outcome"] as? String ?? "?", default: 0] += 1 }
-            let conversions = rows.filter { !(($0["outcome"] as? String) ?? "").hasPrefix("kana-") }
+            let conversions = rows.filter {
+                let outcome = ($0["outcome"] as? String) ?? ""
+                return !outcome.hasPrefix("kana-") && outcome != "raw"
+            }
             let hits = outcomes["prefix-top1", default: 0]
             let heuristicHits = conversions.filter { ($0["heuristicRank"] as? Int) == 1 }.count
             let misses = conversions.filter { ($0["outcome"] as? String) != "prefix-top1" }
@@ -211,6 +268,10 @@ final class TypingSimulationTests: XCTestCase {
                 "missNotScored": misses.filter { ($0["inScoredSet"] as? Bool) == false }.count,
                 "missScored": misses.filter { ($0["inScoredSet"] as? Bool) == true }.count,
                 "missNoReview": misses.filter { $0["inScoredSet"] == nil }.count,
+                // Selection keys to commit every unit (typing the romaji itself excluded).
+                "ops": rows.reduce(0) { $0 + ($1["ops"] as? Int ?? 0) },
+                "opsPerSentence": Double(rows.reduce(0) { $0 + ($1["ops"] as? Int ?? 0) })
+                    / Double(max(1, Set(rows.compactMap { $0["sentence"] as? String }).count)),
             ] as [String: Any]
         }
         return result
