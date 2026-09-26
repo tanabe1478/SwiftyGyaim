@@ -3,16 +3,15 @@ import Foundation
 /// Bidirectional romaji-kana conversion engine.
 /// Ported from Romakana.rb (Toshiyuki Masui, 2011)
 struct RomaKana {
-    // Roma -> single kana mapping
-    private let romaToHiragana: [String: String]
-    private let romaToKatakana: [String: String]
+    // Roma -> single kana mapping (internal: RomaKana+KanaKey.swift)
+    let romaToHiragana: [String: String]
+    let romaToKatakana: [String: String]
     // Kana -> multiple roma mappings
-    private let hiraganaToRoma: [String: [String]]
-    private let katakanaToRoma: [String: [String]]
+    let hiraganaToRoma: [String: [String]]
+    let katakanaToRoma: [String: [String]]
 
-    // Sorted roma keys by length descending for greedy matching
-    private let sortedHiraKeys: [String]
-    private let sortedKataKeys: [String]
+    /// Longest romaji key in the table; greedy matching tries this length first.
+    let maxRomaKeyLength: Int
 
     init() {
         var hrk: [String: String] = [:]
@@ -39,39 +38,47 @@ struct RomaKana {
         self.romaToKatakana = krk
         self.hiraganaToRoma = hkr
         self.katakanaToRoma = kkr
-        self.sortedHiraKeys = hrk.keys.sorted { $0.count > $1.count }
-        self.sortedKataKeys = krk.keys.sorted { $0.count > $1.count }
+        self.maxRomaKeyLength = hrk.keys.map(\.count).max() ?? 1
     }
 
     // MARK: - Roma to Kana
 
     func roma2hiragana(_ roma: String) -> String {
-        romaToKana(roma, map: romaToHiragana, sortedKeys: sortedHiraKeys,
-                          tsu: "ん", smallTsu: "っ", isHiragana: true)
+        romaToKana(roma, map: romaToHiragana, tsu: "ん", smallTsu: "っ", isHiragana: true)
     }
 
     func roma2katakana(_ roma: String) -> String {
-        romaToKana(roma, map: romaToKatakana, sortedKeys: sortedKataKeys,
-                          tsu: "ン", smallTsu: "ッ", isHiragana: false)
+        romaToKana(roma, map: romaToKatakana, tsu: "ン", smallTsu: "ッ", isHiragana: false)
+    }
+
+    /// Longest table key starting at `index`, tried from `maxRomaKeyLength`
+    /// down to one character (same result as scanning the keys longest-first,
+    /// without touching all ~350 of them per position).
+    func longestRomaKey(_ roma: [Character], at index: Int, map: [String: String]) -> (key: String, kana: String)? {
+        var length = min(maxRomaKeyLength, roma.count - index)
+        while length > 0 {
+            let key = String(roma[index..<(index + length)])
+            if let kana = map[key] { return (key, kana) }
+            length -= 1
+        }
+        return nil
     }
 
     private func romaToKana(_ roma: String, map: [String: String],
-                             sortedKeys: [String],
                              tsu: String, smallTsu: String,
                              isHiragana: Bool) -> String {
         var kana = ""
         var ind = roma.startIndex
+        let characters = Array(roma)
+        var position = 0
 
         while ind < roma.endIndex {
             var found = false
-            for key in sortedKeys {
-                let remaining = roma[ind...]
-                if remaining.hasPrefix(key) {
-                    kana += map[key]!
-                    ind = roma.index(ind, offsetBy: key.count)
-                    found = true
-                    break
-                }
+            if let match = longestRomaKey(characters, at: position, map: map) {
+                kana += match.kana
+                ind = roma.index(ind, offsetBy: match.key.count)
+                position += match.key.count
+                found = true
             }
             if !found {
                 let r0 = String(roma[ind])
@@ -79,6 +86,7 @@ struct RomaKana {
                 let r1: String? = r1Index < roma.endIndex ? String(roma[r1Index]) : nil
 
                 let consonants = "bcdfghjklmnpqrstvwxz"
+                position += 1
                 if r0 == "n" || r0 == "N", let r1, consonants.contains(r1) {
                     kana += tsu  // "ん" / "ン"
                     ind = roma.index(after: ind)
