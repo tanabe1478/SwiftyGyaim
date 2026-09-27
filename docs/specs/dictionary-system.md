@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
-> Trigger: WordSearch.swift, ConnectionDict.swift
-> Last updated: 2026-09-24 (UniDic 由来のサ変名詞接続を追加 — ADR-030)
+> Trigger: WordSearch.swift, ConnectionDict.swift, RomaKana+KanaKey.swift
+> Last updated: 2026-09-26 (Mozc 公開辞書の同梱 — ADR-034)
 
 ## 概要
 
@@ -13,13 +13,13 @@
 |--------|------|---------|---------|------|
 | 1 (最高) | Study | ~/.gyaim/studydict.txt | 10,000 (設定可能) | MRU淘汰（デフォルト） |
 | 2 | Local | ~/.gyaim/localdict.txt | 無制限 | ユーザー手動登録 |
-| 3 | Connection | Resources/dict.txt または ~/.gyaim/connectiondict.txt | ~40K | 形態素解析辞書。インポート済み辞書があれば優先 |
+| 3 | Connection | Resources/dict.txt（または ~/.gyaim/connectiondict.txt）+ Resources/mozc-dict.txt | 約 34 万エントリ | 形態素接続辞書。Gictionary 由来の辞書（インポート済みがあればそれ）に続けて Mozc 由来の語彙を読む（ADR-034） |
 
 ## ファイル形式
 
 Study: タブ区切り `reading\tword\ttimestamp\tfrequency`（旧2カラム形式も読み込み可能）
 Local: タブ区切り `reading\tword`
-Connection: タブ区切り `romaji\tsurface\tinConnection\toutConnection`
+Connection: タブ区切り `reading\tsurface\tinConnection\toutConnection`。reading はローマ字でもかなでもよく、読み込み時にかなキーへ変換する（ADR-033）
 
 ## 接続辞書の思想
 
@@ -40,14 +40,40 @@ romaji surface inConnection outConnection
 
 - `inConnection`: このエントリが受け入れるカテゴリ
 - `outConnection`: このエントリの後ろに接続できるカテゴリ。次カテゴリなしは `0`
-- `ConnectionDict.generateCand()` は、入力の先頭に合う語を見つけると残りの入力を `outConnection` で絞って再帰探索する
+- `ConnectionDict.searchDetailed()` は、入力の先頭に合う語を見つけると残りの入力を `outConnection` で絞って再帰探索する（照合はかなキー。後述）
 - 表記に含まれる `*` は内部接続用マーカー。`ConnectionDict` はこれを `canStart` / `canTerminate` / `contributesSurface` に正規化して扱う
 
 例: `けいおう 大学名 大学名接続` と `だいがく 大学名接続 名詞接続` があれば、`けいおうだいがく` から `慶應大学` を生成できる。動詞活用も同様に `むす -> 結`、`べ -> *べ*`、`ない -> *ない` のような接続で `結べない` を生成する。
 
 一般名詞（`3 4`）は助詞類にしか接続しない。する の活用形（し / して / します / した …、入力接続 51）へつなぐにはサ変クラスの行（`50 51`）が要る。同梱辞書では、UniDic が `サ変可能` / `サ変形状詞可能` とする一般名詞に `Tools/dict/add-sahen-connection.py` で `50 51` 行を追加している（ADR-030。例: `jissousimasu` → `実装します`）。UniDic は生成時だけ使い、実行時には依存しない。辞書を Gictionary から取り込み直した場合は、このスクリプトを再実行する。名詞+名詞の複合語（`要件定義`）は、名詞を受ける入力接続がないため合成しない。
 
-`constrainedCompositions(pat:maxResults:maxDepth:)`（ADR-022）は同じ遷移探索の**有界版**で、完全変換の表層のみを重複なく列挙し、結果上限（既定12）と深さ上限（既定8）で再帰を打ち切る。辞書制約付きZenz生成の制約集合として使われる。`searchDetailed` 側の探索は従来どおり無制限（通常候補の互換性維持のため）。
+`constrainedCompositions(pat:maxResults:maxDepth:)`（ADR-022）は同じ遷移探索の**有界版**で、完全変換の表層のみを重複なく列挙し、結果上限（既定12）と深さ上限（既定8）で再帰を打ち切る。`searchDetailed` は `maxResults`（`WordSearch` からは 1,000）で打ち切る。1〜2 文字入力で数千件出る接続候補の末尾は辞書順のノイズで、表示（9 件 × ページ送り、モデルが見るのは上位 24 件）には届かない。2,000 では 2 文字入力が dogfood で 20〜50 ms かかった。
+
+### Mozc 由来の語彙（ADR-034）
+
+`Resources/mozc-dict.txt` は Mozc の公開辞書（`src/data/dictionary_oss`）から `Tools/dict/build-mozc-connection-dict.py` で生成した名詞類の一覧（約 28 万語、かなキー、コスト順）。Mozc の右接続 ID で接続クラスを付ける: 名詞,サ変接続 → `3 4` + `50 51`、名詞,形容動詞語幹 → `3 4` + `18 19`、その他の名詞 → `3 4`、副詞 → `24 0`。左 ID が名詞 / 接頭詞（再+起動 の複合語）/ 副詞 / 感動詞の行だけを対象にし、動詞・形容詞は Gictionary の活用行に任せる。コストは 7,500 以下（地名・人名は 6,000 以下）、読みと同じひらがな表記の行は除く。
+
+`Config.activeConnectionDictFiles` が読み込み順を決める: Gictionary 由来の辞書（取り込んだ `~/.gyaim/connectiondict.txt` があればそれ、なければ `dict.txt`）、続けて `mozc-dict.txt`。`ConnectionDict(dictFiles:)` は 1 つの辞書として索引し、同じ (かな, 表記, クラス) の行は先のファイルが勝つ。共有キャッシュ（`WordSearch.sharedConnectionDict(for:)`）はファイル一覧で判定し、ロックで直列化する。`AppDelegate` が起動時にバックグラウンドで同じ関数を呼んで先読みするため、最初のコントローラは読み込み（Release で約 0.6 秒）を待たずに済むことが多い。ライセンス表示（Mozc BSD-3、IPAdic、ICOT、沖縄辞書）は `Resources/DICTIONARY_THIRD_PARTY_NOTICES.txt`。再生成の手順はスクリプトの docstring にある（Mozc の commit を `--commit` で記録する）。
+
+### かなキー索引（ADR-033）
+
+エントリは読みの「かな」で索引する。索引は、開始できるエントリの集合と接続クラスごとの集合それぞれについて「かな順に並べたエントリ番号の配列」（完全一致・接頭部分は二分探索）と「先頭かなごとの辞書順リスト」だけを持つ。かなをキーにしたハッシュ表とエントリごとのかな配列は、Mozc 込みで常駐メモリを約 120 MB 余分に使ったため持たない。行の読みは読み込み時に `RomaKana.roma2kanaKey` でひらがなに変換し（ローマ字は表引き、かな行はひらがなへ正規化、数字・記号はそのまま残す）、同じ (かな, 表記, inConnection, outConnection) の行は最初の 1 行に統合する。これにより `shuusei` / `syuusei` のような綴りの行は 1 エントリになり、辞書に 1 つの綴りしかない語も別の綴りで引ける。
+
+検索時は入力ローマ字を `RomaKana.roma2kanaPrefix` で「確定したかな」と「未完成の末尾文字」（`kak` → か + `k`、`kan` → か + `n`、`ky` → 空 + `ky`）に分ける。末尾の `n` は な行にもなり得るので ん にはしない（`kann` は かん）。各段階で次を集め、辞書ファイル順に並べて深さ優先で処理する（旧実装の連結リスト走査と同じ順序）。
+
+- 完全一致: 残りのかなと同じキーのエントリ（末尾文字がないとき）
+- 接続合成: 残りのかなの先頭部分と同じキーのエントリ → `outConnection` のクラスの索引で残りを再帰。末尾文字があるときは残り全体を消費するエントリも合成の対象（`kakuninnk` → 確認 + `k…`）
+- 前方一致（prefix mode のみ）: 残りのかなで始まりそれより長いエントリのうち、残りの直後のかな単位（っか / きゃ を 1 単位）のローマ字表記のどれかが末尾文字で始まるもの。残りのかなが空（`k` だけ）のときは、末尾文字と両立する先頭かなの索引から探す
+
+`reading`（`ConnectionSearchResult.pat`）は、完全一致・合成では打った入力そのまま、前方一致では「打った部分のローマ字 + 残りのかなの正規ローマ字（各かな単位の最短表記: si / ti / tu、同長は辞書順）」を返す。既知の差: 入力はかなの境界でしか分割しないため `nn` は ん であり、読み `n` の行と `n…` の続きには分割されない。
+
+`DictionarySearchGoldenTests` は、変更前の実装で記録した 268 クエリ × 上位 150 件（`Tests/GyaimTests/Fixtures/dictionary-search-golden.json`）が同じ相対順で含まれることを検査する。fixture の再生成は `GYAIM_DICT_GOLDEN_WRITE=<path>`。
+
+### 検索の性能
+
+dogfood（2026-09-13〜24）では前方一致検索が 1 打鍵 p50 56 ms / p95 102 ms で、原因は学習辞書の走査（エントリごとの正規表現照合とローマ字→かな変換）だった。ADR-033 で、読みのかな変換は `WordSearch.hiragana(ofReading:)` が読みごとに 1 回だけ行って記憶し、照合は前方一致・等価比較にした。Release のベンチマーク（`DictionarySearchBenchmarkTests`、`GYAIM_DICT_BENCH=1`、同梱辞書 + 合成した学習辞書 5,000 件）で前方一致 39 → 1.7 ms、完全一致 37 → 0.3 ms。接続辞書の検索は 0.2 → 0.8 ms（1 文字入力の最大 5.9 ms）、読み込みは `dict.txt` 単体で 70 → 150 ms、`mozc-dict.txt` を含めて約 600 ms（プロセスごとに 1 回、起動時に先読み）。Mozc 込みの `WordSearch` 前方一致（学習辞書 5,000 件）は平均 2.7 ms、最大 10.7 ms。常駐メモリは Mozc 込みで約 90 MB 増える（テストプロセスで 86 → 173 MB）。
+
+`Tools/dict/suggest-connection-entries.py`（接続辞書の Python 移植）はローマ字照合のままで、かなキーにも `mozc-dict.txt` にも追従していない（Mozc に既にある語も提案し得る）。
 
 生産的な接尾辞も接続辞書で扱う。`化` は suffix-only の `*化` として `名詞接続/普通名詞接続 -> する接続` に追加し、`局所 + 化 -> 局所化`、`局所 + 化 + する -> 局所化する` のような候補を通常辞書検索で生成する。先頭 `*` により単独 `ka` のトップレベル候補は増やさず、接続経路上でのみ利用する。
 

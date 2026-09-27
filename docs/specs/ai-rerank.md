@@ -201,7 +201,7 @@ payload: `path`（prefix / exact / google / kana-hiragana / kana-katakana / deac
 
 各文は「普段の区切り」（dogfoodログで観測した、内容語ごとに変換し助詞はかな確定する打ち方）と「自然な区切り」（複合語・動詞+助動詞・名詞+する をまとめる）の2通りを持つ。両者の差は、ユーザーが癖で回避している弱点の大きさを示す。
 
-辞書・ContextDict・settings はすべて一時ディレクトリに置き、`loggingEnabled=false` で `~/.gyaim/gyaim.log` に書かない。`GYAIM_TYPING_SIM=1` のときだけ実行され、通常のユニットテストではスキップされる。`GYAIM_TYPING_SIM_EPOCHS` で複数回流して学習後の状態を、`GYAIM_TYPING_SIM_STUDYDICT` で既存の学習辞書の写しから始めた状態を測れる。`GYAIM_TYPING_SIM_SETTINGS`（JSONオブジェクト）で設定キーを上書きして条件を比べられる（ADR-031 の採点件数・入力長の比較に使用）。
+辞書・ContextDict・settings はすべて一時ディレクトリに置き、`loggingEnabled=false` で `~/.gyaim/gyaim.log` に書かない。`GYAIM_TYPING_SIM=1` のときだけ実行され、通常のユニットテストではスキップされる。`GYAIM_TYPING_SIM_EPOCHS` で複数回流して学習後の状態を、`GYAIM_TYPING_SIM_STUDYDICT` で既存の学習辞書の写しから始めた状態を測れる。`GYAIM_TYPING_SIM_SETTINGS`（JSONオブジェクト）で設定キーを上書きして条件を比べられる（ADR-031 の採点件数・入力長の比較に使用）。辞書は `dict.txt` と `mozc-dict.txt` の両方を読む（`GYAIM_TYPING_SIM_NO_MOZC=1` で Gictionary 由来だけ）。ADR-034 の比較では、自然な区切りの候補なしが 27 → 13 件、1位率 0.811 → 0.876。
 
 指標は1位率（`firstCandidateRate`、モデルあり / `heuristicFirstCandidateRate`）に加えて、確定までの操作回数 `ops` / `opsPerSentence` を出す。ローマ字の打鍵は含めず、予測 r 位は Space×r+確定、完全一致モードは Enter+Space×位置+確定、候補なしは Google 変換の1位で確定する仮定の3回、かな確定・数字等の raw 確定は1回と数える。区切りをまとめると確定回数が減るため、1位率だけでは測れない「長い単位で打てるようになった」効果を比べられる。
 
