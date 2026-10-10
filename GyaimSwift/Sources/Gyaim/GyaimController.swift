@@ -104,6 +104,10 @@ class GyaimController: IMKInputController {
     private var ws: WordSearch?
     private var recentCommittedText = ""
     private let maxAIContextCharacters = 80
+    /// True while the left context started from text a previous controller
+    /// committed in the same app (CommittedContextStore, ADR-035). Logged in
+    /// the commit payloads so the effect of inherited context can be measured.
+    private var contextInherited = false
     private var rk = RomaKana()
     private var candWindow: CandidateWindow?
     /// Last IMK-reported cursor rect that looked like a valid screen-coordinate rect.
@@ -166,6 +170,7 @@ class GyaimController: IMKInputController {
             + "lastConsumedCC=\(GyaimController.lastConsumedCC)")
         CopyText.set(NSPasteboard.general.string(forType: .string))
         SecureInputDiagnostics.checkAndLog()
+        inheritCommittedContextIfNeeded(client: (sender as? IMKTextInput) ?? (client() as? IMKTextInput))
         ws?.start()
         if Self.isFastContextRerankModelEnabled {
             InProcessAIReranker.shared.warmUp()
@@ -984,7 +989,8 @@ class GyaimController: IMKInputController {
                                       context: String,
                                       headLimit: Int = 8,
                                       affinityProvider: ((SearchCandidate) -> Double)? = nil,
-                                      trace: FastContextTrace? = nil) -> String? {
+                                      trace: FastContextTrace? = nil,
+                                      contextInherited: Bool = false) -> String? {
         guard candidates.indices.contains(chosenIndex) else { return nil }
 
         func encode(_ candidate: SearchCandidate, rank: Int) -> [String: Any] {
@@ -1011,6 +1017,7 @@ class GyaimController: IMKInputController {
             "context": context,
             "top": top,
         ]
+        if contextInherited { payload["contextInherited"] = true }
         if let trace {
             payload.merge(trace.payload(chosenWord: candidates[chosenIndex].word,
                                         displayedWords: candidates.map(\.word))) { _, new in new }
@@ -1020,12 +1027,34 @@ class GyaimController: IMKInputController {
         return json
     }
 
-    private func recordCommittedText(_ text: String) {
+    private func recordCommittedText(_ text: String, client: IMKTextInput?) {
         guard !text.isEmpty else { return }
         recentCommittedText += text
         if recentCommittedText.count > maxAIContextCharacters {
             recentCommittedText = String(recentCommittedText.suffix(maxAIContextCharacters))
         }
+        if let bundle = Self.clientBundle(client) {
+            CommittedContextStore.shared.record(text: text, bundle: bundle)
+        }
+    }
+
+    /// A controller that has not committed anything yet starts from the text
+    /// the previous controller committed in the same app, if that was recent
+    /// (`aiRerankFastContextCarryOverSeconds`, ADR-035). IMK recreates the
+    /// controller on most focus changes, which otherwise dropped the context.
+    private func inheritCommittedContextIfNeeded(client: IMKTextInput?) {
+        guard recentCommittedText.isEmpty, let bundle = Self.clientBundle(client) else { return }
+        let inherited = CommittedContextStore.shared.inheritableContext(
+            bundle: bundle, carryOverSeconds: CommittedContextStore.configuredCarryOverSeconds)
+        guard !inherited.isEmpty else { return }
+        recentCommittedText = inherited
+        contextInherited = true
+        Log.input.info("Fast context inherited: bundle=\(bundle) chars=\(inherited.count)")
+    }
+
+    static func clientBundle(_ client: IMKTextInput?) -> String? {
+        guard let bundle = client?.bundleIdentifier(), !bundle.isEmpty else { return nil }
+        return bundle
     }
 
     // MARK: - Fix as Kana (F6/F7)
@@ -1055,7 +1084,7 @@ class GyaimController: IMKInputController {
         } else {
             Log.input.info("Study skipped (kana confirm): \"\(word)\" (reading: \"\(inputPat)\")")
         }
-        recordCommittedText(word)
+        recordCommittedText(word, client: client)
         resetState()
         hideWindow()
     }
@@ -1110,7 +1139,7 @@ class GyaimController: IMKInputController {
         }
 
         if !skipStudy {
-            recordCommittedText(word)
+            recordCommittedText(word, client: client)
         }
         resetState()
         hideWindow()
@@ -1123,7 +1152,8 @@ class GyaimController: IMKInputController {
             + "source=\(String(describing: candidate.source)) kind=\(candidate.kind.rawValue)")
         if let payload = Self.acceptedDetailPayload(candidates: candidates, chosenIndex: nthCand,
                                                     context: Self.limitedFastContext(recentCommittedText),
-                                                    trace: fastContextTrace) {
+                                                    trace: fastContextTrace,
+                                                    contextInherited: contextInherited) {
             Log.input.info("Fast context accepted detail: input=\"\(self.inputPat)\" payload=\(payload)")
         }
     }
@@ -1136,7 +1166,8 @@ class GyaimController: IMKInputController {
         if let payload = Self.commitOutcomePayload(
             path: path, chosenWord: word, context: Self.limitedFastContext(recentCommittedText),
             prefixWords: inPrefixMode ? candidates.map(\.word) : escapedPrefixWords,
-            trace: inPrefixMode ? fastContextTrace : escapedPrefixTrace) {
+            trace: inPrefixMode ? fastContextTrace : escapedPrefixTrace,
+            contextInherited: contextInherited) {
             Log.input.info("Commit outcome: input=\"\(inputPat)\" payload=\(payload)")
         }
     }
@@ -1146,12 +1177,14 @@ class GyaimController: IMKInputController {
     /// whether the model review scored that word at all: a miss outside the
     /// scored set cannot be fixed by the model, whatever its quality.
     static func commitOutcomePayload(path: String, chosenWord: String, context: String,
-                                     prefixWords: [String], trace: FastContextTrace?) -> String? {
+                                     prefixWords: [String], trace: FastContextTrace?,
+                                     contextInherited: Bool = false) -> String? {
         var payload: [String: Any] = [
             "path": path,
             "context": context,
             "prefixCandidateCount": prefixWords.count,
         ]
+        if contextInherited { payload["contextInherited"] = true }
         payload["prefixRank"] = prefixWords.firstIndex(of: chosenWord)
         if let trace {
             payload["controller"] = trace.controllerID
