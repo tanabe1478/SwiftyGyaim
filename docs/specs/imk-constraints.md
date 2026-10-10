@@ -1,7 +1,7 @@
 # Spec: InputMethodKit制約集
 
 > Trigger: GyaimController.swift, AppDelegate.swift, main.swift, CandidateWindow.swift
-> Last updated: 2026-08-11 (未入力deactivationではfixしない — BUG-032)
+> Last updated: 2026-10-10 (コントローラ再生成の頻度と共有ストア — ADR-035)
 
 ## 概要
 
@@ -50,7 +50,7 @@ let resolvedClient = (sender as? IMKTextInput) ?? (self.client() as? IMKTextInpu
 
 ### 8. IMKServer のシングルトン
 
-`main.swift` で作成する `IMKServer` はアプリのライフタイム中1つだけ。GyaimControllerのインスタンスは入力ソースの切り替えごとに再生成される可能性がある。staticプロパティ（`lastConsumedCC`等）はこのため必要。
+`main.swift` で作成する `IMKServer` はアプリのライフタイム中1つだけ。GyaimControllerのインスタンスは入力ソースの切り替えごとに再生成される可能性がある。staticプロパティ（`lastConsumedCC`等）はこのため必要。実測では入力ソース切替だけでなくアプリ・入力欄のフォーカス移動でも作り直される（10日間で1,887回）。コントローラに閉じた状態はそのたびに消えるので、引き継ぐべきもの（左文脈 → `CommittedContextStore`、ADR-035）はプロセス内の共有ストアに置く。
 
 ### 9. Secure Event Input と ASCII対応入力モード（ADR-023）
 

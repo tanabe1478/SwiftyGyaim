@@ -1,7 +1,7 @@
 # Spec: 設定ストア（settings.json）
 
 > Trigger: GyaimSettings.swift
-> Last updated: 2026-09-26 (aiRerankLLMStudyWeight / ContextWeight 追加。ExactHomophone* と NormalReviewMinInputLength は ADR-032 以降のモデル経路では未使用)
+> Last updated: 2026-10-10 (aiRerankFastContextCarryOverSeconds 追加 — ADR-035)
 
 ## 概要
 
@@ -65,6 +65,7 @@
 | `aiRerankFastContextCandidateLimit` | Int | 24（2〜48） | – | 並べ替え対象の辞書候補数 |
 | `aiRerankFastContextReviewDelayMs` | Int | 0（0〜1000） | – | 背景モデルレビュー開始前のスロットル（ADR-029）。0 で毎打鍵 |
 | `aiRerankFastContextSelectionWaitMs` | Int | 30（0〜200） | – | Space で先頭候補を選ぶとき、実行中のレビュー結果を待つ上限 |
+| `aiRerankFastContextCarryOverSeconds` | Int | 300（0〜3600） | – | 新しいコントローラが同じアプリの直前の確定文脈を引き継ぐ上限秒数。0 で引き継がない（ADR-035） |
 
 ### 同梱モデル
 
