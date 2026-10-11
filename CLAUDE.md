@@ -197,7 +197,8 @@ docs/adr/
 ├── 031-wider-homophone-review.md
 ├── 032-llm-primary-candidate-ranking.md
 ├── 033-kana-keyed-connection-dictionary.md
-└── 034-mozc-dictionary-import.md
+├── 034-mozc-dictionary-import.md
+└── 035-windows-port-zig-tip-swift-core.md
 ```
 
 ## Logging & Monitoring
@@ -273,7 +274,7 @@ pi エージェントには同じワークフローが pi-context-workflow 拡�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-034）。目次と運用ルールは `docs/adr/README.md`
+- `docs/adr/` — 設計判断の経緯（000-035）。目次と運用ルールは `docs/adr/README.md`
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 
