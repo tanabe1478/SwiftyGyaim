@@ -15,6 +15,10 @@ targets:
     platform: macOS
     sources:
       - path: Sources/Gyaim
+      # Shared conversion core (ADR-035). Compiled into the app module for now;
+      # Packages/GyaimCore/Package.swift builds the same files as a SwiftPM
+      # package for Windows/Linux and for `swift test`.
+      - path: Packages/GyaimCore/Sources/GyaimCore
       - path: Resources
         excludes:
           - Info.plist
@@ -46,9 +50,11 @@ targets:
     platform: macOS
     sources:
       - path: Tests/GyaimTests
+      - path: Packages/GyaimCore/Tests/GyaimCoreTests
       - path: Sources/Gyaim
         excludes:
           - main.swift
+      - path: Packages/GyaimCore/Sources/GyaimCore
       - path: Resources
         excludes:
           - Info.plist

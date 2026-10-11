@@ -1,9 +1,11 @@
 # Spec: 設定ストア（settings.json）
 
 > Trigger: GyaimSettings.swift
-> Last updated: 2026-09-26 (aiRerankLLMStudyWeight / ContextWeight 追加。ExactHomophone* と NormalReviewMinInputLength は ADR-032 以降のモデル経路では未使用)
+> Last updated: 2026-10-11 (GyaimCore パッケージへ移動 — ADR-035。2026-09-26: aiRerankLLMStudyWeight / ContextWeight 追加。ExactHomophone* と NormalReviewMinInputLength は ADR-032 以降のモデル経路では未使用)
 
 ## 概要
+
+`GyaimSettings` は `Packages/GyaimCore/Sources/GyaimCore/GyaimSettings.swift` にある（ADR-035）。`testKnownKeysMatchSettingsKeysUsedInSources` は `Sources/Gyaim` とパッケージの両方のソースを走査する。
 
 すべての設定値は `~/.gyaim/settings.json` に保存する。コードからの読み書きは `GyaimSettings` だけを通し、`UserDefaults.standard` を直接触らない（`GyaimSettingsTests.testKnownKeysMatchSettingsKeysUsedInSources` がキー一覧とソースの一致を検査する）。
 

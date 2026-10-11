@@ -1,13 +1,15 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, ZenzRuntime.swift, ZenzRuntime+Scoring.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController+FastContextRerank.swift, FastContextTrace.swift
-> Last updated: 2026-09-26 (候補の並べ替えを LLM 主体に — ADR-032)
+> Last updated: 2026-10-11 (GyaimCore パッケージへ移動、outcome 対応表を core へ — ADR-035)
 
 ## 概要
 
 通常入力（prefix mode）の候補順を、Swift heuristic と同梱の小型言語モデルで補正する（fast-context rerank）。モデルは `Resources/Models/gyaim-lm-small-public-v1-gguf/ggml-model-Q5_K_M.gguf`（`customModelPath` で差し替え可、後述）を IME プロセス内で memory-map し、`LlamaZenzContext` が tokenization / `llama_decode` / logits 取得と、候補文字列の条件付き平均 log probability の算出を行う。
 
 かつて存在した Tab 起動のローカル候補生成パイプライン（CandidateGenerator の lattice / 補完候補、Zenz 制約付き生成、review loop）は ADR-024 で削除され、Tab は Google 変換の起動になった。Python resident server / external command による GPT-2 rerank も Swift 側の呼び出し元がなく、legacy として扱う（末尾「Legacy」参照）。
+
+実装は `Packages/GyaimCore/Sources/GyaimCore/`（`AIReranker`、`AIRerankBackend`、`InProcessAIReranker`、`ZenzRuntime*`、`LlamaZenzContext*`、`FastContextTrace`、`FastContextReviewTicket`）にあり、`GyaimController+FastContextRerank.swift` だけが `Sources/Gyaim/` に残る（ADR-035、project-setup.md）。ログと確定 payload の outcome ラベル（`modelOutcome`）の対応表は core の `FastContextRerankOutcome.label(model:)` で、`GyaimController.fastContextRerankOutcome` はそれを呼ぶだけ。計時は `Date().timeIntervalSinceReferenceDate`（CoreFoundation 非依存）。
 
 ## 目的
 

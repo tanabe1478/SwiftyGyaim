@@ -25,6 +25,10 @@ xcodebuild \
 LLVM_PROFILE_FILE="$PROFILE_DIR/${SCHEME}-%p.profraw" \
   xcrun xctest "$BUNDLE"
 
+# GyaimCore as a SwiftPM package (ADR-035): the same sources must build and
+# pass their tests without Xcode, as they will on Windows/Linux.
+swift test --package-path Packages/GyaimCore
+
 # SwiftLint (issue #28). Existing violations are frozen in .swiftlint-baseline.json;
 # only new violations fail. To refresh the baseline after fixing old warnings:
 #   swiftlint lint --quiet --write-baseline .swiftlint-baseline.json

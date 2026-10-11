@@ -1,11 +1,11 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift, GyaimController+FastContextRerank.swift
-> Last updated: 2026-09-26 (モデルレビューを LLM 主体の並べ替えに — ADR-032)
+> Last updated: 2026-10-11 (辞書・rerank の実装を GyaimCore パッケージへ — ADR-035)
 
 ## 概要
 
-GyaimControllerはIMKInputControllerのサブクラスで、全キー入力の処理を担う。
+GyaimControllerはIMKInputControllerのサブクラスで、全キー入力の処理を担う。辞書検索・学習・rerank の実装は GyaimCore パッケージ（`Packages/GyaimCore`）にあり、`GyaimController*.swift` は IMK との接続、候補の組み立て、非同期レビューの予約を担う（ADR-035、project-setup.md）。`GyaimController.fastContextRerankOutcome(model:)` は core の `FastContextRerankOutcome.label` への転送。
 
 ## 入力状態
 

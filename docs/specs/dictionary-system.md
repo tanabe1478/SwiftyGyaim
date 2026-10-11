@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift, RomaKana+KanaKey.swift
-> Last updated: 2026-09-26 (Mozc 公開辞書の同梱 — ADR-034)
+> Last updated: 2026-10-11 (GyaimCore パッケージへ移動、CRLF の辞書ファイルを読めるように — ADR-035)
 
 ## 概要
 
@@ -20,6 +20,10 @@
 Study: タブ区切り `reading\tword\ttimestamp\tfrequency`（旧2カラム形式も読み込み可能）
 Local: タブ区切り `reading\tword`
 Connection: タブ区切り `reading\tsurface\tinConnection\toutConnection`。reading はローマ字でもかなでもよく、読み込み時にかなキーへ変換する（ADR-033）
+
+改行は LF を正とするが、CRLF のファイルも読める: `ConnectionDict` はバイト単位の行分割の後に行末の CR を落とし、Study / Local 辞書と頻度表は `Character.isNewline` で分割する（Swift では `"\r\n"` が 1 つの `Character` なので、`"\n"` 区切りの `split` は CRLF ファイルを 1 行として扱ってしまう）。Windows で編集したユーザー辞書と、autocrlf の checkout で CRLF になった同梱辞書への対策（ADR-035）。
+
+実装は `Packages/GyaimCore/Sources/GyaimCore/`（`WordSearch`、`ConnectionDict`、`RomaKana+KanaKey` など）にある（project-setup.md）。
 
 ## 接続辞書の思想
 
