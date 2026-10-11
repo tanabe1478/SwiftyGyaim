@@ -1,0 +1,729 @@
+import Foundation
+
+/// Identifies which dictionary a candidate originated from.
+enum CandidateSource: Equatable {
+    case study
+    case local
+    case connection
+    case google     // Google Input Tools candidate
+    case external   // clipboard / selected text
+    case synthetic  // inputPat, hiragana, katakana, timestamp
+}
+
+/// Identifies what shape or generation path a candidate represents.
+enum CandidateKind: String, Equatable {
+    case raw
+    case exact
+    case prefix
+    case compound
+    case completion
+    case google
+    case kana
+    case lattice
+    case zenz
+}
+
+/// A search result candidate.
+struct SearchCandidate: Equatable {
+    let word: String
+    let reading: String?
+    let source: CandidateSource
+    let kind: CandidateKind
+    /// Study-dict frequency at search time. Nil for non-study candidates.
+    let studyFrequency: Int?
+
+    init(word: String,
+         reading: String? = nil,
+         source: CandidateSource = .synthetic,
+         kind: CandidateKind? = nil,
+         studyFrequency: Int? = nil) {
+        self.word = word
+        self.reading = reading
+        self.source = source
+        self.kind = kind ?? Self.defaultKind(word: word, reading: reading, source: source)
+        self.studyFrequency = studyFrequency
+    }
+
+    private static func defaultKind(word: String,
+                                    reading: String?,
+                                    source: CandidateSource) -> CandidateKind {
+        switch source {
+        case .google:
+            return .google
+        case .synthetic where reading == nil || reading == word:
+            return .raw
+        default:
+            return .exact
+        }
+    }
+}
+
+/// Three-tier dictionary search system.
+/// Priority: study dict > local dict > connection dict.
+/// Ported from WordSearch.rb (Toshiyuki Masui, 2011-2015)
+class WordSearch {
+    // MARK: - Exact Reading Match Priority Setting
+
+    private static let exactReadingMatchPriorityKey = "exactReadingMatchPriority"
+
+    /// When enabled, candidates with exact reading match are prioritized over prefix-only matches.
+    /// Default: false (preserves existing MRU-only behavior).
+    static var isExactReadingMatchPriority: Bool {
+        GyaimSettings.bool(forKey: exactReadingMatchPriorityKey)
+    }
+
+    static func setExactReadingMatchPriority(_ value: Bool) {
+        GyaimSettings.set(value, forKey: exactReadingMatchPriorityKey)
+    }
+
+    // MARK: - Study Hiragana Setting
+
+    private static let studyHiraganaKey = "studyHiraganaEnabled"
+
+    static var isStudyHiraganaEnabled: Bool {
+        GyaimSettings.bool(forKey: studyHiraganaKey, default: true)
+    }
+
+    static func setStudyHiraganaEnabled(_ value: Bool) {
+        GyaimSettings.set(value, forKey: studyHiraganaKey)
+    }
+
+    /// Returns true if the string consists entirely of hiragana characters (U+3040-U+309F).
+    static func isAllHiragana(_ s: String) -> Bool {
+        !s.isEmpty && s.unicodeScalars.allSatisfy { $0.value >= 0x3040 && $0.value <= 0x309F }
+    }
+
+    private let connectionDict: ConnectionDict
+    private let localDictFile: String
+    private var localDict: [[String]]   // [[yomi, word], ...]
+    private var localDictTime: Date
+    private var searchMode: Int = 0
+    private let rk = RomaKana()
+
+    // MARK: - Shared Study Dict (process-wide singleton)
+    // IMKInputControllerはクライアントアプリごとにインスタンスを生成するため、
+    // studyDictをインスタンス変数にすると、あるインスタンスのsaveStudyDictが
+    // 別インスタンスの学習データを上書きして消す（BUG-005）。
+    // プロセス全体で1つのstudyDictを共有することでこの問題を解決する。
+    private(set) static var studyDict: [StudyEntry] = []
+    private(set) static var studyDictFile: String = ""
+
+    /// テスト用: static studyDict をリセットして次の init() で再読み込みさせる。
+    static func resetStudyDict() {
+        studyDict = []
+        studyDictFile = ""
+    }
+
+    // MARK: - Shared Connection Dict (process-wide singleton)
+    // IMKInputControllerはアクティベーションごとに生成されるため、接続辞書
+    // （40,904行）をインスタンスごとにロードするとアプリ/フィールド切替の
+    // たびに実測0.3〜2.1秒のパースが走る。辞書はロード後不変なので、
+    // studyDict と同じくプロセス全体で1インスタンスを共有する。
+    private(set) static var sharedConnectionDict: ConnectionDict?
+    private(set) static var sharedConnectionDictFile: String = ""
+    /// Serializes loading so a prewarm on a background thread and a controller
+    /// init on the main thread never load the same dictionary twice.
+    private static let sharedConnectionLock = NSLock()
+
+    /// 共有接続辞書を破棄して次の init() で再読み込みさせる。
+    /// Gictionaryインポートは同じパスへ新しい内容を書き込むため、明示
+    /// リロード（GyaimController.reloadConnectionDictionary）は必ずこれを
+    /// 先に呼ぶこと。パス一致だけのキャッシュ判定では反映されない。
+    static func resetConnectionDict() {
+        sharedConnectionLock.lock()
+        defer { sharedConnectionLock.unlock() }
+        sharedConnectionDict = nil
+        sharedConnectionDictFile = ""
+    }
+
+    /// The process-wide connection dictionary for `files`, loaded on first use.
+    /// With mozc-dict.txt the load takes ~0.8s (ADR-034); AppDelegate calls this
+    /// off the main thread at launch so the first controller finds it ready.
+    static func sharedConnectionDict(for files: [String]) -> ConnectionDict {
+        sharedConnectionLock.lock()
+        defer { sharedConnectionLock.unlock() }
+        let key = files.joined(separator: "\n")
+        if sharedConnectionDictFile == key, let cached = sharedConnectionDict { return cached }
+        let loaded = PerfLog.measure("ConnectionDict load", logger: Log.dict) { ConnectionDict(dictFiles: files) }
+        sharedConnectionDict = loaded
+        sharedConnectionDictFile = key
+        return loaded
+    }
+
+    convenience init(connectionDictFile: String, localDictFile: String, studyDictFile: String) {
+        self.init(connectionDictFiles: [connectionDictFile], localDictFile: localDictFile, studyDictFile: studyDictFile)
+    }
+
+    /// `connectionDictFiles` are loaded in order into one ConnectionDict
+    /// (ADR-034: Gictionary-derived dict.txt, then mozc-dict.txt).
+    init(connectionDictFiles: [String], localDictFile: String, studyDictFile: String) {
+        self.localDictFile = localDictFile
+        self.connectionDict = Self.sharedConnectionDict(for: connectionDictFiles)
+        self.localDict = Self.loadDict(dictFile: localDictFile)
+        self.localDictTime = Self.fileModTime(localDictFile)
+        // studyDict はプロセス内で1回だけロードする。
+        // ファイルパスが変わった場合（テスト等）は再ロード。
+        if Self.studyDictFile != studyDictFile {
+            Self.studyDictFile = studyDictFile
+            let loaded = Self.loadStudyDict(dictFile: studyDictFile)
+            let merged = Self.mergeKanaEquivalentStudyEntries(loaded)
+            Self.studyDict = merged
+            if merged.count != loaded.count {
+                Self.saveStudyDict(dictFile: studyDictFile, dict: merged)
+                Log.dict.info("Study dict kana-variant merge: \(loaded.count) -> \(merged.count) entries")
+            }
+        }
+        Log.dict.info("WordSearch initialized: local=\(localDict.count), study=\(Self.studyDict.count) entries")
+    }
+
+    /// Main search method.
+    /// - Parameters:
+    ///   - query: Input romaji pattern
+    ///   - searchMode: 0 = prefix, 1 = exact, 2 = Google Transliterate (handled by Controller)
+    ///   - limit: Max results (0 = unlimited)
+    /// - Returns: Array of SearchCandidate
+    func search(query: String, searchMode: Int, limit: Int = 0) -> [SearchCandidate] {
+        self.searchMode = searchMode
+        guard !query.isEmpty else { return [] }
+
+        // Reload local dict if modified externally
+        let currentMtime = Self.fileModTime(localDictFile)
+        if currentMtime > localDictTime {
+            localDict = Self.loadDict(dictFile: localDictFile)
+            localDictTime = currentMtime
+            Log.dict.info("Local dict hot-reloaded: \(localDict.count) entries")
+        }
+
+        var q = query
+        var candfound: Set<String> = []
+        var candidates: [SearchCandidate] = []
+
+        // Special: Google transliteration (configurable suffix trigger)
+        // The actual Google API call is handled by GyaimController;
+        // WordSearch returns empty so the controller can fire the async request.
+        if GoogleTransliterate.hasTriggerSuffix(q) {
+            return candidates
+        }
+
+        // Special: color image (#suffix)
+        if q.count > 1, q.hasSuffix("#") {
+            q.removeLast()
+            // Image generation — placeholder
+            return candidates
+        }
+
+        // Special: image search (!suffix)
+        if q.count > 1, q.hasSuffix("!") {
+            q.removeLast()
+            return candidates
+        }
+
+        // Special: timestamp
+        if q == "ds" {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy/MM/dd HH:mm:ss"
+            candidates.append(SearchCandidate(word: formatter.string(from: Date())))
+            return candidates
+        }
+
+        // Special: uppercase → pass through
+        if q.range(of: "[A-Z]", options: .regularExpression) != nil {
+            candidates.append(SearchCandidate(word: q, reading: q))
+            return candidates
+        }
+
+        // Normal search
+        let exactPriority = searchMode == 0 && Self.isExactReadingMatchPriority
+        // Romaji spelling variants of the same kana must count as exact reading
+        // matches in both directions: a study entry learned as "yondeite" is
+        // still an exact match when the user types "yonndeite", even though the
+        // stored spelling is not a string prefix of the query (BUG-030).
+        let queryHiragana = rk.roma2hiragana(q)
+        func isKanaEquivalentReading(_ reading: String) -> Bool {
+            guard !queryHiragana.isEmpty, reading != q else { return false }
+            return Self.hiragana(ofReading: reading, romaKana: rk) == queryHiragana
+        }
+        func matchesQuery(_ reading: String) -> Bool {
+            (searchMode > 0 ? reading == q : reading.hasPrefix(q)) || isKanaEquivalentReading(reading)
+        }
+        func matchKind(for reading: String) -> CandidateKind {
+            searchMode > 0 || reading == q || isKanaEquivalentReading(reading) ? .exact : .prefix
+        }
+
+        func connectionCandidateKind(for result: ConnectionSearchResult) -> CandidateKind {
+            result.depth > 1 ? .compound : matchKind(for: result.pat)
+        }
+
+        if exactPriority {
+            // 4-bucket cross-dict ordering (BUG-004):
+            //   1. studyDict exact   2. localDict exact
+            //   3. studyDict prefix  4. localDict prefix
+            // connectionDict は最後 (元の位置を維持) — 静的辞書の単漢字が
+            // 学習済み prefix 候補を押し流さないようにするため。
+            // 同表記 word の dedup は先着勝ちなので、user-owned (study/local) が
+            // 必ず先に列挙されることで .source = .connection で上書きされず、
+            // Shift+X による削除（GyaimController.deleteCurrentCandidate）が機能する。
+
+            // Bucket 1: studyDict exact (including kana-equivalent spelling variants)
+            for entry in Self.studyDict {
+                if (entry.reading == q || isKanaEquivalentReading(entry.reading)), !candfound.contains(entry.word) {
+                    candidates.append(SearchCandidate(word: entry.word,
+                                                      reading: entry.reading,
+                                                      source: .study,
+                                                      kind: .exact,
+                                                      studyFrequency: entry.frequency))
+                    candfound.insert(entry.word)
+                    if limit > 0, candidates.count >= limit { break }
+                }
+            }
+            // Bucket 2: localDict exact (yomi == q)
+            if limit == 0 || candidates.count < limit {
+                for entry in localDict {
+                    guard entry.count >= 2 else { continue }
+                    let yomi = entry[0]
+                    let word = entry[1]
+                    if (yomi == q || isKanaEquivalentReading(yomi)), !candfound.contains(word) {
+                        candidates.append(SearchCandidate(word: word,
+                                                          reading: yomi,
+                                                          source: .local,
+                                                          kind: .exact))
+                        candfound.insert(word)
+                        if limit > 0, candidates.count >= limit { break }
+                    }
+                }
+            }
+            // Bucket 3: studyDict prefix
+            if limit == 0 || candidates.count < limit {
+                for entry in Self.studyDict {
+                    if matchesQuery(entry.reading), !candfound.contains(entry.word) {
+                        candidates.append(SearchCandidate(word: entry.word,
+                                                          reading: entry.reading,
+                                                          source: .study,
+                                                          kind: isKanaEquivalentReading(entry.reading) ? .exact : .prefix,
+                                                          studyFrequency: entry.frequency))
+                        candfound.insert(entry.word)
+                        if limit > 0, candidates.count >= limit { break }
+                    }
+                }
+            }
+            // Bucket 4: localDict prefix
+            if limit == 0 || candidates.count < limit {
+                for entry in localDict {
+                    guard entry.count >= 2 else { continue }
+                    let yomi = entry[0]
+                    let word = entry[1]
+                    if matchesQuery(yomi), !candfound.contains(word) {
+                        candidates.append(SearchCandidate(word: word,
+                                                          reading: yomi,
+                                                          source: .local,
+                                                          kind: isKanaEquivalentReading(yomi) ? .exact : .prefix))
+                        candfound.insert(word)
+                        if limit > 0, candidates.count >= limit { break }
+                    }
+                }
+            }
+        } else {
+            // OFF: single-pass per dict (現状挙動を維持)
+            for entry in Self.studyDict {
+                if matchesQuery(entry.reading) {
+                    if !candfound.contains(entry.word) {
+                        candidates.append(SearchCandidate(word: entry.word,
+                                                          reading: entry.reading,
+                                                          source: .study,
+                                                          kind: matchKind(for: entry.reading),
+                                                          studyFrequency: entry.frequency))
+                        candfound.insert(entry.word)
+                        if limit > 0, candidates.count >= limit { break }
+                    }
+                }
+            }
+            if limit == 0 || candidates.count < limit {
+                for entry in localDict {
+                    guard entry.count >= 2 else { continue }
+                    let yomi = entry[0]
+                    let word = entry[1]
+                    if matchesQuery(yomi) {
+                        if !candfound.contains(word) {
+                            candidates.append(SearchCandidate(word: word,
+                                                              reading: yomi,
+                                                              source: .local,
+                                                              kind: matchKind(for: yomi)))
+                            candfound.insert(word)
+                            if limit > 0, candidates.count >= limit { break }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Search connection dict
+        connectionDict.searchDetailed(pat: q, searchMode: searchMode,
+                                      maxResults: limit > 0 ? limit : Self.maxConnectionCandidates) { result in
+            if limit > 0 { guard candidates.count < limit else { return } }
+            let w = result.word
+            if Self.isSuspiciousConnectionSurface(w) { return }
+            if !candfound.contains(w) {
+                candidates.append(SearchCandidate(word: w,
+                                                  reading: result.pat,
+                                                  source: .connection,
+                                                  kind: connectionCandidateKind(for: result)))
+                candfound.insert(w)
+            }
+        }
+        candidates = candidates.filter { Self.isSafeDisplayCandidate($0.word) }
+
+        // Limit results
+        if limit > 0, candidates.count > limit {
+            candidates = Array(candidates.prefix(limit))
+        }
+
+        return candidates
+    }
+
+    /// The dictionary-order tail of a one-letter query is never displayed (9 per
+    /// page, the model sees the first 24), so a large connection dictionary
+    /// (ADR-034) must not turn it into thousands of SearchCandidate allocations
+    /// per keystroke: 2,000 cost 20-50 ms on two-letter inputs in dogfood.
+    static let maxConnectionCandidates = 1000
+
+    /// Hiragana of a study/local reading, converted once per distinct reading.
+    /// The per-keystroke scan of ~5k study entries used to reconvert every
+    /// reading through the romaji table (dogfood 2026-09: prefix search p50
+    /// 56ms, about 36ms of it here).
+    private static var readingHiraganaCache: [String: String] = [:]
+    private static let readingHiraganaLock = NSLock()
+
+    static func hiragana(ofReading reading: String, romaKana: RomaKana) -> String {
+        readingHiraganaLock.lock()
+        defer { readingHiraganaLock.unlock() }
+        if let cached = readingHiraganaCache[reading] { return cached }
+        let hiragana = romaKana.roma2hiragana(reading)
+        readingHiraganaCache[reading] = hiragana
+        return hiragana
+    }
+
+    private static let connectionInternalSurfaceSuffixes: Set<String> = [
+        "い形容詞",
+        "な形容詞",
+        "形容詞語尾",
+        "動詞語尾",
+        "名詞接続",
+        "終止接続",
+        "連用接続",
+    ]
+
+    private static func isSuspiciousConnectionSurface(_ word: String) -> Bool {
+        connectionInternalSurfaceSuffixes.contains { label in
+            word != label && word.hasSuffix(label)
+        }
+    }
+
+    private static func isSafeDisplayCandidate(_ word: String) -> Bool {
+        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 80 else { return false }
+        return !trimmed.unicodeScalars.contains { scalar in
+            CharacterSet.newlines.contains(scalar) || scalar.value == 0
+        }
+    }
+
+    /// Register a word to the user's local dictionary.
+    func register(word: String, reading: String) {
+        localDict.removeAll { $0 == [reading, word] }
+        localDict.insert([reading, word], at: 0)
+        Self.saveDict(dictFile: localDictFile, dict: localDict)
+        localDictTime = Self.fileModTime(localDictFile)
+    }
+
+    /// Learn a word to the study dictionary.
+    func study(word: String, reading: String) {
+        if !Self.isStudyHiraganaEnabled && Self.isAllHiragana(word) {
+            Log.dict.debug("Study skipped (hiragana): \"\(word)\" (reading: \"\(reading)\")")
+            return
+        }
+        if reading.count > 1 {
+            var registered = false
+            connectionDict.search(pat: reading, searchMode: searchMode) { w, _, _ in
+                var cleaned = w
+                if cleaned.hasSuffix("*") { return }
+                cleaned = cleaned.replacingOccurrences(of: "*", with: "")
+                if cleaned == word {
+                    registered = true
+                }
+            }
+            if !registered {
+                // If in study dict but not connection dict, promote to local dict
+                if Self.studyDict.contains(where: { $0.reading == reading && $0.word == word }) {
+                    register(word: word, reading: reading)
+                }
+            }
+        }
+
+        let now = Date().timeIntervalSince1970
+        // Kana-equivalent lookup (issue #58): committing 更新 as "kousin" must
+        // bump the existing "kousinn" entry instead of creating a duplicate
+        // romaji-variant entry (the stored canonical reading is kept).
+        if let idx = studyEntryIndex(word: word, reading: reading) {
+            var entry = Self.studyDict.remove(at: idx)
+            entry.lastAccessTime = now
+            entry.frequency += 1
+            Self.studyDict.insert(entry, at: 0)
+        } else {
+            Self.studyDict.insert(StudyEntry(reading: reading, word: word,
+                                         lastAccessTime: now, frequency: 1), at: 0)
+        }
+
+        evict()
+        // study() 呼び出しごとにファイル保存する。これをしないと、IMEプロセスが
+        // deactivateServer を経由せずに終了したとき（killall, クラッシュ等）に
+        // メモリ上の学習エントリがすべて失われる。
+        Self.saveStudyDict(dictFile: Self.studyDictFile, dict: Self.studyDict)
+    }
+
+    private static let maxStudyEntries = 10_000
+
+    private func evict() {
+        switch EvictionMode.current {
+        case .none:
+            // 淘汰なし: 上限を設けず全件保持する（ADR-025）。
+            return
+        case .mru:
+            if Self.studyDict.count > Self.maxStudyEntries {
+                Self.studyDict = Array(Self.studyDict.prefix(Self.maxStudyEntries))
+            }
+        case .scoreBased:
+            if Self.studyDict.count > Self.maxStudyEntries {
+                let protectedCount = min(100, Self.studyDict.count)
+                let range = protectedCount..<Self.studyDict.count
+                if let minIdx = range.min(by: { Self.studyDict[$0].score() < Self.studyDict[$1].score() }) {
+                    Self.studyDict.remove(at: minIdx)
+                }
+            }
+        }
+    }
+
+    /// Index of the study entry matching (word, reading) where the reading may
+    /// be any romaji spelling variant of the same kana (issue #58).
+    /// Word equality is checked first so kana conversion only runs for
+    /// same-word entries.
+    private func studyEntryIndex(word: String, reading: String) -> Int? {
+        if let exact = Self.studyDict.firstIndex(where: { $0.reading == reading && $0.word == word }) {
+            return exact
+        }
+        let kana = rk.roma2hiragana(reading)
+        guard !kana.isEmpty else { return nil }
+        return Self.studyDict.firstIndex { entry in
+            entry.word == word && entry.reading != reading && rk.roma2hiragana(entry.reading) == kana
+        }
+    }
+
+    /// Merge study entries whose readings are romaji spelling variants of the
+    /// same kana (issue #58, storage-side completion of BUG-026): "kousinn"
+    /// and "kousin" for 更新 become one entry. The higher-frequency member
+    /// keeps the canonical reading, frequencies are summed, lastAccessTime is
+    /// the max, and the merged entry keeps the earliest (most recent in MRU
+    /// order) position. Only words that appear more than once are kana
+    /// converted, so startup cost stays proportional to actual duplicates.
+    static func mergeKanaEquivalentStudyEntries(_ entries: [StudyEntry]) -> [StudyEntry] {
+        var wordCounts: [String: Int] = [:]
+        for entry in entries {
+            wordCounts[entry.word, default: 0] += 1
+        }
+        guard wordCounts.values.contains(where: { $0 > 1 }) else { return entries }
+
+        let rk = RomaKana()
+        var indexByKey: [String: Int] = [:]
+        var canonicalFrequencyByKey: [String: Int] = [:]
+        var result: [StudyEntry] = []
+        for entry in entries {
+            guard wordCounts[entry.word, default: 0] > 1 else {
+                result.append(entry)
+                continue
+            }
+            let kana = rk.roma2hiragana(entry.reading)
+            let key = (kana.isEmpty ? entry.reading : kana) + "\t" + entry.word
+            if let index = indexByKey[key] {
+                let kept = result[index]
+                let keptCanonicalFrequency = canonicalFrequencyByKey[key] ?? kept.frequency
+                let useNewReading = entry.frequency > keptCanonicalFrequency
+                result[index] = StudyEntry(reading: useNewReading ? entry.reading : kept.reading,
+                                           word: kept.word,
+                                           lastAccessTime: max(kept.lastAccessTime, entry.lastAccessTime),
+                                           frequency: kept.frequency + entry.frequency)
+                if useNewReading {
+                    canonicalFrequencyByKey[key] = entry.frequency
+                }
+            } else {
+                indexByKey[key] = result.count
+                canonicalFrequencyByKey[key] = entry.frequency
+                result.append(entry)
+            }
+        }
+        return result
+    }
+
+    /// Delete a word from the study dictionary.
+    /// Returns true if the entry was found and removed.
+    /// Romaji spelling variants of the same kana reading are removed together
+    /// (issue #58), so a deleted word cannot survive under a variant reading.
+    @discardableResult
+    func deleteFromStudy(word: String, reading: String) -> Bool {
+        let before = Self.studyDict.count
+        let kana = rk.roma2hiragana(reading)
+        Self.studyDict.removeAll { entry in
+            entry.word == word
+                && (entry.reading == reading || (!kana.isEmpty && rk.roma2hiragana(entry.reading) == kana))
+        }
+        if Self.studyDict.count < before {
+            Self.saveStudyDict(dictFile: Self.studyDictFile, dict: Self.studyDict)
+            Log.dict.info("Deleted from study dict: \"\(word)\" (reading: \"\(reading)\")")
+            return true
+        }
+        return false
+    }
+
+    /// Remove the given study entries (exact reading + word) from the shared
+    /// study dictionary and persist. Used by the study-suspects window where no
+    /// WordSearch instance is at hand. Returns the number of removed entries.
+    @discardableResult
+    static func deleteStudyEntries(_ targets: [StudyEntry]) -> Int {
+        guard !targets.isEmpty else { return 0 }
+        let keys = Set(targets.map { "\($0.reading)\t\($0.word)" })
+        let before = studyDict.count
+        studyDict.removeAll { keys.contains("\($0.reading)\t\($0.word)") }
+        let removed = before - studyDict.count
+        if removed > 0 {
+            saveStudyDict(dictFile: studyDictFile, dict: studyDict)
+            for target in targets {
+                ContextDict.shared.deleteEntries(word: target.word, reading: target.reading)
+            }
+            Log.dict.info("Deleted \(removed) study entries via suspects review")
+        }
+        return removed
+    }
+
+    /// Delete a word from the local dictionary.
+    /// Returns true if the entry was found and removed.
+    @discardableResult
+    func deleteFromLocal(word: String, reading: String) -> Bool {
+        let before = localDict.count
+        localDict.removeAll { $0 == [reading, word] }
+        if localDict.count < before {
+            Self.saveDict(dictFile: localDictFile, dict: localDict)
+            localDictTime = Self.fileModTime(localDictFile)
+            Log.dict.info("Deleted from local dict: \"\(word)\" (reading: \"\(reading)\")")
+            return true
+        }
+        return false
+    }
+
+    /// Delete a word from both user-managed dictionaries.
+    /// Returns true if at least one entry was found and removed.
+    @discardableResult
+    func deleteFromUserDictionaries(word: String, reading: String) -> Bool {
+        let deletedFromStudy = deleteFromStudy(word: word, reading: reading)
+        let deletedFromLocal = deleteFromLocal(word: word, reading: reading)
+        return deletedFromStudy || deletedFromLocal
+    }
+
+    func start() {
+        // Intentionally empty — reloading study dict caused input lag in original
+    }
+
+    func finish() {
+        Self.saveStudyDict(dictFile: Self.studyDictFile, dict: Self.studyDict)
+    }
+
+    // MARK: - File I/O
+
+    static func loadDict(dictFile: String) -> [[String]] {
+        var dict: [[String]] = []
+        let content: String
+        do {
+            content = try String(contentsOfFile: dictFile, encoding: .utf8)
+        } catch {
+            Log.dict.error("Failed to load dict \(dictFile): \(error.localizedDescription)")
+            return dict
+        }
+        for line in content.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
+            let s = String(line)
+            if s.hasPrefix("#") || s.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+            let parts = s.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+            if parts.count >= 2 {
+                dict.append([String(parts[0]), String(parts[1])])
+            }
+        }
+        return dict
+    }
+
+    static func saveDict(dictFile: String, dict: [[String]]) {
+        var saved: Set<String> = []
+        var lines: [String] = []
+        for entry in dict {
+            guard entry.count >= 2 else { continue }
+            let s = "\(entry[0])\t\(entry[1])"
+            if !saved.contains(s) {
+                lines.append(s)
+                saved.insert(s)
+            }
+        }
+        let content = lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n")
+        do {
+            try content.write(toFile: dictFile, atomically: true, encoding: .utf8)
+        } catch {
+            Log.dict.error("Failed to save dict \(dictFile): \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Study Dict I/O
+
+    static func loadStudyDict(dictFile: String) -> [StudyEntry] {
+        var entries: [StudyEntry] = []
+        let content: String
+        do {
+            content = try String(contentsOfFile: dictFile, encoding: .utf8)
+        } catch {
+            Log.dict.error("Failed to load study dict \(dictFile): \(error.localizedDescription)")
+            return entries
+        }
+        let now = Date().timeIntervalSince1970
+        for line in content.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
+            let s = String(line)
+            if s.hasPrefix("#") || s.trimmingCharacters(in: .whitespaces).isEmpty { continue }
+            let parts = s.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false)
+            if parts.count >= 4,
+               let timestamp = Double(parts[2]),
+               let freq = Int(parts[3]) {
+                // New 4-column format
+                entries.append(StudyEntry(reading: String(parts[0]), word: String(parts[1]),
+                                          lastAccessTime: timestamp, frequency: freq))
+            } else if parts.count >= 2 {
+                // Legacy 2-column format
+                entries.append(StudyEntry(reading: String(parts[0]), word: String(parts[1]),
+                                          lastAccessTime: now, frequency: 1))
+            }
+        }
+        return entries
+    }
+
+    static func saveStudyDict(dictFile: String, dict: [StudyEntry]) {
+        var saved: Set<String> = []
+        var lines: [String] = []
+        for entry in dict {
+            let key = "\(entry.reading)\t\(entry.word)"
+            if !saved.contains(key) {
+                lines.append("\(entry.reading)\t\(entry.word)\t\(entry.lastAccessTime)\t\(entry.frequency)")
+                saved.insert(key)
+            }
+        }
+        let content = lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n")
+        do {
+            try content.write(toFile: dictFile, atomically: true, encoding: .utf8)
+        } catch {
+            Log.dict.error("Failed to save study dict \(dictFile): \(error.localizedDescription)")
+        }
+    }
+
+    private static func fileModTime(_ path: String) -> Date {
+        (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date) ?? Date.distantPast
+    }
+}

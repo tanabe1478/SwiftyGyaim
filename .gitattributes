@@ -1,0 +1,11 @@
+# Check out text with LF everywhere. The dictionaries (dict.txt, mozc-dict.txt,
+# fixtures) are parsed byte-by-byte, and a CRLF checkout on Windows (autocrlf)
+# would otherwise leave "\r" in every last field (ADR-035, GyaimCore on Windows).
+* text=auto eol=lf
+
+*.png binary
+*.icns binary
+*.pdf binary
+*.gguf binary
+*.graffle binary
+*.zip binary

@@ -24,6 +24,7 @@ Gyaim is a Japanese Input Method Editor (IME) for macOS. Originally created by T
 - **Language**: Swift
 - **Frameworks**: InputMethodKit, Security
 - **Project management**: XcodeGen (project.yml)
+- **Shared core**: `GyaimSwift/Packages/GyaimCore`（Foundation だけに依存する変換コア。Windows 版 [WinGyaim](https://github.com/tanabe1478/WinGyaim) と共有、ADR-035）
 
 ## Build & Development Commands
 
@@ -33,6 +34,9 @@ xcodegen generate
 
 # Build（インストール用は必ずRelease。Debugは辞書検索が3〜4倍遅く体感退行する）
 xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Release -derivedDataPath .build build
+
+# 共有コア（GyaimCore）だけを SwiftPM でビルド・テスト（macOS / Linux / Windows 共通、ADR-035）
+swift test --package-path Packages/GyaimCore
 
 # Install（開発イテレーション用: per-userコピー）
 killall SwiftyGyaim
@@ -50,6 +54,10 @@ cp -r .build/Build/Products/Release/SwiftyGyaim.app ~/Library/Input\ Methods/
 Working directory for build commands: `GyaimSwift/`
 
 ## Architecture
+
+### GyaimCore package (Packages/GyaimCore)
+
+Foundation だけに依存する変換コア（辞書検索・学習・RomaKana・heuristic / モデル rerank・Google 変換・設定ストア・ファイルログ）は `Packages/GyaimCore/Sources/GyaimCore/` にあり、対応するテストは `Packages/GyaimCore/Tests/GyaimCoreTests/`。Xcode の app / test ターゲットはこれらを**自モジュールに直接コンパイル**し（二重ビルド）、`Package.swift` は `swift test` と Windows / Linux の変換サーバ用（ADR-035、`docs/specs/project-setup.md`）。コアには `import Foundation` 以外を持ち込まない（`os` と `URLSession` は条件コンパイル、CoreFoundation の関数は使わない）。
 
 ### Core Input Flow
 
@@ -102,11 +110,16 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 # ユニットテスト（336テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
+# コアの 183 テストだけ（Windows / Linux でも同じコマンド。CI の core-linux / core-windows ジョブ）
+swift test --package-path Packages/GyaimCore
+
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
 xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .build test
 ```
 
 ### テスト構成
+
+アプリ層（`GyaimController`、ウィンドウ、IMK モック、アプリバンドル内のモデル）に依存しないスイートは `Packages/GyaimCore/Tests/GyaimCoreTests/` にあり、Xcode の `GyaimTests` ターゲットと `swift test` の両方から実行される（ADR-035）。表のファイル列はその区別を省略している。
 
 | スイート | ファイル | テスト数 | 内容 |
 |---------|---------|---------|------|
@@ -197,7 +210,8 @@ docs/adr/
 ├── 031-wider-homophone-review.md
 ├── 032-llm-primary-candidate-ranking.md
 ├── 033-kana-keyed-connection-dictionary.md
-└── 034-mozc-dictionary-import.md
+├── 034-mozc-dictionary-import.md
+└── 035-windows-port-zig-tip-swift-core.md
 ```
 
 ## Logging & Monitoring
@@ -267,13 +281,13 @@ pi エージェントには同じワークフローが pi-context-workflow 拡�
 | [settings.md](docs/specs/settings.md) | GyaimSettings.swift（設定キーを追加・変更する全ファイル） | 設定ストア、全キー一覧と既定値、移行方針（ADR-027） |
 | [ai-rerank.md](docs/specs/ai-rerank.md) | AIReranker.swift, ZenzRuntime*.swift, GyaimController+FastContextRerank.swift 等 | ヒューリスティック/モデル rerank、スコア統合 |
 | [zenz-model-tuning.md](docs/specs/zenz-model-tuning.md) | Zenzモデル・プロンプト調整、GGUF差し替え | モデル選定とチューニング記録（Draft） |
-| [project-setup.md](docs/specs/project-setup.md) | project.yml, Scripts/*.sh, .github/workflows/*.yml | ビルド・テスト・配布のセットアップ |
+| [project-setup.md](docs/specs/project-setup.md) | project.yml, Packages/GyaimCore/Package.swift, Scripts/*.sh, .github/workflows/*.yml, .gitattributes | ビルド・テスト・配布のセットアップ |
 | [README.md](docs/specs/README.md) | specs ディレクトリ自体の運用 | spec 一覧とルール |
 | [bug-memory.md](docs/specs/bug-memory.md) | 全ファイル（デバッグ時） | バグ索引と運用ガイド（詳細は `docs/specs/bugs/BUG-*.md`） |
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-034）。目次と運用ルールは `docs/adr/README.md`
+- `docs/adr/` — 設計判断の経緯（000-035）。目次と運用ルールは `docs/adr/README.md`
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 

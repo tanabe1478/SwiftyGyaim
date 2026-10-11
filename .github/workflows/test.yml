@@ -24,3 +24,27 @@ jobs:
       - name: Run tests
         working-directory: GyaimSwift
         run: ./Scripts/run-unit-tests.sh
+
+  # GyaimCore must stay buildable as a plain SwiftPM package on non-Apple
+  # platforms (ADR-035: the Windows conversion server reuses it). These jobs
+  # catch AppKit/IMK leaks into the core and Foundation portability issues.
+  core-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.1"
+      - name: Build and test GyaimCore
+        run: swift test --package-path GyaimSwift/Packages/GyaimCore
+
+  core-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-6.1-release
+          swift-build: 6.1-RELEASE
+      - uses: actions/checkout@v4
+      - name: Build and test GyaimCore
+        run: swift test --package-path GyaimSwift/Packages/GyaimCore

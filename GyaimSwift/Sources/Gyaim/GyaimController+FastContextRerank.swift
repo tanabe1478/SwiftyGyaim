@@ -243,27 +243,7 @@ extension GyaimController {
     }
 
     static func fastContextRerankOutcome(model: String) -> String {
-        let outcomes = [
-            ("heuristic-prereview", "heuristic-prereview"),
-            ("review-llm-ranked-unavailable", "llm-rank-unavailable"),
-            ("review-llm-ranked", "llm-ranked"),
-            ("review-affinity-skipped", "affinity-skip"),
-            ("review-length-skipped", "short-input-skip"),
-            ("review-skipped", "protected-exact-skip"),
-            ("review-exact-homophone-tail-reranked", "exact-homophone-tail-reranked"),
-            ("review-exact-homophone-unavailable", "exact-homophone-unavailable"),
-            ("review-exact-homophone-fixed", "exact-homophone-fixed"),
-            ("review-exact-homophone-kept-local", "exact-homophone-kept-local"),
-            ("review-exact-homophone-passed", "exact-homophone-passed"),
-            ("review-unavailable", "review-unavailable"),
-            ("review-fixed", "review-fixed"),
-            ("review-kept-local", "review-kept-local"),
-            ("review-passed", "review-passed"),
-            ("review", "review-applied"),
-            ("swift-fast-context-heuristic", "heuristic"),
-            ("swift-local-heuristic", "heuristic"),
-        ]
-        return outcomes.first { model.contains($0.0) }?.1 ?? "fallback"
+        FastContextRerankOutcome.label(model: model)
     }
 
     private static func minFastContextModelInputLength() -> Int {
