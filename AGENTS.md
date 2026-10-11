@@ -40,10 +40,10 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 ## Architecture Snapshot
 
 - `Sources/Gyaim/GyaimController.swift`: IME入力処理の中心
-- `Sources/Gyaim/WordSearch.swift` + `ConnectionDict.swift`: 3層辞書
+- `Packages/GyaimCore/Sources/GyaimCore/WordSearch.swift` + `ConnectionDict.swift`: 3層辞書（Foundation だけに依存する共有コア、ADR-035）
 - `Sources/Gyaim/CandidateWindow.swift`: 候補UI
 - `Sources/Gyaim/PreferencesWindow.swift`: 設定UI
-- `Sources/Gyaim/GoogleTransliterate.swift`: Google候補補完
+- `Packages/GyaimCore/Sources/GyaimCore/GoogleTransliterate.swift`: Google候補補完
 
 辞書優先度:
 1. `~/.gyaim/studydict.txt`
@@ -84,7 +84,7 @@ pi では `.pi/settings.json` に登録した pi-context-workflow 拡張が同�
 
 ## Testing Notes
 
-- ユニットテストは `GyaimSwift/Tests/GyaimTests/`
+- ユニットテストは `GyaimSwift/Tests/GyaimTests/`（アプリ層）と `GyaimSwift/Packages/GyaimCore/Tests/GyaimCoreTests/`（コア。`swift test --package-path Packages/GyaimCore` でも実行可）
 - E2Eは `GyaimSwift/Tests/E2ETests/`
 - UI/入力分岐は既存テストが厚いので、修正時は関連テスト追加を優先する
 

@@ -64,6 +64,9 @@ TIP の言語について。
 - E2E テストは CGEvent + TextEdit の代わりに SendInput + メモ帳 + UI Automation で組む。TSF の統合テストホスト（ITfThreadMgr を自前で起動する）は重いので後回しにする。
 - Windows 向けの CI は Zig（クロスコンパイルなら Mac ランナーでも可）と Swift on Windows（Windows ランナー必須）の 2 系統になる。
 - ADR-034 で「ADR-035 予定」としていたモデル生成による語彙補完は、次の番号（ADR-036 以降）で記録する。
+- 手順 1 の実装（2026-10-11）: `Packages/GyaimCore` に Foundation 依存のみの 27 ファイルと 26 テストスイートを移した。Mac アプリと Xcode の test target は当面この同じソースを自モジュールにコンパイルし（project.yml の sources に追加。二重ビルド）、`Package.swift` は `swift test` と Windows / Linux 用。public API 化とモジュール依存化は Windows サーバの着手時に行う。Windows の Swift 6.4 で 183 テストが通った。
+- 移植で必要だった修正は 5 点: `os.Logger` の条件コンパイル、`URLSession` の `FoundationNetworking`、`CFAbsoluteTimeGetCurrent` → `Date().timeIntervalSinceReferenceDate`、辞書パーサの CRLF 耐性（autocrlf の checkout で `dict.txt` が CRLF になり、末尾フィールドの CR で合成候補が全滅した）、Mach API のメモリ計測を Darwin 限定に。リポジトリに `.gitattributes`（`* text=auto eol=lf`）を追加した。
+- CI に ubuntu / windows で `swift test --package-path GyaimSwift/Packages/GyaimCore` を走らせるジョブを追加し、コアへの AppKit / IMK 混入を検出する。
 
 ## References
 

@@ -1,11 +1,13 @@
 # Spec: Google Transliterate連携
 
 > Trigger: GoogleTransliterate.swift
-> Last updated: 2026-06-20 (suffix/shortcut trigger復活)
+> Last updated: 2026-10-11 (GyaimCore パッケージへ移動、FoundationNetworking — ADR-035)
 
 ## 概要
 
 内蔵辞書で変換できない語のフォールバック。Google Input Tools APIにひらがなを送信し、漢字候補を取得。
+
+実装は `Packages/GyaimCore/Sources/GyaimCore/GoogleTransliterate.swift`（ADR-035）。非 Apple 環境では `URLSession` が `FoundationNetworking` モジュールにあるため、`#if canImport(FoundationNetworking)` で import する（`GictionaryConnectionImporter` も同じ）。
 
 ## API
 

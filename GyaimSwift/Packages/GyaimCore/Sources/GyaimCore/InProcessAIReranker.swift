@@ -1,0 +1,53 @@
+import Foundation
+
+/// First-choice reranker that runs inside the IME process.
+///
+/// It tries backends in priority order. The bundled Zenz/GGUF backend keeps the
+/// model resident and, when llama.cpp is available, adds token-level Zenz scores
+/// to the Swift heuristic. If the model cannot run or produces no score, the
+/// heuristic backend remains the fallback.
+final class InProcessAIReranker {
+    static let shared = InProcessAIReranker()
+
+    private let backends: [AIRerankBackend]
+
+    convenience init(model: BundledAIRerankModel = .shared, bundle: Bundle = .main) {
+        self.init(backends: [
+            BundledZenzAIRerankBackend(model: model, bundle: bundle),
+            HeuristicAIRerankBackend()
+        ])
+    }
+
+    init(backends: [AIRerankBackend]) {
+        precondition(!backends.isEmpty, "InProcessAIReranker requires at least one backend")
+        self.backends = backends
+    }
+
+    func rerank(_ request: AIRerankRequest) -> AIRerankResponse {
+        let backend = backends.first { $0.canRun() } ?? HeuristicAIRerankBackend()
+        let start = Date().timeIntervalSinceReferenceDate
+        Log.input.debug("AI rerank backend selected: provider=in-process backend=\(backend.identifier) candidates=\(request.candidates.count)")
+        let response = backend.rerank(request)
+        let elapsed = (Date().timeIntervalSinceReferenceDate - start) * 1000
+        Log.input.debug("AI rerank backend finished: provider=in-process backend=\(backend.identifier) model=\(response.model ?? "unknown") latency=\(String(format: "%.1f", elapsed))ms")
+        return response
+    }
+
+    private static var warmUpStarted = false
+
+    /// Load the model off the main thread ahead of the first review, so the
+    /// first keystroke that needs it does not pay the load cost (dogfood
+    /// 2026-09-11: a single 1.9s stall on the first model call of the day).
+    /// Runs once per process; the runtime lock serializes it against any
+    /// concurrent rerank.
+    func warmUp() {
+        guard !Self.warmUpStarted else { return }
+        Self.warmUpStarted = true
+        DispatchQueue.global(qos: .utility).async { [backends] in
+            let start = Date().timeIntervalSinceReferenceDate
+            let ready = backends.first { $0.canRun() }?.identifier ?? "none"
+            let elapsed = (Date().timeIntervalSinceReferenceDate - start) * 1000
+            Log.input.info("AI rerank warm-up finished: backend=\(ready) latency=\(String(format: "%.1f", elapsed))ms")
+        }
+    }
+}
