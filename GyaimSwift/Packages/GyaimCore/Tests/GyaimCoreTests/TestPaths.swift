@@ -5,7 +5,7 @@ import Foundation
 /// compiled into the SwiftPM test target and into the Xcode GyaimTests target.
 enum TestPaths {
     /// `GyaimSwift/` (holds `Resources/dict.txt`, `Resources/mozc-dict.txt`, `Sources/Gyaim`).
-    static let gyaimSwiftDir: URL = URL(fileURLWithPath: #filePath)
+    static let gyaimSwiftDir = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent() // GyaimCoreTests
         .deletingLastPathComponent() // Tests
         .deletingLastPathComponent() // GyaimCore
