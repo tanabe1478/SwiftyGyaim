@@ -553,7 +553,7 @@ def collect_commit_diagnostics(lines: Iterable[str], cutoff: datetime | None) ->
     buckets: dict[str, dict[str, int]] = {
         "byPrefixRank": defaultdict(int), "byScoredSet": defaultdict(int), "byModelOutcome": defaultdict(int),
     }
-    misses = kana_intended = 0
+    misses = kana_intended = corrected = 0
     lines = list(lines)
     converted = kanji_readings(lines)
     for line in lines:
@@ -572,6 +572,8 @@ def collect_commit_diagnostics(lines: Iterable[str], cutoff: datetime | None) ->
         if not isinstance(path, str):
             continue
         by_path[path] += 1
+        if isinstance(payload.get("correctedWord"), str):
+            corrected += 1  # a retype that undid the previous commit's learning (ADR-037)
         rank = payload.get("prefixRank")
         if path == "deactivation" or (path == "prefix" and rank in (0, 1)):
             continue
@@ -592,6 +594,7 @@ def collect_commit_diagnostics(lines: Iterable[str], cutoff: datetime | None) ->
         "byPath": dict(sorted(by_path.items())),
         "missCount": misses,
         "kanaIntended": kana_intended,
+        "correctedCount": corrected,
         "misses": {name: dict(sorted(values.items())) for name, values in buckets.items()},
     }
 

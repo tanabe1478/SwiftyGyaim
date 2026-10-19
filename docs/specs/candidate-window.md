@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-09-12 (レイアウトを layoutContent() に一本化、生成トグル削除)
+> Last updated: 2026-10-19 (showWindow の位置ログを info に)
 
 ## 概要
 
@@ -50,7 +50,7 @@ Mozc の `renderer/window_util.cc` も、preedit rect / target point と対象�
 2. 原点付近かつ1px幅のような疑わしいrectは、前回の正常rectを使用
 3. 前回正常rectがない場合は `NSEvent.mouseLocation` から1px幅のフォールバックrectを作る
 
-`showWindow()` のログには `reportedLineRect`, `resolvedLineRect`, `source` を出し、フォールバック発生時の調査を容易にする。
+`showWindow()` のログには `reportedLineRect`, `resolvedLineRect`, `source` を出し、フォールバック発生時の調査を容易にする。レベルは info（`loggingEnabled` 時に gyaim.log へ 1 打鍵 1 行）。Chrome の Google Docs でキャレットから離れたウィンドウ左上に出る報告があり、判定条件を広げる根拠として実際の `reportedLineRect` が要るため debug から上げた（`docs/internal/dogfood-conversion-complaints-2026-10.md` ケース 3）。
 
 ## モード切替の実装
 
