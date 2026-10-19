@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, ZenzRuntime.swift, ZenzRuntime+Scoring.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController+FastContextRerank.swift, FastContextTrace.swift
-> Last updated: 2026-10-10 (contextInherited と byContextOrigin — ADR-035)
+> Last updated: 2026-10-19 (外部候補の位置 — ADR-036、Commit outcome の correctedWord — ADR-037)
 
 ## 概要
 
@@ -140,7 +140,7 @@ SwiftyGyaim 本体は `order` を必ず検証する。
   -> searchAndShowCands()
        -> WordSearch.search()（prefix）
        -> buildPrefixCandidates(allowModelReview: false)
-            raw input → 外部候補（クリップボード/選択テキスト）→ fastContextRerank（heuristic）→ ひらがな
+            raw input → 辞書の先頭候補 → 外部候補（クリップボード/選択テキスト）→ 残りの辞書候補（fastContextRerank 順）→ ひらがな（ADR-036）
        -> nthCand = 0, showCands()
        -> モデル経路が有効なら startAsyncModelReview()（ADR-029、背景 queue）
 
@@ -191,9 +191,9 @@ acceptedRanks は prefix mode の意図的確定だけを分母にするため�
 
 `firstCandidateRate = hit / (hit + strict + suspected)`。`strictMissRate` はかな確定をすべて意図的とみなした下限、`suspectedMissRate` は上限。commit 行に controller がないため、別フィールドの入力が交互に来ると照合が混ざり得る。
 
-`commitDiagnostics` は `Commit outcome: input=... payload={...}` 行（全確定経路で1行、`aiRerankFastContextLoggingEnabled=true` 時のみ）を読み、上と同じ規則（予測1位の exact/google は miss にしない、漢字で確定したことのない読みのかな確定は `kanaIntended` として数える）で miss を prefix list 上の順位（`byPrefixRank`）・モデル採点集合への包含（`byScoredSet`: scored / notScored / noReview）・`modelOutcome` 別に数える。`notScored` の miss はモデルの質にかかわらず救えないので、採点集合・heuristic 側の問題として扱う。
+`commitDiagnostics` は `Commit outcome: input=... payload={...}` 行（全確定経路で1行、`aiRerankFastContextLoggingEnabled=true` 時のみ）を読み、上と同じ規則（予測1位の exact/google は miss にしない、漢字で確定したことのない読みのかな確定は `kanaIntended` として数える）、`correctedWord` 付きの確定（打ち直しで直前の学習を取り消したもの、ADR-037）は `correctedCount` に数えるで miss を prefix list 上の順位（`byPrefixRank`）・モデル採点集合への包含（`byScoredSet`: scored / notScored / noReview）・`modelOutcome` 別に数える。`notScored` の miss はモデルの質にかかわらず救えないので、採点集合・heuristic 側の問題として扱う。
 
-payload: `path`（prefix / exact / google / kana-hiragana / kana-katakana / deactivation）、`context`（モデルに渡すのと同じ末尾20文字）、`prefixCandidateCount`、`prefixRank`（直前の prefix list 上の順位。raw=0、先頭表示=1、なければ省略）、trace がある場合は `controller` / `composition` / `generation` / `modelState` / `heuristicRank` / `proposedRank`、レビュー結果がある場合は `modelOutcome` / `inDictionarySnapshot`（レビュー request の辞書候補に含まれたか）/ `scoredCount` / `inScoredSet`。 左文脈を前のコントローラから引き継いで始まった composition では `contextInherited=true`（ADR-035。`Fast context accepted detail` にも同じキーを付け、`modelEffect.byContextOrigin` が inherited / own 別の rankEffect を返す）。完全一致モードや Google へ移るときは、直前の prefix trace と候補語リストを `escapedPrefixTrace` / `escapedPrefixWords` に退避し、確定時に使う。確定語以外の候補文字列は記録しない。
+payload: `path`（prefix / exact / google / kana-hiragana / kana-katakana / deactivation）、`context`（モデルに渡すのと同じ末尾20文字）、`prefixCandidateCount`、`prefixRank`（直前の prefix list 上の順位。raw=0、先頭表示=1、なければ省略）、trace がある場合は `controller` / `composition` / `generation` / `modelState` / `heuristicRank` / `proposedRank`、レビュー結果がある場合は `modelOutcome` / `inDictionarySnapshot`（レビュー request の辞書候補に含まれたか）/ `scoredCount` / `inScoredSet`。 左文脈を前のコントローラから引き継いで始まった composition では `contextInherited=true`（ADR-035。`Fast context accepted detail` にも同じキーを付け、`modelEffect.byContextOrigin` が inherited / own 別の rankEffect を返す）。直前の確定（同じ読み・別の語・15 秒以内）の学習を取り消した確定では `correctedWord`（取り消した語。ADR-037）。完全一致モードや Google へ移るときは、直前の prefix trace と候補語リストを `escapedPrefixTrace` / `escapedPrefixWords` に退避し、確定時に使う。確定語以外の候補文字列は記録しない。
 
 ### タイピングシミュレーション（ログなしの評価）
 

@@ -20,6 +20,17 @@ extension GyaimController {
         return true
     }
 
+    /// Committing an external candidate registers it in the local dictionary
+    /// under the typed reading. A sentence or a multi-line paste is never a
+    /// word the user meant to register (dogfood: `ika` → 45-char English
+    /// sentence, `siteki` → a review comment), so only short single-line text
+    /// is registered; the commit itself still inserts the full text (ADR-036).
+    static let maxRegisterableExternalCandidateLength = 30
+
+    static func shouldRegisterExternalCandidate(_ word: String) -> Bool {
+        !word.contains(where: \.isNewline) && word.count <= maxRegisterableExternalCandidateLength
+    }
+
     static func isExternalCandidateAllowed(forInput inputPat: String) -> Bool {
         !inputPat.contains { character in
             character == "?" || character == "？" || character == "!" || character == "！"
@@ -34,6 +45,22 @@ extension GyaimController {
                 || (0x61...0x7A).contains(scalar.value)
                 || (0x30...0x39).contains(scalar.value)
                 || scalar.value == 0x5F
+        }
+    }
+
+    private static func acceptedExternalCandidates(inputPat: String, clipboardCandidate: String?,
+                                                   selectedCandidate: String?) -> [SearchCandidate] {
+        let allowed = isExternalCandidateAllowed(forInput: inputPat)
+        let sources: [(String, String?)] = [("clipboard", clipboardCandidate), ("selected-text", selectedCandidate)]
+        return sources.compactMap { label, text in
+            guard let text else { return nil }
+            if allowed && isValidExternalCandidate(text) {
+                return SearchCandidate(word: text, source: .external, kind: .exact)
+            }
+            if isFastContextRerankLoggingEnabled {
+                Log.input.info("External \(label) candidate rejected: \"\(text.prefix(50))\"")
+            }
+            return nil
         }
     }
 
@@ -56,24 +83,8 @@ extension GyaimController {
         // Keep raw input as the selected candidate in prefix mode. This preserves the
         // historical safety behavior: plain Enter does not accidentally commit a long
         // prefix match such as "gu" -> "具体的" or "maeno" -> "前のめり".
-        // External candidates follow raw input so they appear at the top of the
-        // candidate window, matching the original Gyaim registration workflow.
-        let externalAllowedForInput = isExternalCandidateAllowed(forInput: inputPat)
-        if let clip = clipboardCandidate {
-            if externalAllowedForInput && isValidExternalCandidate(clip) {
-                candidates.append(SearchCandidate(word: clip, source: .external, kind: .exact))
-            } else if isFastContextRerankLoggingEnabled {
-                Log.input.info("External clipboard candidate rejected: \"\(clip.prefix(50))\"")
-            }
-        }
-
-        if let sel = selectedCandidate {
-            if externalAllowedForInput && isValidExternalCandidate(sel) {
-                candidates.append(SearchCandidate(word: sel, source: .external, kind: .exact))
-            } else if isFastContextRerankLoggingEnabled {
-                Log.input.info("External selected-text candidate rejected: \"\(sel.prefix(50))\"")
-            }
-        }
+        let externalCandidates = acceptedExternalCandidates(
+            inputPat: inputPat, clipboardCandidate: clipboardCandidate, selectedCandidate: selectedCandidate)
 
         let shouldFastContextRerank = fastContextRerankEnabled && isFastContextRerankEnabled
         if isFastContextRerankLoggingEnabled, !shouldFastContextRerank {
@@ -86,7 +97,18 @@ extension GyaimController {
             ? fastContextRerank(searchResults, inputPat: inputPat, hiragana: hiragana, context: context,
                                 allowModelReview: allowModelReview, traceTag: traceTag, onRerank: onRerank)
             : searchResults
-        candidates.append(contentsOf: dictionaryCandidates)
+
+        // External candidates (clipboard / selected text) go right behind the
+        // first dictionary candidate, so the word the user is typing stays one
+        // Space away while the pasted text stays one key away (ADR-036). With
+        // no dictionary candidate they lead, as in the original registration flow.
+        if let first = dictionaryCandidates.first {
+            candidates.append(first)
+            candidates.append(contentsOf: externalCandidates)
+            candidates.append(contentsOf: dictionaryCandidates.dropFirst())
+        } else {
+            candidates.append(contentsOf: externalCandidates)
+        }
 
         // Add hiragana if few candidates
         if candidates.count < CandidateDisplayMode.current.maxVisible, !hiragana.isEmpty {

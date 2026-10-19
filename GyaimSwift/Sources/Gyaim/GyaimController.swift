@@ -1057,6 +1057,43 @@ class GyaimController: IMKInputController {
         return bundle
     }
 
+    // MARK: - Retype correction (ADR-037)
+
+    private func readingKey(_ reading: String) -> String {
+        let kana = rk.roma2hiragana(reading)
+        return kana.isEmpty ? reading : kana
+    }
+
+    private func retypeCorrectionTarget(reading: String, word: String,
+                                        client: IMKTextInput?) -> StudyCorrectionTracker.Record? {
+        StudyCorrectionTracker.shared.correctionTarget(
+            readingKey: readingKey(reading), word: word, bundle: Self.clientBundle(client),
+            windowSeconds: StudyCorrectionTracker.configuredWindowSeconds)
+    }
+
+    /// The previous commit of the same reading was a mistake the user is now
+    /// correcting: take back what it taught.
+    private func undoLearning(of record: StudyCorrectionTracker.Record?, retypedAs word: String) {
+        guard let record else { return }
+        switch record.learning {
+        case .none:
+            return
+        case let .studied(context):
+            ws?.unstudy(word: record.word, reading: record.reading)
+            ContextDict.shared.unrecord(context: context, reading: record.reading, word: record.word)
+        case .registered:
+            ws?.deleteFromUserDictionaries(word: record.word, reading: record.reading)
+        }
+        Log.input.info("Learning undone (retyped): \"\(record.word)\" -> \"\(word)\" (reading: \"\(record.reading)\")")
+    }
+
+    private func rememberCommit(reading: String, word: String, client: IMKTextInput?,
+                                learning: StudyCorrectionTracker.Learning) {
+        StudyCorrectionTracker.shared.remember(StudyCorrectionTracker.Record(
+            readingKey: readingKey(reading), reading: reading, word: word,
+            bundle: Self.clientBundle(client), learning: learning, committedAt: Date()))
+    }
+
     // MARK: - Fix as Kana (F6/F7)
 
     private func fixAsKana(hiragana: Bool, client sender: Any?) {
@@ -1078,12 +1115,17 @@ class GyaimController: IMKInputController {
                              selectionRange: NSRange(location: word.count, length: 0),
                              replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
         client.insertText(word, replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
-        logCommitOutcome(path: "kana-\(kanaType)", word: word)
+        let correction = retypeCorrectionTarget(reading: inputPat, word: word, client: client)
+        logCommitOutcome(path: "kana-\(kanaType)", word: word, correctedWord: correction?.word)
+        undoLearning(of: correction, retypedAs: word)
+        var learning = StudyCorrectionTracker.Learning.none
         if Self.shouldStudyKanaConfirm(hiragana: hiragana) {
             ws?.study(word: word, reading: inputPat)
+            learning = .studied(context: recentCommittedText)
         } else {
             Log.input.info("Study skipped (kana confirm): \"\(word)\" (reading: \"\(inputPat)\")")
         }
+        rememberCommit(reading: inputPat, word: word, client: client, learning: learning)
         recordCommittedText(word, client: client)
         resetState()
         hideWindow()
@@ -1128,14 +1170,17 @@ class GyaimController: IMKInputController {
         }
 
         let path = skipStudy ? "deactivation" : searchMode == 1 ? "exact" : searchMode == 2 ? "google" : "prefix"
-        logCommitOutcome(path: path, word: word)
+        let correction = skipStudy ? nil : retypeCorrectionTarget(reading: reading, word: word, client: client)
+        logCommitOutcome(path: path, word: word, correctedWord: correction?.word)
 
         // Register or study logic (skip when deactivating — user didn't intentionally select)
         if skipStudy {
             Log.input.info("Study skipped (deactivation): \"\(word)\" (reading: \"\(reading)\")")
         } else {
             logAcceptedCandidate(candidate)
-            learnCommittedCandidate(candidate)
+            undoLearning(of: correction, retypedAs: word)
+            let learning = learnCommittedCandidate(candidate)
+            rememberCommit(reading: reading, word: word, client: client, learning: learning)
         }
 
         if !skipStudy {
@@ -1160,14 +1205,14 @@ class GyaimController: IMKInputController {
 
     /// One line per commit on every path (prefix / exact / google / kana /
     /// deactivation). Accepted detail stays prefix-only for preference pairs.
-    private func logCommitOutcome(path: String, word: String) {
+    private func logCommitOutcome(path: String, word: String, correctedWord: String? = nil) {
         guard Self.isFastContextRerankLoggingEnabled else { return }
         let inPrefixMode = searchMode == 0
         if let payload = Self.commitOutcomePayload(
             path: path, chosenWord: word, context: Self.limitedFastContext(recentCommittedText),
             prefixWords: inPrefixMode ? candidates.map(\.word) : escapedPrefixWords,
             trace: inPrefixMode ? fastContextTrace : escapedPrefixTrace,
-            contextInherited: contextInherited) {
+            contextInherited: contextInherited, correctedWord: correctedWord) {
             Log.input.info("Commit outcome: input=\"\(inputPat)\" payload=\(payload)")
         }
     }
@@ -1178,13 +1223,14 @@ class GyaimController: IMKInputController {
     /// scored set cannot be fixed by the model, whatever its quality.
     static func commitOutcomePayload(path: String, chosenWord: String, context: String,
                                      prefixWords: [String], trace: FastContextTrace?,
-                                     contextInherited: Bool = false) -> String? {
+                                     contextInherited: Bool = false, correctedWord: String? = nil) -> String? {
         var payload: [String: Any] = [
             "path": path,
             "context": context,
             "prefixCandidateCount": prefixWords.count,
         ]
         if contextInherited { payload["contextInherited"] = true }
+        if let correctedWord { payload["correctedWord"] = correctedWord }
         payload["prefixRank"] = prefixWords.firstIndex(of: chosenWord)
         if let trace {
             payload["controller"] = trace.controllerID
@@ -1209,21 +1255,26 @@ class GyaimController: IMKInputController {
         return json
     }
 
-    private func learnCommittedCandidate(_ candidate: SearchCandidate) {
+    @discardableResult
+    private func learnCommittedCandidate(_ candidate: SearchCandidate) -> StudyCorrectionTracker.Learning {
         let word = candidate.word
         let reading = candidate.reading ?? inputPat
         if word == clipboardCandidate || word == selectedCandidate {
-            if Self.isExternalCandidateAllowed(forInput: inputPat), Self.isValidExternalCandidate(word) {
+            if Self.isExternalCandidateAllowed(forInput: inputPat), Self.isValidExternalCandidate(word),
+               Self.shouldRegisterExternalCandidate(word) {
                 ws?.register(word: word, reading: inputPat)
                 Log.input.info("Registered to user dict: \"\(word)\" (reading: \"\(inputPat)\")")
-            } else {
-                Log.input.info("External candidate registration skipped: \"\(word.prefix(50))\" (reading: \"\(inputPat)\")")
+                return .registered
             }
+            Log.input.info("External candidate registration skipped: \"\(word.prefix(50))\" (reading: \"\(inputPat)\")")
+            return .none
         } else if reading != "ds" {
             ws?.study(word: word, reading: reading)
             ContextDict.shared.record(context: recentCommittedText, reading: reading, word: word)
             Log.input.info("Studied: \"\(word)\" (reading: \"\(reading)\")")
+            return .studied(context: recentCommittedText)
         }
+        return .none
     }
 
     // MARK: - Delete Candidate
@@ -1285,7 +1336,9 @@ class GyaimController: IMKInputController {
 
         let sourceDescription = String(describing: resolution.source)
         let modeDescription = mode == .classic ? "classic" : "list"
-        Log.ui.debug("showWindow: reportedLineRect=\(reportedLineRect) "
+        // info (not debug) so the file log keeps the client-reported rect; the
+        // misplaced-window reports (Google Docs in Chrome) need it after the fact.
+        Log.ui.info("showWindow: reportedLineRect=\(reportedLineRect) "
             + "resolvedLineRect=\(resolution.lineRect) source=\(sourceDescription) "
             + "winSize=\(winSize) mode=\(modeDescription) -> origin=\(origin)")
         cw.setFrameOrigin(origin)

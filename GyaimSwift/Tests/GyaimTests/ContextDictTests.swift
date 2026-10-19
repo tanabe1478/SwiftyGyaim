@@ -133,4 +133,17 @@ final class ContextDictTests: XCTestCase {
 
         XCTAssertEqual(ContextDict.load(file: file).count, ContextDict.maxEntries)
     }
+
+    func testUnrecordStepsCountBackAndRemovesSingleUseEntries() {
+        // ADR-037: a retype undoes the previous commit's context record.
+        dict.record(context: "送って", reading: "okimasita", word: "起きました")
+        XCTAssertTrue(dict.unrecord(context: "送って", reading: "okimasita", word: "起きました"))
+        XCTAssertEqual(dict.affinity(context: "送って", reading: "okimasita", word: "起きました"), 0.0, accuracy: 1e-6)
+
+        dict.record(context: "それ", reading: "ikou", word: "移行")
+        dict.record(context: "それ", reading: "ikou", word: "移行")
+        XCTAssertTrue(dict.unrecord(context: "それ", reading: "ikou", word: "移行"))
+        XCTAssertEqual(dict.entryCount(), 1, "the second use survives")
+        XCTAssertFalse(dict.unrecord(context: "ほかの", reading: "ikou", word: "移行"), "different context: nothing to undo")
+    }
 }
