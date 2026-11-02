@@ -112,6 +112,7 @@ class GyaimController: IMKInputController {
     private var candWindow: CandidateWindow?
     /// Last IMK-reported cursor rect that looked like a valid screen-coordinate rect.
     private var lastValidCandidateLineRect: NSRect?
+    private var lastShowWindowLogMessage: String?
     /// Tracks the in-flight Google Transliterate query to discard stale results.
     private var pendingGoogleQuery: String?
     /// Deferred model review of the current prefix candidates (ADR-026). Cancelled
@@ -1316,7 +1317,8 @@ class GyaimController: IMKInputController {
         let resolution = CandidateWindowPositioner.resolveLineRect(
             reportedLineRect: reportedLineRect,
             previousValidLineRect: lastValidCandidateLineRect,
-            mouseLocation: NSEvent.mouseLocation)
+            mouseLocation: NSEvent.mouseLocation,
+            staleReplacement: staleCaretReplacement(for: reportedLineRect, client: client))
         if resolution.source == .reported {
             lastValidCandidateLineRect = resolution.lineRect
         }
@@ -1338,11 +1340,25 @@ class GyaimController: IMKInputController {
         let modeDescription = mode == .classic ? "classic" : "list"
         // info (not debug) so the file log keeps the client-reported rect; the
         // misplaced-window reports (Google Docs in Chrome) need it after the fact.
-        Log.ui.info("showWindow: reportedLineRect=\(reportedLineRect) "
+        // Logged only when something changed: the rect is the same for every
+        // keystroke of a composition and the repeats were 12% of gyaim.log.
+        let logMessage = "showWindow: reportedLineRect=\(reportedLineRect) "
             + "resolvedLineRect=\(resolution.lineRect) source=\(sourceDescription) "
-            + "winSize=\(winSize) mode=\(modeDescription) -> origin=\(origin)")
+            + "winSize=\(winSize) mode=\(modeDescription) -> origin=\(origin)"
+        if logMessage != lastShowWindowLogMessage {
+            Log.ui.info(logMessage)
+            lastShowWindowLogMessage = logMessage
+        }
         cw.setFrameOrigin(origin)
         cw.orderFront(nil)
+    }
+
+    /// Google Docs in Chrome alternates the real caret with a fixed off-screen
+    /// element's rect (ADR-038); the detector keeps the last real caret instead.
+    /// Rects the ADR-018 origin check rejects never reach the detector.
+    private func staleCaretReplacement(for reportedLineRect: NSRect, client: IMKTextInput) -> NSRect? {
+        guard CandidateWindowPositioner.isUsableReportedLineRect(reportedLineRect) else { return nil }
+        return StaleCaretRectDetector.shared(for: Self.clientBundle(client)).replacement(for: reportedLineRect)
     }
 
     private func hideWindow() {
