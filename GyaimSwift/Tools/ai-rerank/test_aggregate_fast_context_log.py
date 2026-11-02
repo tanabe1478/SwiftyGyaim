@@ -241,7 +241,7 @@ class CommitDiagnosticsTests(unittest.TestCase):
                      "modelOutcome": "exact-homophone-fixed"}),
             outcome({"path": "prefix", "prefixRank": 2, "inScoredSet": True,
                      "modelOutcome": "exact-homophone-passed"}),
-            outcome({"path": "kana-hiragana", "modelState": "not-scheduled"}),
+            outcome({"path": "kana-hiragana", "modelState": "not-scheduled", "correctedWord": "起きました"}),
             outcome({"path": "google"}),
             # not misses: Enter on raw for a rank-1 word, kana for a reading never converted
             outcome({"path": "exact", "prefixRank": 1}),
@@ -252,6 +252,7 @@ class CommitDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["count"], 10)
         self.assertEqual(result["missCount"], 3)
         self.assertEqual(result["kanaIntended"], 1)
+        self.assertEqual(result["correctedCount"], 1)
         self.assertEqual(result["misses"]["byPrefixRank"], {"2-3": 1, "9+": 1, "absent": 1})
         self.assertEqual(result["misses"]["byScoredSet"], {"noReview": 1, "notScored": 1, "scored": 1})
         self.assertEqual(result["misses"]["byModelOutcome"], {

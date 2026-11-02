@@ -35,6 +35,11 @@ GyaimSwift/
     └── E2ETests/               # E2Eテスト
 ```
 
+## 調査記録
+
+- [モデル寄与の調査（2026-09-12）](model-contribution-investigation-2026-09-12.md)
+- [dogfood で不満だった変換の調査記録（2026-10）](dogfood-conversion-complaints-2026-10.md)
+
 ## 関連ドキュメント
 
 - `CLAUDE.md` / `AGENTS.md`: agent 向け運用ルール
