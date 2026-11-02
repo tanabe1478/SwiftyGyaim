@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift, RomaKana+KanaKey.swift
-> Last updated: 2026-09-26 (Mozc 公開辞書の同梱 — ADR-034)
+> Last updated: 2026-10-19 (unstudy / ContextDict.unrecord — ADR-037)
 
 ## 概要
 
@@ -199,6 +199,9 @@ connection 候補については、`ConnectionDict` が内部接続ラベル風�
 - 上限超過時に淘汰方式に応じたevictionを実行
 - 同じ単語がstudyDictに既存かつconnectionDictに未登録の場合、localDictに昇格（`register()`）
 - **ファイル保存**: evict後に `saveStudyDict` を呼び即座に永続化する。これをしないと、IMEプロセスが `deactivateServer` を経由せず終了したとき（killall, クラッシュ等）に学習データがすべて失われる。保存は原子的（tempfile + rename）なのでクラッシュ耐性がある。
+
+### unstudy()（ADR-037）
+`study()` 1 回分の取り消し。`studyEntryIndex`（かな等価）でエントリを探し、頻度が 2 以上なら 1 減らし、1 なら削除して保存する。`lastAccessTime` と位置は変えない。`study()` が行った localdict への昇格は戻さない。呼び出し元は `GyaimController` の打ち直し判定（同じ読みを 15 秒以内に別の語で確定、input-flow.md）だけ。ContextDict 側は `unrecord(context:reading:word:)` が同じ文脈キーの記録を 1 戻す。
 
 ### 淘汰方式（EvictionMode）
 

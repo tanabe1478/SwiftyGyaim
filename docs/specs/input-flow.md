@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift, GyaimController+FastContextRerank.swift
-> Last updated: 2026-10-10 (左文脈をコントローラ再生成をまたいで引き継ぐ — ADR-035)
+> Last updated: 2026-10-19 (外部候補の位置と登録条件 — ADR-036、打ち直しによる学習の取り消し — ADR-037、showWindow ログを info に)
 
 ## 概要
 
@@ -42,10 +42,12 @@ handle(_:client:) → routeEvent() → HandleResult
 | パス | メソッド | 学習 | 用途 |
 |------|---------|------|------|
 | Enter/数字キー | `fix(client:)` | あり | 通常確定（prefix mode の先頭候補が raw `inputPat` の場合のみ Enter は完全一致検索へ遷移）。study と同時に ContextDict へ `(文脈末尾, reading, word)` を記録。`aiRerankFastContextLoggingEnabled=true` かつ prefix mode の意図的確定では `Fast context accepted: ... rank=N` と、preference抽出用の `Fast context accepted detail: ... payload={...}`（表示上位8件+確定候補のメタデータJSON。加えて `controller` / `composition` / `generation` / `modelState` / `heuristicRank` / `proposedRank` を持ち、heuristic 単独順に対する確定順位の改善・悪化を集計できる — ai-rerank.md 評価ループ）を出力する。同じ設定では、完全一致モード・Google・かな確定・deactivation を含む全確定で `Commit outcome: ... payload={...}`（確定経路、直前 prefix list 上の順位、モデル採点集合に含まれたか）も出す。完全一致モード・Google へ移る直前の prefix trace と候補語は退避し、確定時の照合に使う |
-| F6/`;` | `fixAsKana(hiragana: true)` | **なし**（`kanaConfirmStudyEnabled=true` で従来どおり学習） | ひらがな確定。出力は常に再生成可能な素のかな表記のため、学習はランキングノイズとtypoの温床にしかならない |
+| F6/`;` | `fixAsKana(hiragana: true)` | **なし**（`kanaConfirmStudyEnabled=true` で従来どおり学習） | ひらがな確定。出力は常に再生成可能な素のかな表記のため、学習はランキングノイズとtypoの温床にしかならない。学習はしないが、直前の確定の取り消し（下記）は行う |
 | F7/`q` | `fixAsKana(hiragana: false)` | あり | カタカナ確定。表記選択として価値がある（辞書提案workflowの源泉） |
-| IME切替 | `fix(client:sender, skipStudy: true)` | **なし** | deactivation確定 |
+| IME切替 | `fix(client:sender, skipStudy: true)` | **なし** | deactivation確定。打ち直し判定の対象にも記録にもならない |
 | Shift+X | `deleteCurrentCandidate(client:)` | - | 候補削除（ADR-015） |
+
+**打ち直しによる学習の取り消し（ADR-037）**: 全確定（deactivation を除く）は `StudyCorrectionTracker.shared` に読みのかな形・語・bundle・学習の種類（study+ContextDict / localdict 登録 / なし）・時刻を残す。確定時に、直前の記録が同じ読みで別の語、同じ bundle（両方分かる場合）、`studyUndoOnRetypeSeconds`（既定 15 秒、0 で無効）以内なら、その学習を取り消してから今回の学習を行う（`WordSearch.unstudy` + `ContextDict.unrecord`、登録なら `deleteFromUserDictionaries`）。`Commit outcome` payload に `correctedWord` を付け、`Learning undone (retyped): "起きました" -> "おきました" (reading: "okimasita")` を出す。判定も記録も `logCommitOutcome` の直後、学習の前に行う。
 
 ## AI rerank
 
@@ -76,7 +78,7 @@ Info.plistには日本語モードのほか、Secure Event Input対策の非表�
 ## IMEライフサイクル
 
 ```
-activateServer(_:) → クリップボード取得, Secure Input診断, 文脈の引き継ぎ（後述）, 辞書start, モデル先読み（`aiRerankUseModelForFastContext` 時、`InProcessAIReranker.warmUp` をバックグラウンドで1回）, showWindow
+activateServer(_:) → クリップボード取得, Secure Input診断, 文脈の引き継ぎ（後述）, 辞書start, モデル先読み（`aiRerankUseModelForFastContext` 時、`InProcessAIReranker.warmUp` をバックグラウンドで1回）, showWindow（位置計算は `showWindow: reportedLineRect=… source=…` として info で gyaim.log に残る。candidate-window.md）
 deactivateServer(_:) → hideWindow, inputPatが空でなければfix(skipStudy: true), 辞書finish
 ```
 
@@ -96,7 +98,7 @@ deactivateServer(_:) → hideWindow, inputPatが空でなければfix(skipStudy:
 
 ひらがなフォールバック: 候補数が `CandidateDisplayMode.current.maxVisible` 未満の場合、ひらがなを候補に追加。
 
-Prefix mode の候補順: `buildPrefixCandidates()` は raw `inputPat` を先頭に保ち、その後に外部候補（クリップボード、選択テキスト）、辞書検索結果、ひらがなフォールバックを並べる。raw `inputPat` を先頭にすることで、短い prefix 入力や完全一致前の入力で `gu` → `具体的`、`maeno` → `前のめり` のような長い prefix 候補が Enter / deactivate で誤確定されるのを防ぐ。一方、候補ウィンドウは `nthCand + 1` 以降を表示するため、コピー後5秒以内のクリップボード候補や選択テキスト候補は表示上の先頭に出る。ただし、URLや `chrome-extension://...` のような URL scheme 形式の文字列、`sns_origination_identity_arn` のような snake_case 風ASCII識別子は外部候補から除外する。また `inputPat` に `?` / `!` / `？` / `！` が含まれる場合は、句読点付き文としての確定を優先し、外部候補を挿入・登録しない。`ha?` のように句読点付きで入力した場合は、fast-context heuristic が句読点を含まない長い local/study 候補を抑制し、`は？` のような句読点付き候補を守る。
+Prefix mode の候補順: `buildPrefixCandidates()` は raw `inputPat` を先頭に保ち、その後に辞書検索結果の先頭候補、外部候補（クリップボード、選択テキスト）、残りの辞書検索結果、ひらがなフォールバックを並べる（ADR-036。辞書候補が無ければ外部候補が raw の直後）。raw `inputPat` を先頭にすることで、短い prefix 入力や完全一致前の入力で `gu` → `具体的`、`maeno` → `前のめり` のような長い prefix 候補が Enter / deactivate で誤確定されるのを防ぐ。候補ウィンドウは `nthCand + 1` 以降を表示するため、打っている語が表示上の先頭、コピー後5秒以内のクリップボード候補や選択テキスト候補は 2 番目に出る。外部候補を確定すると `inputPat` を読みとして localdict に登録するが、改行を含むか 30 文字を超える文字列は登録しない（`shouldRegisterExternalCandidate`、ADR-036。挿入はする）。ただし、URLや `chrome-extension://...` のような URL scheme 形式の文字列、`sns_origination_identity_arn` のような snake_case 風ASCII識別子は外部候補から除外する。また `inputPat` に `?` / `!` / `？` / `！` が含まれる場合は、句読点付き文としての確定を優先し、外部候補を挿入・登録しない。`ha?` のように句読点付きで入力した場合は、fast-context heuristic が句読点を含まない長い local/study 候補を抑制し、`は？` のような句読点付き候補を守る。
 
 ## 既知の制約
 
