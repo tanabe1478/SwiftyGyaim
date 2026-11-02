@@ -1,7 +1,7 @@
 # Spec: 設定ストア（settings.json）
 
 > Trigger: GyaimSettings.swift
-> Last updated: 2026-10-10 (aiRerankFastContextCarryOverSeconds 追加 — ADR-035)
+> Last updated: 2026-10-19 (studyUndoOnRetypeSeconds 追加 — ADR-037)
 
 ## 概要
 
@@ -43,6 +43,7 @@
 | `exactReadingMatchPriority` | Bool | false | ○ | 読み完全一致を前方一致より上に並べる（ADR-016/017） |
 | `kanaConfirmStudyEnabled` | Bool | false | – | `;` によるひらがな確定も学習する（旧挙動） |
 | `contextLearningEnabled` | Bool | true | ○ | ContextDict の記録と affinity 参照（ADR-020） |
+| `studyUndoOnRetypeSeconds` | Int | 15（0〜120） | – | 同じ読みをこの秒数以内に別の語で確定し直したら直前の確定の学習を取り消す。0 で無効（ADR-037） |
 
 ### Google 変換・接続辞書・キー割り当て
 

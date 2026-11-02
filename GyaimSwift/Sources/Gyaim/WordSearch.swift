@@ -561,6 +561,24 @@ class WordSearch {
         return result
     }
 
+    /// Undo one `study()` of (word, reading): the frequency goes back down by
+    /// one and an entry that only existed because of that commit is removed
+    /// (ADR-037, retype correction). Promotion to the local dictionary that
+    /// `study()` may have performed is left alone. Returns false when no
+    /// entry matched (kana-equivalent readings count as the same entry).
+    @discardableResult
+    func unstudy(word: String, reading: String) -> Bool {
+        guard let idx = studyEntryIndex(word: word, reading: reading) else { return false }
+        if Self.studyDict[idx].frequency > 1 {
+            Self.studyDict[idx].frequency -= 1
+        } else {
+            Self.studyDict.remove(at: idx)
+        }
+        Self.saveStudyDict(dictFile: Self.studyDictFile, dict: Self.studyDict)
+        Log.dict.info("Study undone: \"\(word)\" (reading: \"\(reading)\")")
+        return true
+    }
+
     /// Delete a word from the study dictionary.
     /// Returns true if the entry was found and removed.
     /// Romaji spelling variants of the same kana reading are removed together

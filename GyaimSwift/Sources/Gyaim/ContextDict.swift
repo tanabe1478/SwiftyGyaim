@@ -107,6 +107,30 @@ final class ContextDict {
         Log.dict.debug("ContextDict recorded: key=\"\(key)\" reading=\"\(reading)\" word=\"\(word)\"")
     }
 
+    /// Undo one `record()` of the same (context, reading, word): the count goes
+    /// back down by one and an entry created by that commit is removed
+    /// (ADR-037, retype correction). Returns false when nothing matched.
+    @discardableResult
+    func unrecord(context: String, reading: String, word: String) -> Bool {
+        let key = Self.contextKey(from: context)
+        guard !key.isEmpty else { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        loadIfNeeded()
+        guard let index = entries.firstIndex(where: {
+            $0.contextKey == key && $0.reading == reading && $0.word == word
+        }) else { return false }
+        if entries[index].count > 1 {
+            entries[index].count -= 1
+        } else {
+            entries.remove(at: index)
+        }
+        rebuildIndex()
+        save()
+        Log.dict.info("ContextDict record undone: key=\"\(key)\" reading=\"\(reading)\" word=\"\(word)\"")
+        return true
+    }
+
     // MARK: - Affinity
 
     /// Returns 0.0...1.0 describing how strongly the user's history binds this

@@ -29,6 +29,7 @@ enum GyaimSettings {
         "exactReadingMatchPriority",
         "kanaConfirmStudyEnabled",
         "contextLearningEnabled",
+        "studyUndoOnRetypeSeconds",
         // Google Transliterate / connection dictionary / key bindings
         "googleTransliterateTrigger",
         "connectionDictSourceURL",
