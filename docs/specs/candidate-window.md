@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
-> Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-11-03 (固定矩形の検出 StaleCaretRectDetector、showWindow ログの重複抑止 — ADR-038)
+> Trigger: CandidateWindow.swift, ClassicBubbleBackground.swift, PreferencesWindow.swift
+> Last updated: 2026-11-03 (吹き出しのトンガリをキャレット側に向ける BubbleTailDirection、背景描画を ClassicBubbleBackground.swift へ。同日: 固定矩形の検出 — ADR-038)
 
 ## 概要
 
@@ -30,13 +30,15 @@ NSPanelベースの非アクティブウィンドウ。フォーカスを奪わ�
 
 ## Classic背景の描画
 
-`ClassicBackgroundView`: candwin.pngを9スライス描画（上部/中央/下部をストレッチ）。候補数に応じて高さを可変。
+`ClassicBackgroundView`（`ClassicBubbleBackground.swift`）: candwin.png を上部キャップ（27 px、トンガリを含む）・中央（ストレッチ）・下部キャップ（20 px）の 3 スライスで描画。候補数に応じて高さを可変。
+
+トンガリの向き（`BubbleTailDirection`）: 元の絵はトンガリが上を向き（ウィンドウがキャレットの下にある前提）、左端から 16 px の位置に先端がある。`CandidateWindowPositioner.place()` がウィンドウをキャレットの上にフリップしたときは `tail = .down` を返し、`CandidateWindow.setBubbleTail(.down)` で絵を上下反転して描き、本文の上下インセット（27 / 20）を入れ替える。ウィンドウの高さは変わらない。クラシックモードの x はキャレットから 16 px 左に置き、トンガリの先端がキャレットに重なるようにする。
 
 Classic表示は `NSScrollView` + `NSTextView` で候補文字列を表示する。長い候補列が折り返される場合、`layoutManager.usedRect(for:)` で必要な高さを計算した後、`NSTextView.frame` を `documentWidth x scrollHeight` に明示更新する。`documentView` のframeがゼロのままだと、白いcontent areaだけが表示され候補文字が見えないため、回帰テストで `textView.frame.width > 0` を確認する。
 
 ## 位置計算
 
-`CandidateWindowPositioner`: クライアントから取得した`lineRect`（カーソル位置）を基準に表示位置を計算。画面境界でクランプ。対象スクリーンは `lineRect` と交差する `NSScreen.visibleFrame` を優先し、見つからない場合はマウス位置のスクリーンにフォールバックする。
+`CandidateWindowPositioner`: クライアントから取得した`lineRect`（カーソル位置）を基準に表示位置を計算。画面境界でクランプ。`place()` は原点に加えてトンガリの向き（下に収まらずキャレットの上にフリップしたら `.down`）を返し、`calculate()` はその原点だけを返す。対象スクリーンは `lineRect` と交差する `NSScreen.visibleFrame` を優先し、見つからない場合はマウス位置のスクリーンにフォールバックする。
 
 Mozc の `renderer/window_util.cc` も、preedit rect / target point と対象モニタの working area を入力に、候補ウィンドウを反対側へ逃がし、それでも収まらない場合は working area 内へクランプする設計になっている。本実装もこの方針に合わせ、`visibleFrame` 内に収めることを優先する。ただし SwiftyGyaim では IMK クライアントがローカル座標を返す実ログがあるため、Mozc の working area クランプに加えて `lineRect` 妥当性検証を行う。
 

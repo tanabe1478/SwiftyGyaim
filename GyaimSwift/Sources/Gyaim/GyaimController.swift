@@ -1330,27 +1330,34 @@ class GyaimController: IMKInputController {
             ?? NSScreen.main?.visibleFrame
             ?? .zero
 
-        let origin = CandidateWindowPositioner.calculate(
+        let placement = CandidateWindowPositioner.place(
             lineRect: resolution.lineRect,
             winSize: winSize,
             screenFrame: screenFrame,
             mode: mode)
 
-        let sourceDescription = String(describing: resolution.source)
+        logShowWindow(reported: reportedLineRect, resolution: resolution, winSize: winSize,
+                      mode: mode, placement: placement)
+        cw.setBubbleTail(placement.tail)
+        cw.setFrameOrigin(placement.origin)
+        cw.orderFront(nil)
+    }
+
+    /// info (not debug) so the file log keeps the client-reported rect; the
+    /// misplaced-window reports (Google Docs in Chrome) need it after the fact.
+    /// Logged only when something changed: the rect is the same for every
+    /// keystroke of a composition and the repeats were 12% of gyaim.log.
+    private func logShowWindow(reported: NSRect, resolution: CandidateWindowPositioner.LineRectResolution,
+                               winSize: NSSize, mode: CandidateDisplayMode,
+                               placement: CandidateWindowPositioner.Placement) {
         let modeDescription = mode == .classic ? "classic" : "list"
-        // info (not debug) so the file log keeps the client-reported rect; the
-        // misplaced-window reports (Google Docs in Chrome) need it after the fact.
-        // Logged only when something changed: the rect is the same for every
-        // keystroke of a composition and the repeats were 12% of gyaim.log.
-        let logMessage = "showWindow: reportedLineRect=\(reportedLineRect) "
-            + "resolvedLineRect=\(resolution.lineRect) source=\(sourceDescription) "
-            + "winSize=\(winSize) mode=\(modeDescription) -> origin=\(origin)"
+        let logMessage = "showWindow: reportedLineRect=\(reported) "
+            + "resolvedLineRect=\(resolution.lineRect) source=\(String(describing: resolution.source)) "
+            + "winSize=\(winSize) mode=\(modeDescription) tail=\(placement.tail) -> origin=\(placement.origin)"
         if logMessage != lastShowWindowLogMessage {
             Log.ui.info(logMessage)
             lastShowWindowLogMessage = logMessage
         }
-        cw.setFrameOrigin(origin)
-        cw.orderFront(nil)
     }
 
     /// Google Docs in Chrome alternates the real caret with a fixed off-screen
