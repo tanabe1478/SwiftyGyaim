@@ -6,11 +6,26 @@ import Foundation
 /// heuristic only contributes its safety penalties (incomplete stems, polite
 /// negative predictions, punctuation mismatch, raw ASCII) and breaks ties.
 /// The literal hiragana of the input is always one kana-key press away, so it
-/// is not offered first (the model otherwise picks すこし over 少し on a first
-/// encounter; dogfood users commit such kana with the kana key).
+/// needs a clear model margin to be offered first (ADR-039: 1.0; the 3.0 of
+/// ADR-032 overrode the model in ください/下さい, それぞれ/夫々, いれば/入れ歯).
 extension BundledZenzRuntime {
+    static let llmRankDefaultRawHiraganaPenalty = 1.0
+    static let llmRankRawHiraganaPenaltyKey = "aiRerankLLMRawHiraganaPenalty"
+
+    /// Subtracted from the candidate that is the input's literal hiragana.
+    /// Configurable so dogfood can compare values; negative settings are clamped to 0.
+    static func llmRankRawHiraganaPenalty() -> Double {
+        guard GyaimSettings.objectExists(forKey: llmRankRawHiraganaPenaltyKey) else {
+            return llmRankDefaultRawHiraganaPenalty
+        }
+        return rawHiraganaPenalty(configured: GyaimSettings.double(forKey: llmRankRawHiraganaPenaltyKey))
+    }
+
+    static func rawHiraganaPenalty(configured: Double) -> Double {
+        configured.isFinite ? max(configured, 0) : llmRankDefaultRawHiraganaPenalty
+    }
+
     /// Heuristic contributions kept as hard safety rules in LLM ranking.
-    static let llmRankRawHiraganaPenalty = 3.0
     static let llmRankSafetyPenalties: Set<String> = [
         "incompleteStemPenalty", "politeNegativePredictionPenalty",
         "punctuatedInputMismatchPenalty", "rawAsciiPenalty",
@@ -31,7 +46,9 @@ extension BundledZenzRuntime {
     /// Candidates without a model score sink below every scored one, in
     /// heuristic order.
     static func llmPrimaryOrder(request: AIRerankRequest, heuristicOrder: [Int], llmScores: [Int: Double],
-                                studyWeight: Double, contextWeight: Double) -> (order: [Int], totals: [Int: Double]) {
+                                studyWeight: Double, contextWeight: Double,
+                                rawHiraganaPenalty: Double = llmRankRawHiraganaPenalty()
+    ) -> (order: [Int], totals: [Int: Double]) {
         let heuristicRank = Dictionary(uniqueKeysWithValues: heuristicOrder.enumerated().map { ($1, $0) })
         var totals: [Int: Double] = [:]
         for candidate in request.candidates {
@@ -43,7 +60,7 @@ extension BundledZenzRuntime {
             total += contextWeight * min(candidate.contextAffinity ?? 0, 1.0)
             let breakdown = AIReranker.localScoreBreakdown(candidate: candidate, request: request)
             total += breakdown.contributions.filter { llmRankSafetyPenalties.contains($0.key) }.values.reduce(0, +)
-            if candidate.text == request.hiragana { total -= llmRankRawHiraganaPenalty }
+            if candidate.text == request.hiragana { total -= rawHiraganaPenalty }
             totals[candidate.index] = total
         }
         let order = request.candidates.map(\.index).sorted { lhs, rhs in
@@ -75,7 +92,8 @@ extension BundledZenzRuntime {
         }
         let ranked = Self.llmPrimaryOrder(request: request, heuristicOrder: localOrder, llmScores: llmScores,
                                           studyWeight: Self.llmRankStudyWeight(),
-                                          contextWeight: Self.llmRankContextWeight())
+                                          contextWeight: Self.llmRankContextWeight(),
+                                          rawHiraganaPenalty: Self.llmRankRawHiraganaPenalty())
         let changed = ranked.order.first != localOrder.first
         Log.input.info("Zenz llm-rank finished: input=\"\(request.inputPat)\" scored=\(llmScores.count)/"
             + "\(request.candidates.count) topChanged=\(changed) order=\(ranked.order.prefix(8)) "

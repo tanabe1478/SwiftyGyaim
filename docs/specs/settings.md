@@ -1,7 +1,7 @@
 # Spec: 設定ストア（settings.json）
 
 > Trigger: GyaimSettings.swift
-> Last updated: 2026-10-19 (studyUndoOnRetypeSeconds 追加 — ADR-037)
+> Last updated: 2026-11-03 (aiRerankLLMRawHiraganaPenalty 追加 — ADR-039)
 
 ## 概要
 
@@ -81,6 +81,7 @@
 | `aiRerankExactHomophoneFrequencyMarginWeight` | Double | 2.0 | – | best の study 頻度優位 1 doubling あたりの追加 margin（BUG-036） |
 | `aiRerankLLMStudyWeight` | Double | 2.0 | – | LLM 主体の並べ替えで、学習頻度 1 doubling あたりの加点（ADR-032） |
 | `aiRerankLLMContextWeight` | Double | 2.0 | – | LLM 主体の並べ替えで、ContextDict affinity（0〜1）への重み（ADR-032） |
+| `aiRerankLLMRawHiraganaPenalty` | Double | 1.0 | – | LLM 主体の並べ替えで、入力のひらがなそのものの候補から引く点。負値は 0（ADR-039） |
 | `aiRerankCorpusFrequencyPath` | String | ""（無効） | – | 実験用。一般コーパスの出現頻度表（`surface<TAB>count`、`Tools/dict/build-corpus-frequency.py` で生成）のパス |
 | `aiRerankCorpusFrequencyWeight` | Double | 0（無効） | – | 実験用。heuristic の `corpusFrequencyBonus = weight × log10(1 + count)` の重み |
 
