@@ -100,6 +100,20 @@ class ModelEffectTests(unittest.TestCase):
                                              + [detail("2026-09-13 10:00:00", '{broken}')], None)
         self.assertEqual(result["rankEffect"]["scored"], 0)
 
+    def test_rank_effect_is_split_by_context_origin(self):
+        rows = [
+            {"chosenRank": 1, "heuristicRank": 2, "proposedRank": 1, "contextInherited": True},
+            {"chosenRank": 2, "heuristicRank": 1, "proposedRank": 2},
+            {"chosenRank": 1, "heuristicRank": 1, "proposedRank": 1},
+        ]
+        lines = [detail("2026-10-10 10:00:00", json.dumps(dict(row, modelState="applied-changed"))) for row in rows]
+        result = MODULE.collect_model_effect(lines, None)
+        self.assertEqual(result["byContextOrigin"]["inherited"]["netImproved"], 1)
+        self.assertEqual(result["byContextOrigin"]["own"], {
+            "scored": 2, "improved": 0, "worsened": 1, "same": 1, "netImproved": -1,
+            "rankGainSum": -1, "meanRankGain": -0.5,
+        })
+
     def test_empty_when_no_detail_lines(self):
         self.assertEqual(MODULE.collect_model_effect(["noise"], cutoff=None), {"count": 0})
 
