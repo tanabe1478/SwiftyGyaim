@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, ZenzRuntime.swift, ZenzRuntime+Scoring.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController+FastContextRerank.swift, FastContextTrace.swift
-> Last updated: 2026-10-19 (外部候補の位置 — ADR-036、Commit outcome の correctedWord — ADR-037)
+> Last updated: 2026-11-03 (ひらがな減点を 1.0 に、aiRerankLLMRawHiraganaPenalty — ADR-039)
 
 ## 概要
 
@@ -94,7 +94,7 @@ Swift runtime 側でも `AIReranker.localScoreBreakdown(candidate:request:)` が
 
 ## LLM 主体の並べ替え（ADR-032、現行）
 
-モデル経路（入力3文字以上）では `BundledZenzRuntime.llmPrimaryRerank` が辞書候補すべてを `scoreBatch` で採点し、`llmPrimaryOrder` が次の合計で並べる。平均logprob + `aiRerankLLMStudyWeight`（既定2.0）× log2(1+学習頻度)（study 候補のみ）+ `aiRerankLLMContextWeight`（既定2.0）× ContextDict affinity + heuristic の安全策の減点（`incompleteStemPenalty` / `politeNegativePredictionPenalty` / `punctuatedInputMismatchPenalty` / `rawAsciiPenalty`）− 3.0（候補が入力のひらがなそのもの。かなキーで常に確定できるため）。同点・未採点は heuristic 順。ログ outcome は `llm-ranked`（採点できなければ `llm-rank-unavailable`）、`review.topDecision` は先頭が heuristic と変わったら `fixed`、同じなら `passed`。
+モデル経路（入力3文字以上）では `BundledZenzRuntime.llmPrimaryRerank` が辞書候補すべてを `scoreBatch` で採点し、`llmPrimaryOrder` が次の合計で並べる。平均logprob + `aiRerankLLMStudyWeight`（既定2.0）× log2(1+学習頻度)（study 候補のみ）+ `aiRerankLLMContextWeight`（既定2.0）× ContextDict affinity + heuristic の安全策の減点（`incompleteStemPenalty` / `politeNegativePredictionPenalty` / `punctuatedInputMismatchPenalty` / `rawAsciiPenalty`）− `aiRerankLLMRawHiraganaPenalty`（既定 1.0、ADR-039。候補が入力のひらがなそのもの。かなキーで常に確定できるので、モデルがはっきり選んだときだけ先頭に出す。ADR-032 の 3.0 は ください/下さい、それぞれ/夫々 でモデルの判断を覆していた）。同点・未採点は heuristic 順。ログ outcome は `llm-ranked`（採点できなければ `llm-rank-unavailable`）、`review.topDecision` は先頭が heuristic と変わったら `fixed`、同じなら `passed`。
 
 学習頻度の重み2.0は BUG-036（君31 / キミ7、LLM差 約3.4）で頻出語を守る値。以下の「Zenz candidate evaluation」「同音異義語レビュー」「通常review」は ADR-032 以前の経路で、コードは残置しているがこの経路からは呼ばれない。
 

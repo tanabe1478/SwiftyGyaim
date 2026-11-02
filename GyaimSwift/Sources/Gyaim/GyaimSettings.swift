@@ -55,6 +55,7 @@ enum GyaimSettings {
         "aiRerankExactHomophoneFrequencyMarginWeight",
         "aiRerankLLMStudyWeight",
         "aiRerankLLMContextWeight",
+        "aiRerankLLMRawHiraganaPenalty",
         "aiRerankCorpusFrequencyPath",
         "aiRerankCorpusFrequencyWeight",
     ]
