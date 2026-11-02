@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift, GyaimController+FastContextRerank.swift
-> Last updated: 2026-09-26 (モデルレビューを LLM 主体の並べ替えに — ADR-032)
+> Last updated: 2026-10-10 (左文脈をコントローラ再生成をまたいで引き継ぐ — ADR-035)
 
 ## 概要
 
@@ -76,9 +76,11 @@ Info.plistには日本語モードのほか、Secure Event Input対策の非表�
 ## IMEライフサイクル
 
 ```
-activateServer(_:) → クリップボード取得, Secure Input診断, 辞書start, モデル先読み（`aiRerankUseModelForFastContext` 時、`InProcessAIReranker.warmUp` をバックグラウンドで1回）, showWindow
+activateServer(_:) → クリップボード取得, Secure Input診断, 文脈の引き継ぎ（後述）, 辞書start, モデル先読み（`aiRerankUseModelForFastContext` 時、`InProcessAIReranker.warmUp` をバックグラウンドで1回）, showWindow
 deactivateServer(_:) → hideWindow, inputPatが空でなければfix(skipStudy: true), 辞書finish
 ```
+
+**左文脈の寿命（ADR-035）**: モデルと ContextDict に渡す左文脈 `recentCommittedText`（確定語の連結、末尾80文字）はコントローラのインスタンス変数だが、IMK はアプリ・入力欄のフォーカス移動のたびにコントローラを作り直す（dogfood 10日間で1,887回、直前の確定から中央値14秒）。確定のたびに `CommittedContextStore.shared` へクライアントの bundle identifier をキーに同じテキストを記録し、まだ何も確定していないコントローラは `activateServer` で、同じ bundle の最終確定が `aiRerankFastContextCarryOverSeconds`（既定300秒、0で無効）以内なら、そのテキストを初期値として引き継ぐ。引き継いだコントローラは `Commit outcome` / `Fast context accepted detail` の payload に `contextInherited=true` を付け、`Fast context inherited: bundle=... chars=N` を1行出す。bundle が取れないクライアントは記録も引き継ぎもしない。deactivation 確定（skipStudy）は従来どおり文脈に加えない。
 
 `SecureInputDiagnostics.checkAndLog()` はSecure Event Inputが有効なとき、所有PID・プロセス名（終了済みなら stale と明記）・復旧手順を `notice` レベルで記録する。`notice` は `loggingEnabled` に関係なく常時 `gyaim.log` へ書かれる（再発が稀で予期できないため）。同一所有者は10分間隔でしか再出力しない。
 

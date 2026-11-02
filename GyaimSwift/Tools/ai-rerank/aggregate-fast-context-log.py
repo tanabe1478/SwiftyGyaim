@@ -346,6 +346,9 @@ def collect_model_effect(lines: Iterable[str], cutoff: datetime | None) -> dict:
             outcome = payload.get("modelOutcome", "unknown")
             if isinstance(outcome, str):
                 effects["outcome:" + outcome].append(delta)
+            # ADR-035: context inherited from the previous controller of the
+            # same app vs. context this controller committed itself.
+            effects["context:inherited" if payload.get("contextInherited") is True else "context:own"].append(delta)
             if state == "applied-changed":
                 scored += 1
                 improved += delta > 0
@@ -374,6 +377,8 @@ def collect_model_effect(lines: Iterable[str], cutoff: datetime | None) -> dict:
         "rankEffect": rank_effect(effects["all"]),
         "byOutcome": {key.removeprefix("outcome:"): rank_effect(value)
                       for key, value in sorted(effects.items()) if key.startswith("outcome:")},
+        "byContextOrigin": {key.removeprefix("context:"): rank_effect(value)
+                            for key, value in sorted(effects.items()) if key.startswith("context:")},
         "appliedChanged": {
             "scored": scored,
             "improved": improved,

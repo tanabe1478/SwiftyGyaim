@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, ZenzRuntime.swift, ZenzRuntime+Scoring.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController+FastContextRerank.swift, FastContextTrace.swift
-> Last updated: 2026-09-26 (候補の並べ替えを LLM 主体に — ADR-032)
+> Last updated: 2026-10-10 (contextInherited と byContextOrigin — ADR-035)
 
 ## 概要
 
@@ -193,7 +193,7 @@ acceptedRanks は prefix mode の意図的確定だけを分母にするため�
 
 `commitDiagnostics` は `Commit outcome: input=... payload={...}` 行（全確定経路で1行、`aiRerankFastContextLoggingEnabled=true` 時のみ）を読み、上と同じ規則（予測1位の exact/google は miss にしない、漢字で確定したことのない読みのかな確定は `kanaIntended` として数える）で miss を prefix list 上の順位（`byPrefixRank`）・モデル採点集合への包含（`byScoredSet`: scored / notScored / noReview）・`modelOutcome` 別に数える。`notScored` の miss はモデルの質にかかわらず救えないので、採点集合・heuristic 側の問題として扱う。
 
-payload: `path`（prefix / exact / google / kana-hiragana / kana-katakana / deactivation）、`context`（モデルに渡すのと同じ末尾20文字）、`prefixCandidateCount`、`prefixRank`（直前の prefix list 上の順位。raw=0、先頭表示=1、なければ省略）、trace がある場合は `controller` / `composition` / `generation` / `modelState` / `heuristicRank` / `proposedRank`、レビュー結果がある場合は `modelOutcome` / `inDictionarySnapshot`（レビュー request の辞書候補に含まれたか）/ `scoredCount` / `inScoredSet`。完全一致モードや Google へ移るときは、直前の prefix trace と候補語リストを `escapedPrefixTrace` / `escapedPrefixWords` に退避し、確定時に使う。確定語以外の候補文字列は記録しない。
+payload: `path`（prefix / exact / google / kana-hiragana / kana-katakana / deactivation）、`context`（モデルに渡すのと同じ末尾20文字）、`prefixCandidateCount`、`prefixRank`（直前の prefix list 上の順位。raw=0、先頭表示=1、なければ省略）、trace がある場合は `controller` / `composition` / `generation` / `modelState` / `heuristicRank` / `proposedRank`、レビュー結果がある場合は `modelOutcome` / `inDictionarySnapshot`（レビュー request の辞書候補に含まれたか）/ `scoredCount` / `inScoredSet`。 左文脈を前のコントローラから引き継いで始まった composition では `contextInherited=true`（ADR-035。`Fast context accepted detail` にも同じキーを付け、`modelEffect.byContextOrigin` が inherited / own 別の rankEffect を返す）。完全一致モードや Google へ移るときは、直前の prefix trace と候補語リストを `escapedPrefixTrace` / `escapedPrefixWords` に退避し、確定時に使う。確定語以外の候補文字列は記録しない。
 
 ### タイピングシミュレーション（ログなしの評価）
 
