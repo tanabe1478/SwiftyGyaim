@@ -41,8 +41,9 @@ cp -r .build/Build/Products/Release/SwiftyGyaim.app ~/Library/Input\ Methods/
 
 # 配布用インストーラ（.pkg → /Library/Input Methods、Google日本語入力方式）
 ./Scripts/build-pkg.sh          # dist/SwiftyGyaim-<version>.pkg を生成
-# インストール/アップデートはpkgをダブルクリックするだけ（postinstallが旧プロセス
-# 終了と旧per-userコピーの掃除を行う）。初回のみシステム設定で入力ソース追加が必要。
+# インストール/アップデートはpkgをダブルクリックするだけ（postinstallが旧プロセス終了、
+# 旧per-userコピーの掃除、Launch Servicesへの再登録、新バイナリの起動を行う）。
+# 初回のみシステム設定で入力ソース追加が必要。
 # 署名はad-hoc。他のMacへ配る場合は 右クリック→開く（Developer ID署名は
 # APP_IDENTITY / INSTALLER_IDENTITY 環境変数で対応可能）
 ```

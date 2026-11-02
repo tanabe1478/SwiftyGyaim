@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Google日本語入力等と同様に /Library/Input Methods へ配置するインストーラを作る。
 # アップデートは新しいpkgを開いてインストールするだけ（postinstallが旧プロセスを
-# 終了し、次回のIME利用時に新バイナリで自動再起動される）。
+# 終了し、Launch Services に再登録してから新バイナリを起動する）。
 #
 # 使い方:
 #   ./Scripts/build-pkg.sh [出力ディレクトリ]   # 既定: dist/
@@ -46,7 +46,10 @@ fi
 
 cat > "$STAGE/scripts/postinstall" << 'POSTINSTALL'
 #!/bin/bash
-# 旧プロセスを終了（次回のIME利用時にmacOSが新バイナリで自動起動する）
+APP="/Library/Input Methods/SwiftyGyaim.app"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+# 旧プロセスを終了
 killall SwiftyGyaim 2>/dev/null || true
 
 # 開発時代の per-user コピーが残っていると /Library 側と二重登録になるため掃除
@@ -55,6 +58,18 @@ if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
   USER_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
   if [ -n "$USER_HOME" ] && [ -d "$USER_HOME/Library/Input Methods/SwiftyGyaim.app" ]; then
     rm -rf "$USER_HOME/Library/Input Methods/SwiftyGyaim.app"
+  fi
+fi
+
+# 2026-11-03: 入れ替え直後に新プロセスが起動直後に消え、2 回目は入力ソースの登録まで
+# 一覧から消えた（ログアウトで復旧）。以前は killall だけで次回利用時に自動起動していた
+# が、それに頼らず Launch Services に登録し直してからログイン中のユーザーで起動する。
+sleep 1
+"$LSREGISTER" -f "$APP" 2>/dev/null || true
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+  CONSOLE_UID=$(id -u "$CONSOLE_USER" 2>/dev/null || echo "")
+  if [ -n "$CONSOLE_UID" ]; then
+    launchctl asuser "$CONSOLE_UID" sudo -u "$CONSOLE_USER" open "$APP" 2>/dev/null || true
   fi
 fi
 exit 0
