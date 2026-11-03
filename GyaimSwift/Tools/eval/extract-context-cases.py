@@ -16,6 +16,14 @@ The output is one JSON object per accepted composition:
   modelTop, modelOutcome, modelState, inherited, candidates [{text, source,
   kind, reading, contextAffinity, studyFrequency, score}]
 
+With --pairs-out the script also writes preference pairs (issue #125 C): the
+commits where the user passed the first displayed conversion candidate and
+picked another one. `rejected` is that displayed first candidate (top rank 1,
+never the raw input or an external clipboard/selection row), `chosen` is the
+retype-corrected label; cases that were themselves retyped are skipped, and
+--exclude-cases drops pairs whose (input, chosen) occurs in a fixed evaluation
+file. --since / --until bound the period (YYYY-MM-DD, inclusive).
+
 The output contains the user's own text; keep it out of the repository.
 
 Usage:
@@ -53,6 +61,8 @@ def load_events(paths):
                     data = json.loads(payload)
                 except ValueError:
                     continue
+                # Payloads before traceVersion 2 (early September) have no controller id.
+                data.setdefault('controller', 'legacy')
                 key = (stamp, kind, data.get('controller'), data.get('generation'), data.get('composition'))
                 events[key] = (datetime.strptime(stamp, '%Y-%m-%d %H:%M:%S'), kind, inp, data)
     return sorted(events.values(), key=lambda e: (e[0], 0 if e[1].startswith('Fast') else 1))
@@ -203,13 +213,17 @@ class Reconstruction:
             model_top = by_index.get(int(best), {}).get('text')
         previous = self.previous_word(p['controller'], p.get('context', ''), t)
         return dict(
-            time=t.isoformat(sep=' '), controller=p['controller'], input=inp, context=model_context,
+            time=t.isoformat(sep=' '), controller=p['controller'], composition=p.get('composition'),
+            input=inp, context=model_context,
             gaps=gaps, preGap=pre_gap,
             prevWord=previous[0] if previous else None, prevReading=previous[1] if previous else None,
             prevGap=(t - previous[2]).total_seconds() if previous else None,
             chosen=chosen, chosenRank=rank, truth=chosen, modelTop=model_top,
             modelOutcome=p.get('modelOutcome'), modelState=p.get('modelState'),
             inherited=p.get('contextInherited'),
+            top=[dict(rank=x.get('rank'), word=x.get('word'), source=x.get('source'), kind=x.get('kind'),
+                      reading=x.get('reading'), studyFrequency=x.get('studyFrequency'))
+                 for x in top],
             candidates=[dict(text=d['text'], source=d.get('source'), kind=d.get('kind'), reading=d.get('reading'),
                              contextAffinity=d.get('contextAffinity'), studyFrequency=d.get('studyFrequency'),
                              score=scores.get(str(d['index'])))
@@ -239,20 +253,62 @@ def correct_retypes(cases):
             truth = second['chosen'] if second['chosen'] in texts else next(
                 (x for x in texts if x and second['chosen'].startswith(x) and x != first['chosen'] and x != first['input']),
                 None)
+            first['retyped'] = True
             if truth:
                 first['truth'] = truth
                 corrected += 1
     return corrected
 
 
+def build_pairs(cases, exclude_keys=frozenset()):
+    """Preference pairs: chosen (corrected) vs the first displayed conversion candidate."""
+    pairs, stats = [], {'rank1': 0, 'retyped': 0, 'external-first': 0, 'excluded': 0, 'no-label': 0}
+    for case in cases:
+        rank = case.get('chosenRank')
+        if rank is None or rank <= 1:
+            stats['rank1'] += 1
+            continue
+        if case.get('retyped'):
+            stats['retyped'] += 1
+            continue
+        truth = case.get('truth')
+        if not truth:
+            stats['no-label'] += 1
+            continue
+        first = next((x for x in case['top'] if x.get('rank') == 1), None)
+        if first is None or first.get('kind') == 'raw' or first.get('source') == 'external':
+            stats['external-first'] += 1
+            continue
+        if first['word'] == truth:
+            continue
+        if (case['input'], truth) in exclude_keys:
+            stats['excluded'] += 1
+            continue
+        pairs.append(dict(
+            time=case['time'], id=f"{case['controller'][:8]}:{case.get('composition')}",
+            controller=case['controller'], input=case['input'], context=case['context'],
+            chosen=truth, chosenRank=rank, rejected=first['word'], rejectedRank=1,
+            top=case['top'], candidates=case['candidates'], modelOutcome=case.get('modelOutcome'),
+            inherited=case.get('inherited')))
+    return pairs, stats
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--log', action='append', required=True, help='gyaim.log file (repeatable)')
     parser.add_argument('--out', required=True, help='output JSONL')
+    parser.add_argument('--since', help='keep cases from this date (YYYY-MM-DD)')
+    parser.add_argument('--until', help='keep cases up to this date (YYYY-MM-DD, inclusive)')
+    parser.add_argument('--pairs-out', help='also write preference pairs (chosen vs displayed first) here')
+    parser.add_argument('--exclude-cases', help='fixed evaluation JSONL whose (input, truth) pairs are excluded from pairs')
     args = parser.parse_args()
     events = load_events(args.log)
     cases = Reconstruction(events).run()
     corrected = correct_retypes(cases)
+    if args.since:
+        cases = [c for c in cases if c['time'][:10] >= args.since]
+    if args.until:
+        cases = [c for c in cases if c['time'][:10] <= args.until]
     with open(args.out, 'w') as out:
         for case in cases:
             out.write(json.dumps(case, ensure_ascii=False) + '\n')
@@ -260,6 +316,18 @@ def main():
     with_gap = sum(1 for c in cases if c['gaps'])
     print(f'events={len(events)} cases={len(cases)} scored={scored} withGapInfo={with_gap} '
           f'retypeCorrected={corrected} -> {args.out}', file=sys.stderr)
+    if args.pairs_out:
+        exclude = set()
+        if args.exclude_cases:
+            for line in open(args.exclude_cases):
+                row = json.loads(line)
+                if row.get('truth') or row.get('chosen'):
+                    exclude.add((row['input'], row.get('truth') or row.get('chosen')))
+        pairs, stats = build_pairs(cases, frozenset(exclude))
+        with open(args.pairs_out, 'w') as out:
+            for pair in pairs:
+                out.write(json.dumps(pair, ensure_ascii=False) + '\n')
+        print(f'pairs={len(pairs)} skipped={stats} -> {args.pairs_out}', file=sys.stderr)
 
 
 if __name__ == '__main__':
