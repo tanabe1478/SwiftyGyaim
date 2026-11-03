@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift, GyaimController+FastContextRerank.swift
-> Last updated: 2026-10-19 (外部候補の位置と登録条件 — ADR-036、打ち直しによる学習の取り消し — ADR-037、showWindow ログを info に)
+> Last updated: 2026-11-03 (保管庫の失効 — BUG-044、直前の語と読みの保持と複合語加点 — ADR-040、左文脈診断 Left context probe)
 
 ## 概要
 
@@ -82,7 +82,9 @@ activateServer(_:) → クリップボード取得, Secure Input診断, 文脈�
 deactivateServer(_:) → hideWindow, inputPatが空でなければfix(skipStudy: true), 辞書finish
 ```
 
-**左文脈の寿命（ADR-035）**: モデルと ContextDict に渡す左文脈 `recentCommittedText`（確定語の連結、末尾80文字）はコントローラのインスタンス変数だが、IMK はアプリ・入力欄のフォーカス移動のたびにコントローラを作り直す（dogfood 10日間で1,887回、直前の確定から中央値14秒）。確定のたびに `CommittedContextStore.shared` へクライアントの bundle identifier をキーに同じテキストを記録し、まだ何も確定していないコントローラは `activateServer` で、同じ bundle の最終確定が `aiRerankFastContextCarryOverSeconds`（既定300秒、0で無効）以内なら、そのテキストを初期値として引き継ぐ。引き継いだコントローラは `Commit outcome` / `Fast context accepted detail` の payload に `contextInherited=true` を付け、`Fast context inherited: bundle=... chars=N` を1行出す。bundle が取れないクライアントは記録も引き継ぎもしない。deactivation 確定（skipStudy）は従来どおり文脈に加えない。
+**左文脈の寿命（ADR-035）**: モデルと ContextDict に渡す左文脈 `recentCommittedText`（確定語の連結、末尾80文字）はコントローラのインスタンス変数だが、IMK はアプリ・入力欄のフォーカス移動のたびにコントローラを作り直す（dogfood 10日間で1,887回、直前の確定から中央値14秒）。確定のたびに `CommittedContextStore.shared` へクライアントの bundle identifier をキーに同じテキストを記録し、まだ何も確定していないコントローラは `activateServer` で、同じ bundle の最終確定が `aiRerankFastContextCarryOverSeconds`（既定300秒、0で無効）以内なら、そのテキストを初期値として引き継ぐ。引き継いだコントローラは `Commit outcome` / `Fast context accepted detail` の payload に `contextInherited=true` を付け、`Fast context inherited: bundle=... chars=N` を1行出す。bundle が取れないクライアントは記録も引き継ぎもしない。deactivation 確定（skipStudy）は従来どおり文脈に加えない。保管庫は追記のたびに既存の本文の鮮度を見て、窓の外なら捨ててから追記する（BUG-044。以前は失効しても本文が残り、次の確定の後ろに 35 分前の文が付いて引き継がれた）。エントリには最後に確定した語と読み（`lastWord` / `lastReading`）も入り、コントローラの `lastCommittedWord` とともに引き継ぐ。`updatePrefixCandidates` はこれと今の入力から `WordSearch.compoundCompletions` を引き、該当候補を `compoundCompletions` として `buildPrefixCandidates` と背景レビューの入力に渡す（ADR-040、dictionary-system.md / ai-rerank.md）。
+
+**左文脈診断（Left context probe）**: 変換の最初の打鍵（`startComposition`）で、`leftContextProbeEnabled`（既定 true）のとき `client.selectedRange()` とカーソル前 20 文字の `attributedSubstring(from:)` を試し、`Left context probe: bundle=… selectedRange=loc/len got=N commonSuffix=M ours=K` を info で 1 行残す。got は取れた文字数（取れなければ -1、selectedRange が NSNotFound なら `selectedRange=notFound`）、commonSuffix は取れた文字列と自前の文脈 `recentCommittedText` の末尾一致長。本文は記録しない。確定語の連結の代わりにクライアントの本文を文脈に使えるアプリがどれだけあるかを測るための診断で、集計が済んだら外す。
 
 `SecureInputDiagnostics.checkAndLog()` はSecure Event Inputが有効なとき、所有PID・プロセス名（終了済みなら stale と明記）・復旧手順を `notice` レベルで記録する。`notice` は `loggingEnabled` に関係なく常時 `gyaim.log` へ書かれる（再発が稀で予期できないため）。同一所有者は10分間隔でしか再出力しない。
 

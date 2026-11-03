@@ -45,6 +45,7 @@ enum GyaimSettings {
         "aiRerankFastContextReviewDelayMs",
         "aiRerankFastContextSelectionWaitMs",
         "aiRerankFastContextCarryOverSeconds",
+        "leftContextProbeEnabled",
         // Bundled model
         "aiRerankUseBundledZenz",
         "aiRerankZenzWeight",
@@ -56,6 +57,7 @@ enum GyaimSettings {
         "aiRerankLLMStudyWeight",
         "aiRerankLLMContextWeight",
         "aiRerankLLMRawHiraganaPenalty",
+        "aiRerankLLMCompoundWeight",
         "aiRerankCorpusFrequencyPath",
         "aiRerankCorpusFrequencyWeight",
     ]

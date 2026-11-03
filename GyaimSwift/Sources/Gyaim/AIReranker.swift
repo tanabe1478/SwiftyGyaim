@@ -11,6 +11,10 @@ struct AIRerankCandidate: Codable, Equatable {
     let contextAffinity: Double?
     /// Study-dict frequency for study-sourced candidates. Nil for other sources.
     let studyFrequency: Int?
+    /// True when the previous committed word + this candidate is one dictionary
+    /// entry (全体 + 像 = 全体像, ADR-040). Nil otherwise so older payloads and
+    /// requests stay identical.
+    let compoundCompletion: Bool?
 
     init(index: Int,
          text: String,
@@ -18,7 +22,8 @@ struct AIRerankCandidate: Codable, Equatable {
          source: String,
          kind: String,
          contextAffinity: Double? = nil,
-         studyFrequency: Int? = nil) {
+         studyFrequency: Int? = nil,
+         compoundCompletion: Bool? = nil) {
         self.index = index
         self.text = text
         self.reading = reading
@@ -26,6 +31,7 @@ struct AIRerankCandidate: Codable, Equatable {
         self.kind = kind
         self.contextAffinity = contextAffinity
         self.studyFrequency = studyFrequency
+        self.compoundCompletion = compoundCompletion
     }
 }
 

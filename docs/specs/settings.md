@@ -1,7 +1,7 @@
 # Spec: 設定ストア（settings.json）
 
 > Trigger: GyaimSettings.swift
-> Last updated: 2026-11-03 (aiRerankLLMRawHiraganaPenalty 追加 — ADR-039)
+> Last updated: 2026-11-03 (aiRerankLLMRawHiraganaPenalty — ADR-039、aiRerankLLMCompoundWeight / leftContextProbeEnabled — ADR-040)
 
 ## 概要
 
@@ -66,7 +66,8 @@
 | `aiRerankFastContextCandidateLimit` | Int | 24（2〜48） | – | 並べ替え対象の辞書候補数 |
 | `aiRerankFastContextReviewDelayMs` | Int | 0（0〜1000） | – | 背景モデルレビュー開始前のスロットル（ADR-029）。0 で毎打鍵 |
 | `aiRerankFastContextSelectionWaitMs` | Int | 30（0〜200） | – | Space で先頭候補を選ぶとき、実行中のレビュー結果を待つ上限 |
-| `aiRerankFastContextCarryOverSeconds` | Int | 300（0〜3600） | – | 新しいコントローラが同じアプリの直前の確定文脈を引き継ぐ上限秒数。0 で引き継がない（ADR-035） |
+| `aiRerankFastContextCarryOverSeconds` | Int | 300（0〜3600） | – | 新しいコントローラが同じアプリの直前の確定文脈を引き継ぐ上限秒数。0 で引き継がない（ADR-035）。保管庫への追記時にもこの窓で古い本文を捨てる（BUG-044） |
+| `leftContextProbeEnabled` | Bool | true | – | 変換開始時にクライアントからカーソル前のテキストを読めるかを `Left context probe:` として記録する診断（文字数のみ。input-flow.md） |
 
 ### 同梱モデル
 
@@ -82,6 +83,7 @@
 | `aiRerankLLMStudyWeight` | Double | 2.0 | – | LLM 主体の並べ替えで、学習頻度 1 doubling あたりの加点（ADR-032） |
 | `aiRerankLLMContextWeight` | Double | 2.0 | – | LLM 主体の並べ替えで、ContextDict affinity（0〜1）への重み（ADR-032） |
 | `aiRerankLLMRawHiraganaPenalty` | Double | 1.0 | – | LLM 主体の並べ替えで、入力のひらがなそのものの候補から引く点。負値は 0（ADR-039） |
+| `aiRerankLLMCompoundWeight` | Double | 2.0 | – | 直前の確定語と辞書の 1 エントリの複合語を成す候補への加点。0 以下で既定値（ADR-040） |
 | `aiRerankCorpusFrequencyPath` | String | ""（無効） | – | 実験用。一般コーパスの出現頻度表（`surface<TAB>count`、`Tools/dict/build-corpus-frequency.py` で生成）のパス |
 | `aiRerankCorpusFrequencyWeight` | Double | 0（無効） | – | 実験用。heuristic の `corpusFrequencyBonus = weight × log10(1 + count)` の重み |
 
