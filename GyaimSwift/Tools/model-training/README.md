@@ -25,6 +25,19 @@ compare-hf-gguf.py     eval fixtureでHF/GGUFスコアリング品質を比較�
 公開データから再生成するsplitとcheckpointは `data/` と `runs/` でgitignoreする。
 `data/` は全部 gitignore する。ドメインデータ（`domain.jsonl` / `domain-valid.jsonl` / `rerank-valid.jsonl`）は redaction 済みでもユーザーの入力文を含むため、公開リポジトリでは追跡しない（2026-11-03 に追跡をやめた。それ以前の履歴には残っている）。学習マシンへは直接コピーするか、private の Hugging Face リポジトリ経由で渡す。
 
+
+### ドメインデータの受け渡し（private Hugging Face）
+
+```bash
+hf auth login                      # 初回のみ。トークンは write 権限
+python3 push_domain_data.py        # ~/.gyaim/eval/domain-2026-11.jsonl と data/*-valid.jsonl を
+                                   # private dataset repo tanabe1478/gyaim-domain-data に上げる
+# 学習マシン側
+hf download tanabe1478/gyaim-domain-data --repo-type dataset --local-dir data/
+```
+
+`push_domain_data.py` は repo が private でなければ中止する。`--dry-run` で対象だけ確認できる。
+
 ## テスト
 
 `test_compare_hf_gguf.py` は標準ライブラリのみで動き、`Scripts/run-unit-tests.sh`（CI）で常に実行される。`test_train_zenz.py` は torch/transformers が必要なので、同スクリプトは `.venv` にそれらが入っている場合だけ実行し、無ければ skip を表示する。手動実行:
