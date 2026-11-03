@@ -1,7 +1,7 @@
 # Spec: Zenz / Zenzai model tuning for SwiftyGyaim
 
 > Status: Draft
-> Last updated: 2026-09-01
+> Last updated: 2026-11-03 (ドメイン SFT データの作り方: かな確定・打ち直し補正・文脈 20 文字と変種 — issue #125)
 > Trigger: Zenzai / zenz model investigation, GGUF model replacement, AIReranker / ZenzRuntime training workflow, pi-tinker suitability review
 
 ## 目的
@@ -348,6 +348,13 @@ Conceptual JSONL:
 ```
 
 実学習時は tokenizer / Trainer 側で `prompt` 部分の labels を `-100` にする。
+
+ドメインデータ（`Tools/model-training/build_sft_dataset.py`、issue #125）は dogfood ログから次の形で作る。
+
+- 対象: `Fast context accepted detail` の選んだ候補と、`Commit outcome` の `kana-hiragana` / `kana-katakana`（かな確定。表記は入力をかなにしたもの）。かな確定を入れないと「ここはかなが正解」を学べない。
+- ラベル補正: 同じコントローラで 15 秒以内に同じ読み（または読みの続き）を別の語で確定したら、最初の確定は誤りとして落とす（ADR-037 の取り消しと同じ判定。ADR-040 の評価で、誤確定はルールが直すべき場面に集中することを確認）。
+- 文脈: 実行時にモデルが見るのは確定語連結の末尾 20 文字（`aiRerankFastContextMaxContextLength`）なので、ログの文脈を 20 文字に切り、同じペアを末尾 10 / 5 / 0 文字でも出す（`--context-variants`）。ADR-040 の評価で同梱モデルは文脈が短いほど点数が揺れた（モデル点数のみの先頭一致率 20 文字 0.893、文脈なし 0.771）。
+- 秘匿: URL・12 文字以上の ASCII 識別子・5 桁以上の数字を含む行は落とす。出力は本人の入力文を含むので、学習マシンへの受け渡し以外に共有しない。
 
 ### 大規模streaming学習の完了条件
 
