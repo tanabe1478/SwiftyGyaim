@@ -423,6 +423,9 @@ private class ClassicBackgroundView: NSView {
 struct CandidateWindowPositioner {
     enum LineRectSource: Equatable {
         case reported
+        /// A usable rect that `StaleCaretRectDetector` identified as the stale
+        /// rect of a web editor; the last real caret rect is used (ADR-038).
+        case repeatedStale
         case previousValid
         case mouseLocation
     }
@@ -442,9 +445,13 @@ struct CandidateWindowPositioner {
         reportedLineRect: NSRect,
         previousValidLineRect: NSRect?,
         mouseLocation: NSPoint,
-        defaultLineHeight: CGFloat = 20
+        defaultLineHeight: CGFloat = 20,
+        staleReplacement: NSRect? = nil
     ) -> LineRectResolution {
         if isUsableReportedLineRect(reportedLineRect) {
+            if let staleReplacement {
+                return LineRectResolution(lineRect: staleReplacement, source: .repeatedStale)
+            }
             return LineRectResolution(lineRect: reportedLineRect, source: .reported)
         }
 

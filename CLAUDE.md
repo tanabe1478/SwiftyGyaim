@@ -99,7 +99,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（351テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（356テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -130,6 +130,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | ConnectionDictSharingTests | Tests/GyaimTests/ | 3 | 連接辞書のプロセス内共有（同一パス再利用・パス切替・reset） |
 | GyaimSettingsTests | Tests/GyaimTests/ | 11 | settings.json 永続化・mtimeキャッシュ・UserDefaults一方向移行・書き込み先の単一性・knownKeysとソースの一致 |
 | CommittedContextStoreTests | Tests/GyaimTests/ | 5 | 左文脈のコントローラ間引き継ぎ（bundle 別・鮮度・無効化・末尾保持・payload フラグ。ADR-035） |
+| StaleCaretRectDetectorTests | Tests/GyaimTests/ | 5 | Google Docs の固定矩形の検出（遠くの別位置から同じ矩形に戻る・近い/同じ高さは除外・60 秒で失効・bundle ごとの共有・resolveLineRect の repeatedStale。ADR-038） |
 | StudyCorrectionTrackerTests | Tests/GyaimTests/ | 5 | 打ち直し判定（同じ読み・別の語・窓・bundle・かな等価・未学習の除外・設定のクランプ・payload の correctedWord。ADR-037） |
 | AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests / IncompleteStemPastTenseTests | Tests/GyaimTests/ | 42 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択・過去形を未完成語幹とみなさない（BUG-043） |
 | HomophoneFrequencyGuardTests | Tests/GyaimTests/ | 4 | 同音異義語上書きの頻度ガード（BUG-036、実ログ数値で固定） |
@@ -202,7 +203,8 @@ docs/adr/
 ├── 034-mozc-dictionary-import.md
 ├── 035-committed-context-carry-over.md
 ├── 036-external-candidate-placement-and-registration.md
-└── 037-undo-learning-on-retype.md
+├── 037-undo-learning-on-retype.md
+└── 038-stale-caret-rect-detection.md
 ```
 
 ## Logging & Monitoring
@@ -278,7 +280,7 @@ pi エージェントには同じワークフローが pi-context-workflow 拡�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-037）。目次と運用ルールは `docs/adr/README.md`
+- `docs/adr/` — 設計判断の経緯（000-038）。目次と運用ルールは `docs/adr/README.md`
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 

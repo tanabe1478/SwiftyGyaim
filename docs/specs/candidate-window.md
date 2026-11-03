@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
 > Trigger: CandidateWindow.swift, PreferencesWindow.swift
-> Last updated: 2026-10-19 (showWindow の位置ログを info に)
+> Last updated: 2026-11-03 (固定矩形の検出 StaleCaretRectDetector、showWindow ログの重複抑止 — ADR-038)
 
 ## 概要
 
@@ -50,7 +50,11 @@ Mozc の `renderer/window_util.cc` も、preedit rect / target point と対象�
 2. 原点付近かつ1px幅のような疑わしいrectは、前回の正常rectを使用
 3. 前回正常rectがない場合は `NSEvent.mouseLocation` から1px幅のフォールバックrectを作る
 
-`showWindow()` のログには `reportedLineRect`, `resolvedLineRect`, `source` を出し、フォールバック発生時の調査を容易にする。レベルは info（`loggingEnabled` 時に gyaim.log へ 1 打鍵 1 行）。Chrome の Google Docs でキャレットから離れたウィンドウ左上に出る報告があり、判定条件を広げる根拠として実際の `reportedLineRect` が要るため debug から上げた（`docs/internal/dogfood-conversion-complaints-2026-10.md` ケース 3）。
+### 固定矩形の検出（ADR-038）
+
+Chrome の Google Docs は、実キャレットの矩形と、ウィンドウ左端の固定位置にある高さ 17〜20 の矩形を入力ごとに交互に返す。`StaleCaretRectDetector.shared(for: bundle)`（bundle ごとにプロセス全体で 1 つ）に報告された矩形を記録し、同じ (x, y, 高さ) が 60 秒以内に報告済みで、直前の矩形が 300 px 以上離れていて行の高さが 2 px 以上違うとき、直前の矩形を表示位置に使う（`source=repeatedStale`）。ADR-018 の原点付近の判定に当たる矩形は検出器に通さない。`lastValidCandidateLineRect` は置き換えた矩形では更新しない。
+
+`showWindow()` のログには `reportedLineRect`, `resolvedLineRect`, `source` を出し、フォールバック発生時の調査を容易にする。レベルは info（`loggingEnabled` 時に gyaim.log へ出す）。直前のログ行と内容が同じ場合は出さない（1 回の入力の間は矩形が変わらないため、変化点だけで十分）。Chrome の Google Docs でキャレットから離れた位置に出る報告の調査に実際の `reportedLineRect` が要るため debug から上げた（`docs/internal/dogfood-conversion-complaints-2026-10.md` ケース 3）。
 
 ## モード切替の実装
 
