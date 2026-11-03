@@ -44,6 +44,7 @@ python3 -m py_compile \
   Tools/ai-rerank/train-fast-context-weights.py \
   Tools/eval/extract-context-cases.py \
   Tools/model-training/compare-hf-gguf.py \
+  Tools/model-training/push_domain_data.py \
   Tools/dict/suggest-connection-entries.py \
   Tools/ai-rerank/extract-preference-pairs.py \
   Tools/dict/find-suspect-study-entries.py
