@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift, RomaKana+KanaKey.swift
-> Last updated: 2026-10-19 (unstudy / ContextDict.unrecord — ADR-037)
+> Last updated: 2026-11-03 (compoundCompletions — ADR-040)
 
 ## 概要
 
@@ -153,6 +153,10 @@ python3 Tools/dict/suggest-connection-entries.py --limit 50
 - `#` コメント行はスキップし、行末の空白+`#`以降はコメントとして削除する
 - 読みがひらがなで始まる場合は `RomaKana.hiragana2roma()` でローマ字候補に展開する。ひらがな以外で始まる場合は元の読みをそのままpatternにする
 - 単語カテゴリ/次カテゴリには出現順で1始まりのconnection番号を割り当て、次カテゴリなしは `outConnection = 0` とする
+
+### 直前の語との複合語（ADR-040）
+
+`ConnectionDict.compoundCompletions(previousWord:kana:)` は、かな `kana` の完全一致検索のうち深さ 1（接続による合成ではない 1 エントリ）で表記が `previousWord` で始まるものから、その前置きを除いた残りを辞書順で返す（ぜんたいぞう / 全体 → [像, 増]）。`WordSearch.compoundCompletions(previousWord:previousReading:input:)` は直前の語の読み（ローマ字でもかなでも）と入力を `roma2kanaKey` でかなにつないで引き、直前の語と残りの両方に漢字を含むものだけ返す（回避 + さく → 回避さく の さく は返さない。かな残りはかなキーで確定でき、かなの直前語はほぼ助詞）。接続合成（分析 + できますか → 分析出来ますか）は深さ 2 以上なので対象外。結果は `AIRerankCandidate.compoundCompletion` になり、LLM 主体の並べ替えで加点される（ai-rerank.md）。
 
 ## 候補安全フィルタ
 

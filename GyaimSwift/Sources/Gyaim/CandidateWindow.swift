@@ -32,13 +32,16 @@ class CandidateWindow: NSPanel {
 
     // MARK: - List mode views
     private let stackView = NSStackView()
-    private let containerView = NSView()
+    let containerView = NSView()
     private var candidateLabels: [NSTextField] = []
 
     // MARK: - Classic mode views
-    private var classicBackgroundView: ClassicBackgroundView?
+    var classicBackgroundView: ClassicBackgroundView?
     private var classicContentView: NSView?
     private var classicScrollView: NSScrollView?
+    var classicTopInsetConstraint: NSLayoutConstraint?
+    var classicBottomInsetConstraint: NSLayoutConstraint?
+    var bubbleTailDirection: BubbleTailDirection = .up
     private var classicTextView: NSTextView?
 
     // MARK: - Constraint groups (toggled per mode)
@@ -50,7 +53,7 @@ class CandidateWindow: NSPanel {
     private let rowHeight: CGFloat = 22
     private let padding: CGFloat = 6
     private let windowWidth: CGFloat = 260
-    private let classicMetrics = ClassicBubbleMetrics()
+    let classicMetrics = ClassicBubbleMetrics()
 
     init() {
         let frame = NSRect(x: 0, y: 0, width: 260, height: 30)
@@ -136,22 +139,7 @@ class CandidateWindow: NSPanel {
         scrollView.documentView = textView
         classicTextView = textView
 
-        classicConstraints = [
-            // Background fills the entire container
-            bgView.topAnchor.constraint(equalTo: containerView.topAnchor),
-            bgView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-            bgView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            bgView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
-            // Match the white content area from the original XIB: {{20, 20}, {200, 79}} in a 241x126 bubble.
-            contentView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: classicMetrics.contentInsets.top),
-            contentView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: classicMetrics.contentInsets.left),
-            contentView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -classicMetrics.contentInsets.right),
-            contentView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -classicMetrics.contentInsets.bottom),
-            scrollView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-        ]
+        classicConstraints = makeClassicConstraints(bgView: bgView, contentView: contentView, scrollView: scrollView)
     }
 
     /// Switch between list and classic mode visibility and constraints.
@@ -333,91 +321,6 @@ class CandidateWindow: NSPanel {
     }
 }
 
-// MARK: - Classic Background View
-
-private struct ClassicBubbleMetrics {
-    let bubbleSize = NSSize(width: 241, height: 126)
-    let contentInsets = NSEdgeInsets(top: 27, left: 20, bottom: 20, right: 20)
-    let topCapHeight: CGFloat = 27
-    let bottomCapHeight: CGFloat = 20
-
-    var topSliceHeight: CGFloat { topCapHeight }
-    var bottomSliceHeight: CGFloat { bottomCapHeight }
-    var centerSliceHeight: CGFloat {
-        bubbleSize.height - topSliceHeight - bottomSliceHeight
-    }
-    var minimumContentHeight: CGFloat {
-        bubbleSize.height - contentInsets.top - contentInsets.bottom
-    }
-}
-
-/// Draws the original bubble art with a stretchable middle section only.
-private class ClassicBackgroundView: NSView {
-    private let metrics: ClassicBubbleMetrics
-    private let bubbleImage: NSImage? = {
-        if let img = NSImage(named: "candwin") { return img }
-        if let url = Bundle.main.url(forResource: "candwin", withExtension: "png"),
-           let img = NSImage(contentsOf: url) { return img }
-        return nil
-    }()
-
-    init(metrics: ClassicBubbleMetrics) {
-        self.metrics = metrics
-        super.init(frame: .zero)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let image = bubbleImage else { return }
-        let stretchedCenterHeight = max(bounds.height - metrics.topSliceHeight - metrics.bottomSliceHeight, 0)
-
-        let sourceTop = NSRect(
-            x: 0,
-            y: metrics.bubbleSize.height - metrics.topSliceHeight,
-            width: metrics.bubbleSize.width,
-            height: metrics.topSliceHeight
-        )
-        let sourceCenter = NSRect(
-            x: 0,
-            y: metrics.bottomSliceHeight,
-            width: metrics.bubbleSize.width,
-            height: metrics.centerSliceHeight
-        )
-        let sourceBottom = NSRect(
-            x: 0,
-            y: 0,
-            width: metrics.bubbleSize.width,
-            height: metrics.bottomSliceHeight
-        )
-
-        let destinationTop = NSRect(
-            x: 0,
-            y: bounds.height - metrics.topSliceHeight,
-            width: bounds.width,
-            height: metrics.topSliceHeight
-        )
-        let destinationCenter = NSRect(
-            x: 0,
-            y: metrics.bottomSliceHeight,
-            width: bounds.width,
-            height: stretchedCenterHeight
-        )
-        let destinationBottom = NSRect(
-            x: 0,
-            y: 0,
-            width: bounds.width,
-            height: metrics.bottomSliceHeight
-        )
-
-        image.draw(in: destinationBottom, from: sourceBottom, operation: .sourceOver, fraction: 1.0)
-        image.draw(in: destinationCenter, from: sourceCenter, operation: .sourceOver, fraction: 1.0)
-        image.draw(in: destinationTop, from: sourceTop, operation: .sourceOver, fraction: 1.0)
-    }
-}
-
 // MARK: - Testable Position Calculator
 
 struct CandidateWindowPositioner {
@@ -490,6 +393,15 @@ struct CandidateWindowPositioner {
         return !looksLikeClientLocalOriginRect
     }
 
+    struct Placement: Equatable {
+        let origin: NSPoint
+        /// Where the classic bubble's tail should point; `.down` when flipped above the caret.
+        let tail: BubbleTailDirection
+    }
+
+    /// Horizontal offset of the classic window so the bubble's tail tip sits on the caret.
+    static let classicTailTipOffsetX: CGFloat = 16
+
     /// Calculate the window origin given cursor rect, window size, screen bounds, and display mode.
     ///
     /// - Parameters:
@@ -504,7 +416,18 @@ struct CandidateWindowPositioner {
         screenFrame: NSRect,
         mode: CandidateDisplayMode
     ) -> NSPoint {
+        place(lineRect: lineRect, winSize: winSize, screenFrame: screenFrame, mode: mode).origin
+    }
+
+    /// `calculate` plus which way the classic bubble's tail must point.
+    static func place(
+        lineRect: NSRect,
+        winSize: NSSize,
+        screenFrame: NSRect,
+        mode: CandidateDisplayMode
+    ) -> Placement {
         let gap: CGFloat = mode == .list ? 5 : 0
+        var tail = BubbleTailDirection.up
 
         // Default: place window below cursor
         var y = lineRect.origin.y - winSize.height - gap
@@ -512,6 +435,7 @@ struct CandidateWindowPositioner {
         // Flip above cursor if window would go below screen bottom
         if y < screenFrame.minY {
             y = lineRect.origin.y + lineRect.height + gap
+            tail = .down
         }
 
         // Keep the window vertically on the target screen as much as possible.
@@ -522,8 +446,8 @@ struct CandidateWindowPositioner {
             y = screenFrame.minY
         }
 
-        // X position: align with cursor, offset slightly for list mode
-        var x = lineRect.origin.x - (mode == .list ? 5 : 0)
+        // X position: list mode sits slightly left of the caret; classic mode puts the tail tip on it
+        var x = lineRect.origin.x - (mode == .list ? 5 : classicTailTipOffsetX)
 
         // Clamp to screen right edge
         if x + winSize.width > screenFrame.maxX {
@@ -535,6 +459,6 @@ struct CandidateWindowPositioner {
             x = screenFrame.minX
         }
 
-        return NSPoint(x: x, y: y)
+        return Placement(origin: NSPoint(x: x, y: y), tail: tail)
     }
 }

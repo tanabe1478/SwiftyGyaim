@@ -5,9 +5,9 @@ import XCTest
 final class LLMPrimaryOrderTests: XCTestCase {
     private func candidate(_ index: Int, _ text: String, reading: String = "kimi", source: String = "study",
                            kind: String = "exact", frequency: Int? = nil,
-                           affinity: Double? = nil) -> AIRerankCandidate {
+                           affinity: Double? = nil, compound: Bool? = nil) -> AIRerankCandidate {
         AIRerankCandidate(index: index, text: text, reading: reading, source: source, kind: kind,
-                          contextAffinity: affinity, studyFrequency: frequency)
+                          contextAffinity: affinity, studyFrequency: frequency, compoundCompletion: compound)
     }
 
     private func request(_ candidates: [AIRerankCandidate], input: String = "kimi") -> AIRerankRequest {
@@ -15,9 +15,27 @@ final class LLMPrimaryOrderTests: XCTestCase {
                         context: "それは", candidates: candidates)
     }
 
-    private func order(_ request: AIRerankRequest, _ scores: [Int: Double], heuristic: [Int]? = nil) -> [Int] {
+    private func order(_ request: AIRerankRequest, _ scores: [Int: Double], heuristic: [Int]? = nil,
+                       hiraganaPenalty: Double = BundledZenzRuntime.llmRankDefaultRawHiraganaPenalty) -> [Int] {
         BundledZenzRuntime.llmPrimaryOrder(request: request, heuristicOrder: heuristic ?? request.candidates.map(\.index),
-                                           llmScores: scores, studyWeight: 2.0, contextWeight: 2.0).order
+                                           llmScores: scores, studyWeight: 2.0, contextWeight: 2.0,
+                                           rawHiraganaPenalty: hiraganaPenalty).order
+    }
+
+    /// ADR-040: 全体 + zou. The model preferred 増 (−0.33) to 像 (−1.55) behind
+    /// a noisy context; 全体像 is one dictionary entry, so 像 gets +2.0. The
+    /// bonus does not beat a study-backed candidate that leads by more.
+    func testCompoundCompletionBonusLiftsTheDictionaryCompound() {
+        let req = request([candidate(0, "増", reading: "zou", source: "connection"),
+                           candidate(1, "像", reading: "zou", source: "connection", compound: true)], input: "zou")
+        XCTAssertEqual(order(req, [0: -0.33, 1: -1.55]), [1, 0])
+        XCTAssertEqual(BundledZenzRuntime.llmPrimaryOrder(
+            request: req, heuristicOrder: [0, 1], llmScores: [0: -0.33, 1: -1.55],
+            studyWeight: 2.0, contextWeight: 2.0, compoundWeight: 0).order, [0, 1], "weight 0 disables it")
+        let learned = request([candidate(0, "件", reading: "kenn", frequency: 7),
+                               candidate(1, "圏", reading: "kenn", source: "connection", compound: true)], input: "kenn")
+        XCTAssertEqual(order(learned, [0: -1.0, 1: -1.5]), [0, 1], "2 × log2(8) = 6 outweighs the bonus")
+        XCTAssertEqual(BundledZenzRuntime.llmRankDefaultCompoundWeight, 2.0)
     }
 
     func testModelScoreDecidesAmongUnlearnedCandidates() {
@@ -45,14 +63,25 @@ final class LLMPrimaryOrderTests: XCTestCase {
         XCTAssertEqual(order(req, [0: -3.0, 1: -1.0]).first, 0)
     }
 
-    /// The input's literal hiragana is a kana-key press away; the kanji goes first.
-    func testLiteralHiraganaIsNotOfferedFirst() {
+    /// The input's literal hiragana is a kana-key press away, so it leads only
+    /// when the model prefers it by more than the penalty (ADR-039: 1.0).
+    func testLiteralHiraganaLeadsOnlyWithAClearModelMargin() {
         let req = AIRerankRequest(version: 1, mode: "fast-context-rerank", inputPat: "sukosi", hiragana: "すこし",
                                   context: "", candidates: [
                                       candidate(0, "すこし", reading: "sukosi", source: "connection"),
                                       candidate(1, "少し", reading: "sukosi", source: "connection"),
                                   ])
-        XCTAssertEqual(order(req, [0: -1.0, 1: -2.5]).first, 1)
+        XCTAssertEqual(order(req, [0: -1.0, 1: -1.5]).first, 1, "margin 0.5 < 1.0: the kanji stays first")
+        XCTAssertEqual(order(req, [0: -1.0, 1: -2.5]).first, 0, "margin 1.5 > 1.0: the model's hiragana leads")
+        XCTAssertEqual(order(req, [0: -1.0, 1: -2.5], hiraganaPenalty: 3.0).first, 1,
+                       "the ADR-032 value keeps the kanji first")
+    }
+
+    func testRawHiraganaPenaltyDefaultsAndClamps() {
+        XCTAssertEqual(BundledZenzRuntime.llmRankDefaultRawHiraganaPenalty, 1.0)
+        XCTAssertEqual(BundledZenzRuntime.rawHiraganaPenalty(configured: -2), 0)
+        XCTAssertEqual(BundledZenzRuntime.rawHiraganaPenalty(configured: 3), 3)
+        XCTAssertEqual(BundledZenzRuntime.rawHiraganaPenalty(configured: .nan), 1.0)
     }
 
     func testUnscoredCandidatesSinkInHeuristicOrder() {

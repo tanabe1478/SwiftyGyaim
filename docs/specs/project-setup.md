@@ -1,7 +1,7 @@
 # Spec: Project Setup
 
 > Trigger: project.yml, Package.swift, run-unit-tests.sh, build-pkg.sh, test.yml, release.yml, Makefile
-> Last updated: 2026-09-15
+> Last updated: 2026-11-03 (postinstall で lsregister と起動)
 
 ## Overview
 
@@ -15,7 +15,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Release -derive
 ```
 
 - Release 必須（Debug は辞書検索が3〜4倍遅い）
-- 配布は `./Scripts/build-pkg.sh` で `dist/SwiftyGyaim-<version>.pkg` を生成
+- 配布は `./Scripts/build-pkg.sh` で `dist/SwiftyGyaim-<version>.pkg` を生成。postinstall は旧プロセスの終了、旧 per-user コピーの掃除、`lsregister -f` での再登録、ログイン中ユーザーでの `open` による起動を行う（2026-11-03: 入れ替え直後に新プロセスが消え入力ソースの登録まで外れたため、自動起動に頼らない）
 
 ## Test
 

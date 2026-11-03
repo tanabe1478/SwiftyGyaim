@@ -182,6 +182,21 @@ class WordSearch {
     ///   - searchMode: 0 = prefix, 1 = exact, 2 = Google Transliterate (handled by Controller)
     ///   - limit: Max results (0 = unlimited)
     /// - Returns: Array of SearchCandidate
+    /// Candidates that complete a dictionary compound with the word committed
+    /// just before this composition (ADR-040). Both sides must contain kanji:
+    /// a kana remainder is reachable with the kana keys anyway, and a kana
+    /// previous word is mostly a particle.
+    func compoundCompletions(previousWord: String, previousReading: String, input: String) -> [String] {
+        guard Self.containsKanji(previousWord), !previousReading.isEmpty, !input.isEmpty else { return [] }
+        let kana = rk.roma2kanaKey(previousReading) + rk.roma2kanaKey(input)
+        return connectionDict.compoundCompletions(previousWord: previousWord, kana: kana)
+            .filter(Self.containsKanji)
+    }
+
+    static func containsKanji(_ text: String) -> Bool {
+        text.unicodeScalars.contains { 0x4E00...0x9FFF ~= $0.value }
+    }
+
     func search(query: String, searchMode: Int, limit: Int = 0) -> [SearchCandidate] {
         self.searchMode = searchMode
         guard !query.isEmpty else { return [] }
