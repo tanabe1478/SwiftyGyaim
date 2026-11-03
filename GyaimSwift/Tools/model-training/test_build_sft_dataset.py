@@ -1,10 +1,14 @@
 """stdlib-only tests for build_sft_dataset.py (issue #125)."""
+import importlib.util
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-import build_sft_dataset as b
+MODULE_PATH = Path(__file__).with_name("build_sft_dataset.py")
+SPEC = importlib.util.spec_from_file_location("build_sft_dataset", MODULE_PATH)
+b = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(b)
 
 
 def log_line(time, kind, input_pat, payload):
