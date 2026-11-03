@@ -15,7 +15,8 @@ Windowsでの実測を含む初心者向け手順は
 ## 全体像
 
 ```
-build_sft_dataset.py   ~/.gyaim/gyaim.log → ドメインJSONL（ユーザーの実変換ペア）
+build_sft_dataset.py   ~/.gyaim/archive + gyaim.log → ドメインJSONL（選んだ候補 + かな確定。打ち直した誤確定を除き、
+                       文脈は実行時と同じ末尾 20 文字と、その 10 / 5 / 0 文字の変種。issue #125）
 prepare_dataset.py     zenz-v2.5-dataset(公開1.9億ペア)をストリーミングサンプル + ドメイン混合
 train_zenz.py          HF Trainerで学習（MPS/CUDA(ROCm含む)/CPU自動選択、--resume対応）
 compare-hf-gguf.py     eval fixtureでHF/GGUFスコアリング品質を比較（タグ除外対応）
