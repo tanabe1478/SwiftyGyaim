@@ -8,6 +8,8 @@ struct FastContextPrefixInput {
     let clipboard: String?
     let selected: String?
     let context: String
+    /// Candidates completing a dictionary compound with the previous commit (ADR-040).
+    var compoundCompletions: Set<String> = []
 }
 
 /// Immutable, bounded dictionary snapshot; no additional model calls for logging.

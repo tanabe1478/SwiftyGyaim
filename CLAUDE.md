@@ -41,8 +41,9 @@ cp -r .build/Build/Products/Release/SwiftyGyaim.app ~/Library/Input\ Methods/
 
 # 配布用インストーラ（.pkg → /Library/Input Methods、Google日本語入力方式）
 ./Scripts/build-pkg.sh          # dist/SwiftyGyaim-<version>.pkg を生成
-# インストール/アップデートはpkgをダブルクリックするだけ（postinstallが旧プロセス
-# 終了と旧per-userコピーの掃除を行う）。初回のみシステム設定で入力ソース追加が必要。
+# インストール/アップデートはpkgをダブルクリックするだけ（postinstallが旧プロセス終了、
+# 旧per-userコピーの掃除、Launch Servicesへの再登録、新バイナリの起動を行う）。
+# 初回のみシステム設定で入力ソース追加が必要。
 # 署名はad-hoc。他のMacへ配る場合は 右クリック→開く（Developer ID署名は
 # APP_IDENTITY / INSTALLER_IDENTITY 環境変数で対応可能）
 ```
@@ -99,7 +100,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（356テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（367テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -118,6 +119,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | ExternalCandidateTests / ExternalCandidatePlacementTests | Tests/GyaimTests/ | 25 | `isValidExternalCandidate` + `buildPrefixCandidates`（外部候補は辞書の先頭候補の後ろ、登録は短い一行だけ。ADR-036） |
 | PreferencesWindowTests | Tests/GyaimTests/ | 22 | 設定画面UIテスト（初期状態・クリック操作・表示モード切替・淘汰方式・Cmd+W/Cmd+V） |
 | CandidateWindowTests | Tests/GyaimTests/ | 13 | 表示モード（リスト/クラシック）の切替・描画・最大候補数・ページ指標・位置計算 |
+| CandidateWindowBubbleTailTests | Tests/GyaimTests/ | 3 | 吹き出しのトンガリの向き（フリップ時に下向き・先端をキャレットに合わせる x オフセット・上下インセットの入れ替え・反転描画のピクセル検証） |
 | CopyTextTests | Tests/GyaimTests/ | 1 | CopyText ファイルI/Oとタイムスタンプ更新条件 |
 | RomaKanaTests | Tests/GyaimTests/ | 8 | ローマ字⇔かな変換の双方向テスト |
 | WordSearchTests / WordSearchCorrectionTests | Tests/GyaimTests/ | 50 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ）、`unstudy`（ADR-037） |
@@ -129,14 +131,15 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | DictionarySearchBenchmarkTests | Tests/GyaimTests/ | 1 | 辞書検索の内訳ベンチマーク（`GYAIM_DICT_BENCH=1` のときだけ実行） |
 | ConnectionDictSharingTests | Tests/GyaimTests/ | 3 | 連接辞書のプロセス内共有（同一パス再利用・パス切替・reset） |
 | GyaimSettingsTests | Tests/GyaimTests/ | 11 | settings.json 永続化・mtimeキャッシュ・UserDefaults一方向移行・書き込み先の単一性・knownKeysとソースの一致 |
-| CommittedContextStoreTests | Tests/GyaimTests/ | 5 | 左文脈のコントローラ間引き継ぎ（bundle 別・鮮度・無効化・末尾保持・payload フラグ。ADR-035） |
+| CommittedContextStoreTests | Tests/GyaimTests/ | 7 | 左文脈のコントローラ間引き継ぎ（bundle 別・鮮度・無効化・末尾保持・payload フラグ・失効した本文の破棄 BUG-044・最後の語と読みの引き継ぎ。ADR-035 / 040） |
+| CompoundCompletionTests | Tests/GyaimTests/ | 4 | 直前の確定語と辞書の 1 エントリを成す候補の抽出（深さ 1 のみ・前後とも漢字・ローマ字/かな読み・同梱辞書での 全体像/回避策/徒歩圏 と 分析できますか の除外）、左文脈診断の末尾一致長（ADR-040） |
 | StaleCaretRectDetectorTests | Tests/GyaimTests/ | 5 | Google Docs の固定矩形の検出（遠くの別位置から同じ矩形に戻る・近い/同じ高さは除外・60 秒で失効・bundle ごとの共有・resolveLineRect の repeatedStale。ADR-038） |
 | StudyCorrectionTrackerTests | Tests/GyaimTests/ | 5 | 打ち直し判定（同じ読み・別の語・窓・bundle・かな等価・未学習の除外・設定のクランプ・payload の correctedWord。ADR-037） |
 | AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests / IncompleteStemPastTenseTests | Tests/GyaimTests/ | 42 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択・過去形を未完成語幹とみなさない（BUG-043） |
 | HomophoneFrequencyGuardTests | Tests/GyaimTests/ | 4 | 同音異義語上書きの頻度ガード（BUG-036、実ログ数値で固定） |
 | FastContextReviewSchedulingTests | Tests/GyaimTests/ | 8 | 背景モデルレビューの予約判定・スロットル/合流待ちのクランプ・同期パスがモデルを呼ばないこと・ticket の待機/一回適用（ADR-029） |
 | FastContextTraceTests / HomophoneAlternativeOrderTests / AcceptedDetailPayloadTests | Tests/GyaimTests/ | 25 | composition trace と確定 payload（全確定経路の Commit outcome を含む）、同音異義語の下位並べ替え（ADR-028） |
-| LLMPrimaryOrderTests | Tests/GyaimTests/ | 7 | LLM 主体の並べ替え（モデル順・頻出語の保護・文脈学習・書きかけ語幹・入力のひらがなを先頭にしない。ADR-032） |
+| LLMPrimaryOrderTests | Tests/GyaimTests/ | 9 | LLM 主体の並べ替え（モデル順・頻出語の保護・文脈学習・書きかけ語幹・入力のひらがなはモデルの差が減点 1.0 を超えたときだけ先頭・複合語加点 2.0。ADR-032 / 039 / 040） |
 | LlamaScoringBenchmarkTests | Tests/GyaimTests/ | 2 | 一括採点（scoreBatch）と1件ずつの採点の一致、採点時間のベンチマーク（通常はskip） |
 | TypingSimulationTests | Tests/GyaimTests/ | 1 | 正解付きコーパスを本物の検索・rerankに流して順位を測る（通常はskip。`Tools/eval/run-typing-simulation.sh` で実行） |
 | StudySuspectsTests | Tests/GyaimTests/ | 3 | 疑わしい学習エントリ検出（typo完成形・長期未使用・false positive 抑止） |
@@ -204,7 +207,9 @@ docs/adr/
 ├── 035-committed-context-carry-over.md
 ├── 036-external-candidate-placement-and-registration.md
 ├── 037-undo-learning-on-retype.md
-└── 038-stale-caret-rect-detection.md
+├── 038-stale-caret-rect-detection.md
+├── 039-raw-hiragana-penalty.md
+└── 040-compound-completion-bonus.md
 ```
 
 ## Logging & Monitoring
@@ -280,7 +285,7 @@ pi エージェントには同じワークフローが pi-context-workflow 拡�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-038）。目次と運用ルールは `docs/adr/README.md`
+- `docs/adr/` — 設計判断の経緯（000-040）。目次と運用ルールは `docs/adr/README.md`
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 

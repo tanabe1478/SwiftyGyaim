@@ -73,6 +73,7 @@ extension GyaimController {
         selectedCandidate: String?,
         hiragana: String,
         context: String? = nil,
+        compoundCompletions: Set<String> = [],
         fastContextRerankEnabled: Bool = true,
         allowModelReview: Bool = true,
         traceTag: String? = nil,
@@ -95,6 +96,7 @@ extension GyaimController {
         }
         let dictionaryCandidates = shouldFastContextRerank
             ? fastContextRerank(searchResults, inputPat: inputPat, hiragana: hiragana, context: context,
+                                compoundCompletions: compoundCompletions,
                                 allowModelReview: allowModelReview, traceTag: traceTag, onRerank: onRerank)
             : searchResults
 
@@ -130,6 +132,7 @@ extension GyaimController {
                                           inputPat: String,
                                           hiragana: String,
                                           context: String?,
+                                          compoundCompletions: Set<String> = [],
                                           allowModelReview: Bool = true,
                                           traceTag: String? = nil,
                                           onRerank: ((FastContextObservation) -> Void)? = nil) -> [SearchCandidate] {
@@ -148,7 +151,8 @@ extension GyaimController {
         let head = Array(searchResults.prefix(maxFastRerankCandidates))
         let tail = Array(searchResults.dropFirst(maxFastRerankCandidates))
         let trimmedContext = limitedFastContext(context)
-        let request = fastContextRequest(head: head, inputPat: inputPat, hiragana: hiragana, context: trimmedContext)
+        let request = fastContextRequest(head: head, inputPat: inputPat, hiragana: hiragana, context: trimmedContext,
+                                         compoundCompletions: compoundCompletions)
         let response = fastContextRerankResponse(for: request, allowModelReview: allowModelReview)
         let rerankedHead = AIReranker.apply(order: response.order, to: head)
         if let onRerank {
@@ -174,7 +178,8 @@ extension GyaimController {
     }
 
     private static func fastContextRequest(head: [SearchCandidate], inputPat: String,
-                                           hiragana: String, context: String) -> AIRerankRequest {
+                                           hiragana: String, context: String,
+                                           compoundCompletions: Set<String> = []) -> AIRerankRequest {
         AIRerankRequest(version: 1, mode: "fast-context-rerank", inputPat: inputPat, hiragana: hiragana,
                        context: context.isEmpty ? nil : context,
                        candidates: head.enumerated().map { index, candidate in
@@ -182,7 +187,8 @@ extension GyaimController {
                               source: String(describing: candidate.source), kind: candidate.kind.rawValue,
                               contextAffinity: ContextDict.shared.affinity(context: context,
                                                                            reading: candidate.reading, word: candidate.word),
-                              studyFrequency: candidate.studyFrequency)
+                              studyFrequency: candidate.studyFrequency,
+                              compoundCompletion: compoundCompletions.contains(candidate.word) ? true : nil)
         })
     }
 
