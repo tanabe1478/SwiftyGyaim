@@ -414,7 +414,7 @@ Definition of done:
   - ローマ字→カタカナは `RomaKana.swift` の rklist をパースしてIMEと同一ルール
   - redaction（URL/ASCII識別子/数字列）・ノイズ/人名除外・重複マージ込み。2026-08-16時点で684 unique
 - [x] 混合: ドメイン624件を30倍oversample（train全体の約1.8%）、domain-valid 60件を取り分け
-- 生成物（gitignore、`domain.jsonl`以外はローカルのみ）: `Tools/model-training/data/{train,valid,domain-valid,domain}.jsonl`
+- 生成物（すべて gitignore、ローカルのみ。`domain*.jsonl` も 2026-11-03 から追跡しない）: `Tools/model-training/data/{train,valid,domain-valid,domain}.jsonl`
   - 2026-08-16 Windows再生成: train 1,013,720行、valid 5,000行、domain-valid 60行
   - 最新domain 684行のうち60行を検証用、624行を30倍oversampleしたため、旧runよりtrainが2,220行増えた
 

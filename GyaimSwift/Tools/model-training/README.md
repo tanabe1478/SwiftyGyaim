@@ -15,14 +15,28 @@ Windowsでの実測を含む初心者向け手順は
 ## 全体像
 
 ```
-build_sft_dataset.py   ~/.gyaim/gyaim.log → ドメインJSONL（ユーザーの実変換ペア）
+build_sft_dataset.py   ~/.gyaim/archive + gyaim.log → ドメインJSONL（選んだ候補 + かな確定。打ち直した誤確定を除き、
+                       文脈は実行時と同じ末尾 20 文字と、その 10 / 5 / 0 文字の変種。issue #125）
 prepare_dataset.py     zenz-v2.5-dataset(公開1.9億ペア)をストリーミングサンプル + ドメイン混合
 train_zenz.py          HF Trainerで学習（MPS/CUDA(ROCm含む)/CPU自動選択、--resume対応）
 compare-hf-gguf.py     eval fixtureでHF/GGUFスコアリング品質を比較（タグ除外対応）
 ```
 
 公開データから再生成するsplitとcheckpointは `data/` と `runs/` でgitignoreする。
-redaction済みの `data/domain.jsonl` だけは、学習マシンへ安全に引き継ぐため追跡する。
+`data/` は全部 gitignore する。ドメインデータ（`domain.jsonl` / `domain-valid.jsonl` / `rerank-valid.jsonl`）は redaction 済みでもユーザーの入力文を含むため、公開リポジトリでは追跡しない（2026-11-03 に追跡をやめた。それ以前の履歴には残っている）。学習マシンへは直接コピーするか、private の Hugging Face リポジトリ経由で渡す。
+
+
+### ドメインデータの受け渡し（private Hugging Face）
+
+```bash
+hf auth login                      # 初回のみ。トークンは write 権限
+python3 push_domain_data.py        # ~/.gyaim/eval/domain-2026-11.jsonl と data/*-valid.jsonl を
+                                   # private dataset repo tanabe1478/gyaim-domain-data に上げる
+# 学習マシン側
+hf download tanabe1478/gyaim-domain-data --repo-type dataset --local-dir data/
+```
+
+`push_domain_data.py` は repo が private でなければ中止する。`--dry-run` で対象だけ確認できる。
 
 ## テスト
 
@@ -98,9 +112,9 @@ Macに接続せず、Windowsマシン単体で始める場合の完全な手順�
 5. データ:
    - 公開データはseed固定で**Windows側だけで再現可能**（`prepare_dataset.py` を同じ引数で実行すれば
      Macと同一のtrain/validができる）
-   - `data/domain.jsonl`（ユーザーのログ由来）は**リポジトリにコミット済み**（cloneに含まれる）。
-     コミット前に敬称・組織語・読み表記不整合をスキャンし、`--exclude-regex` で人名等を除外する運用。
-     更新はMac側で `build_sft_dataset.py` を再実行してコミットする
+   - `data/domain.jsonl`（ユーザーのログ由来）は**リポジトリに含めない**。Mac側で `build_sft_dataset.py` を
+     再実行し（既定の出力先は `~/.gyaim/eval/` など repo 外を推奨）、敬称・組織語・人名を `--exclude-regex` で
+     除外してから、学習マシンへ直接コピーするか private の Hugging Face リポジトリに置く
 6. 学習実行（下記「学習の実行と引き継ぎ」）。Macで学習が走っている場合は、Windows側の
    ベンチが十分速いことを確認してからMac側を止める（両方走らせても害はないが電力の無駄）
 

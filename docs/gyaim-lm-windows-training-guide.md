@@ -1209,7 +1209,7 @@ FP16の数値範囲を超えた可能性がある。直前checkpointからFP32�
 
 ## 13. プライバシーとGit管理
 
-- `data/domain.jsonl` はredaction済みだが、ユーザー語彙を含むため取り扱いに注意する
+- `data/domain.jsonl` はredaction済みだが、ユーザー語彙を含むため取り扱いに注意する。2026-11-03 からリポジトリでは追跡していないので、Mac から直接コピーして `data/` に置く
 - それ以外の `data/*`、`data-bench/`、`runs/`、`.venv/` はGit管理外
 - ドメインデータを外部GPUやpublicモデルリポジトリへ送らない
 - 個人由来データを含む学習成果物はprivateリポジトリにする
