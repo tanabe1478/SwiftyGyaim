@@ -43,11 +43,22 @@ extension BundledZenzRuntime {
         return configured > 0 ? configured : 2.0
     }
 
+    /// Bonus for a candidate that completes a dictionary compound with the
+    /// previous committed word (ADR-040). 2.0 covers the 1.2–1.5 logprob gaps
+    /// of 全体像 / 回避策 / 一番下 in the October logs without overriding a
+    /// study-backed candidate that led by 2.3.
+    static let llmRankDefaultCompoundWeight = 2.0
+    static func llmRankCompoundWeight() -> Double {
+        let configured = GyaimSettings.double(forKey: "aiRerankLLMCompoundWeight")
+        return configured > 0 ? configured : llmRankDefaultCompoundWeight
+    }
+
     /// Candidates without a model score sink below every scored one, in
     /// heuristic order.
     static func llmPrimaryOrder(request: AIRerankRequest, heuristicOrder: [Int], llmScores: [Int: Double],
                                 studyWeight: Double, contextWeight: Double,
-                                rawHiraganaPenalty: Double = llmRankRawHiraganaPenalty()
+                                rawHiraganaPenalty: Double = llmRankRawHiraganaPenalty(),
+                                compoundWeight: Double = llmRankCompoundWeight()
     ) -> (order: [Int], totals: [Int: Double]) {
         let heuristicRank = Dictionary(uniqueKeysWithValues: heuristicOrder.enumerated().map { ($1, $0) })
         var totals: [Int: Double] = [:]
@@ -58,6 +69,7 @@ extension BundledZenzRuntime {
                 total += studyWeight * log2(1 + Double(frequency))
             }
             total += contextWeight * min(candidate.contextAffinity ?? 0, 1.0)
+            if candidate.compoundCompletion == true { total += compoundWeight }
             let breakdown = AIReranker.localScoreBreakdown(candidate: candidate, request: request)
             total += breakdown.contributions.filter { llmRankSafetyPenalties.contains($0.key) }.values.reduce(0, +)
             if candidate.text == request.hiragana { total -= rawHiraganaPenalty }
@@ -93,7 +105,8 @@ extension BundledZenzRuntime {
         let ranked = Self.llmPrimaryOrder(request: request, heuristicOrder: localOrder, llmScores: llmScores,
                                           studyWeight: Self.llmRankStudyWeight(),
                                           contextWeight: Self.llmRankContextWeight(),
-                                          rawHiraganaPenalty: Self.llmRankRawHiraganaPenalty())
+                                          rawHiraganaPenalty: Self.llmRankRawHiraganaPenalty(),
+                                          compoundWeight: Self.llmRankCompoundWeight())
         let changed = ranked.order.first != localOrder.first
         Log.input.info("Zenz llm-rank finished: input=\"\(request.inputPat)\" scored=\(llmScores.count)/"
             + "\(request.candidates.count) topChanged=\(changed) order=\(ranked.order.prefix(8)) "

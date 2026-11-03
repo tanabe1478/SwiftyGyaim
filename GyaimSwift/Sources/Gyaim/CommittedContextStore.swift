@@ -19,6 +19,10 @@ final class CommittedContextStore {
     struct Entry: Equatable {
         var text: String
         var updatedAt: Date
+        /// The last committed word and its reading, for compound completion
+        /// across controller recreation (ADR-040).
+        var lastWord: String?
+        var lastReading: String?
     }
 
     /// Default inheritance window. 0 disables inheritance.
@@ -46,22 +50,36 @@ final class CommittedContextStore {
         return carryOverSeconds(configured: GyaimSettings.integer(forKey: settingsKey))
     }
 
-    /// Appends committed text to the app's entry, keeping only the tail.
-    func record(text: String, bundle: String, now: Date = Date()) {
+    /// Appends committed text to the app's entry, keeping only the tail. Text
+    /// older than the carry-over window is dropped first: it could no longer
+    /// be inherited on its own, and appending to it let a 35-minute-old
+    /// sentence ride along behind one fresh commit (BUG-044).
+    func record(text: String, reading: String? = nil, bundle: String, now: Date = Date(),
+                carryOverSeconds: Int = CommittedContextStore.configuredCarryOverSeconds) {
         guard !text.isEmpty, !bundle.isEmpty else { return }
-        var combined = (entries[bundle]?.text ?? "") + text
+        var previous = ""
+        if let entry = entries[bundle], Self.isFresh(entry, now: now, carryOverSeconds: carryOverSeconds) {
+            previous = entry.text
+        }
+        var combined = previous + text
         if combined.count > maxCharacters {
             combined = String(combined.suffix(maxCharacters))
         }
-        entries[bundle] = Entry(text: combined, updatedAt: now)
+        entries[bundle] = Entry(text: combined, updatedAt: now, lastWord: text, lastReading: reading)
     }
 
     /// Context a fresh controller for `bundle` may inherit, or "" when there
     /// is none, inheritance is disabled, or the last commit is older than the
     /// window.
     func inheritableContext(bundle: String, now: Date = Date(), carryOverSeconds: Int) -> String {
-        guard carryOverSeconds > 0, let entry = entries[bundle] else { return "" }
-        return Self.isFresh(entry, now: now, carryOverSeconds: carryOverSeconds) ? entry.text : ""
+        inheritableEntry(bundle: bundle, now: now, carryOverSeconds: carryOverSeconds)?.text ?? ""
+    }
+
+    /// The whole entry a fresh controller may inherit (text plus last word), or nil.
+    func inheritableEntry(bundle: String, now: Date = Date(), carryOverSeconds: Int) -> Entry? {
+        guard carryOverSeconds > 0, let entry = entries[bundle],
+              Self.isFresh(entry, now: now, carryOverSeconds: carryOverSeconds) else { return nil }
+        return entry
     }
 
     func entry(for bundle: String) -> Entry? { entries[bundle] }

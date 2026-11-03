@@ -108,6 +108,9 @@ class GyaimController: IMKInputController {
     /// committed in the same app (CommittedContextStore, ADR-035). Logged in
     /// the commit payloads so the effect of inherited context can be measured.
     private var contextInherited = false
+    /// The word committed last and its reading, so the next composition can
+    /// look up dictionary compounds such as 全体 + ぞう → 全体像 (ADR-040).
+    private var lastCommittedWord: (word: String, reading: String)?
     private var rk = RomaKana()
     private var candWindow: CandidateWindow?
     /// Last IMK-reported cursor rect that looked like a valid screen-coordinate rect.
@@ -748,6 +751,34 @@ class GyaimController: IMKInputController {
     private func startComposition(client sender: Any?) {
         compositionID += 1
         captureExternalCandidates(client: sender)
+        probeLeftContext(client: sender as? IMKTextInput)
+    }
+
+    /// Diagnostic for replacing the committed-text context with the client's
+    /// real text before the caret: logs whether `attributedSubstring(from:)`
+    /// returns anything and how much of its tail matches our own context.
+    /// Lengths only, never the text. Off with `leftContextProbeEnabled=false`.
+    private func probeLeftContext(client: IMKTextInput?) {
+        guard GyaimSettings.bool(forKey: "leftContextProbeEnabled", default: true), let client else { return }
+        let bundle = Self.clientBundle(client) ?? "unknown"
+        let range = client.selectedRange()
+        guard range.location != NSNotFound else {
+            Log.input.info("Left context probe: bundle=\(bundle) selectedRange=notFound")
+            return
+        }
+        let length = min(20, range.location)
+        guard length > 0 else {
+            Log.input.info("Left context probe: bundle=\(bundle) selectedRange=\(range.location)/\(range.length) got=0")
+            return
+        }
+        let before = client.attributedSubstring(from: NSRange(location: range.location - length, length: length))?.string
+        let matched = before.map { Self.commonSuffixLength($0, recentCommittedText) }
+        Log.input.info("Left context probe: bundle=\(bundle) selectedRange=\(range.location)/\(range.length) "
+            + "got=\(before?.count ?? -1) commonSuffix=\(matched ?? -1) ours=\(recentCommittedText.count)")
+    }
+
+    static func commonSuffixLength(_ lhs: String, _ rhs: String) -> Int {
+        zip(lhs.reversed(), rhs.reversed()).prefix { $0 == $1 }.count
     }
 
     private func cancelDeferredModelReview() {
@@ -775,7 +806,8 @@ class GyaimController: IMKInputController {
             let reviewed = GyaimController.buildPrefixCandidates(
                 searchResults: input.searchResults, inputPat: input.inputPat,
                 clipboardCandidate: input.clipboard, selectedCandidate: input.selected,
-                hiragana: input.hiragana, context: input.context, allowModelReview: true,
+                hiragana: input.hiragana, context: input.context,
+                compoundCompletions: input.compoundCompletions, allowModelReview: true,
                 traceTag: tag, onRerank: { observation = $0 })
             ticket.store(FastContextReviewTicket.Outcome(candidates: reviewed, observation: observation))
             DispatchQueue.main.async { self?.applyReview(ticket) }
@@ -923,11 +955,13 @@ class GyaimController: IMKInputController {
     private func updatePrefixCandidates(searchResults: [SearchCandidate]) {
         let input = FastContextPrefixInput(searchResults: searchResults, inputPat: inputPat,
                                            hiragana: rk.roma2hiragana(inputPat), clipboard: clipboardCandidate,
-                                           selected: selectedCandidate, context: recentCommittedText)
+                                           selected: selectedCandidate, context: recentCommittedText,
+                                           compoundCompletions: compoundCompletions())
         let useModel = Self.shouldScheduleModelReview(inputPat: inputPat)
         candidates = Self.buildPrefixCandidates(searchResults: searchResults, inputPat: inputPat,
                                                 clipboardCandidate: input.clipboard, selectedCandidate: input.selected,
-                                                hiragana: input.hiragana, context: input.context, allowModelReview: false,
+                                                hiragana: input.hiragana, context: input.context,
+                                                compoundCompletions: input.compoundCompletions, allowModelReview: false,
                                                 traceTag: traceTag(pass: useModel ? "prereview" : "heuristic"))
         fastContextTrace = FastContextTrace(controllerID: traceControllerID, compositionID: compositionID,
                                            generation: inputGeneration, heuristicWords: candidates.map(\.word),
@@ -1028,15 +1062,24 @@ class GyaimController: IMKInputController {
         return json
     }
 
-    private func recordCommittedText(_ text: String, client: IMKTextInput?) {
+    private func recordCommittedText(_ text: String, reading: String, client: IMKTextInput?) {
         guard !text.isEmpty else { return }
         recentCommittedText += text
         if recentCommittedText.count > maxAIContextCharacters {
             recentCommittedText = String(recentCommittedText.suffix(maxAIContextCharacters))
         }
+        lastCommittedWord = (text, reading)
         if let bundle = Self.clientBundle(client) {
-            CommittedContextStore.shared.record(text: text, bundle: bundle)
+            CommittedContextStore.shared.record(text: text, reading: reading, bundle: bundle)
         }
+    }
+
+    /// Dictionary compounds the current input completes together with the
+    /// previous committed word (ADR-040), e.g. 全体 + zou → 像. Empty when
+    /// nothing was committed yet or the previous word has no kanji.
+    private func compoundCompletions() -> Set<String> {
+        guard let last = lastCommittedWord, let ws else { return [] }
+        return Set(ws.compoundCompletions(previousWord: last.word, previousReading: last.reading, input: inputPat))
     }
 
     /// A controller that has not committed anything yet starts from the text
@@ -1045,12 +1088,15 @@ class GyaimController: IMKInputController {
     /// controller on most focus changes, which otherwise dropped the context.
     private func inheritCommittedContextIfNeeded(client: IMKTextInput?) {
         guard recentCommittedText.isEmpty, let bundle = Self.clientBundle(client) else { return }
-        let inherited = CommittedContextStore.shared.inheritableContext(
-            bundle: bundle, carryOverSeconds: CommittedContextStore.configuredCarryOverSeconds)
-        guard !inherited.isEmpty else { return }
-        recentCommittedText = inherited
+        guard let entry = CommittedContextStore.shared.inheritableEntry(
+            bundle: bundle, carryOverSeconds: CommittedContextStore.configuredCarryOverSeconds),
+              !entry.text.isEmpty else { return }
+        recentCommittedText = entry.text
+        if let word = entry.lastWord, let reading = entry.lastReading {
+            lastCommittedWord = (word, reading)
+        }
         contextInherited = true
-        Log.input.info("Fast context inherited: bundle=\(bundle) chars=\(inherited.count)")
+        Log.input.info("Fast context inherited: bundle=\(bundle) chars=\(entry.text.count)")
     }
 
     static func clientBundle(_ client: IMKTextInput?) -> String? {
@@ -1127,7 +1173,7 @@ class GyaimController: IMKInputController {
             Log.input.info("Study skipped (kana confirm): \"\(word)\" (reading: \"\(inputPat)\")")
         }
         rememberCommit(reading: inputPat, word: word, client: client, learning: learning)
-        recordCommittedText(word, client: client)
+        recordCommittedText(word, reading: inputPat, client: client)
         resetState()
         hideWindow()
     }
@@ -1185,7 +1231,7 @@ class GyaimController: IMKInputController {
         }
 
         if !skipStudy {
-            recordCommittedText(word, client: client)
+            recordCommittedText(word, reading: reading, client: client)
         }
         resetState()
         hideWindow()

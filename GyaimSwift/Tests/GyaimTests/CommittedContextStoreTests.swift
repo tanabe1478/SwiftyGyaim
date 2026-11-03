@@ -44,6 +44,37 @@ final class CommittedContextStoreTests: XCTestCase {
         XCTAssertNil(store.entry(for: ""))
     }
 
+    /// BUG-044: text older than the window must not ride along behind a fresh
+    /// commit. 18:02 "ごめん再開して" was appended to a 17:27 sentence, and the
+    /// 18:04 controller inherited both.
+    func testStaleTextIsDroppedBeforeAppending() {
+        let store = CommittedContextStore()
+        store.record(text: "要約した文を生成して", bundle: "app", now: t0, carryOverSeconds: 300)
+        store.record(text: "ごめん", bundle: "app", now: t0.addingTimeInterval(2100), carryOverSeconds: 300)
+        store.record(text: "再開して", bundle: "app", now: t0.addingTimeInterval(2101), carryOverSeconds: 300)
+        XCTAssertEqual(store.inheritableContext(bundle: "app", now: t0.addingTimeInterval(2200), carryOverSeconds: 300),
+                       "ごめん再開して")
+        store.record(text: "続き", bundle: "app", now: t0.addingTimeInterval(2401), carryOverSeconds: 300)
+        XCTAssertEqual(store.entry(for: "app")?.text, "ごめん再開して続き", "age equal to the window is still fresh")
+        store.record(text: "別件", bundle: "app", now: t0.addingTimeInterval(2702), carryOverSeconds: 300)
+        XCTAssertEqual(store.entry(for: "app")?.text, "別件")
+        store.record(text: "x", bundle: "app", now: t0.addingTimeInterval(2703), carryOverSeconds: 0)
+        XCTAssertEqual(store.entry(for: "app")?.text, "x", "a disabled window keeps only the latest commit")
+    }
+
+    /// ADR-040: the last word and reading travel with the context so the next
+    /// controller can still complete 全体 + ぞう.
+    func testLastWordIsInheritedWithTheContext() {
+        let store = CommittedContextStore()
+        store.record(text: "残る", reading: "nokoru", bundle: "app", now: t0, carryOverSeconds: 300)
+        store.record(text: "全体", reading: "zentai", bundle: "app", now: t0.addingTimeInterval(1), carryOverSeconds: 300)
+        let entry = store.inheritableEntry(bundle: "app", now: t0.addingTimeInterval(10), carryOverSeconds: 300)
+        XCTAssertEqual(entry?.text, "残る全体")
+        XCTAssertEqual(entry?.lastWord, "全体")
+        XCTAssertEqual(entry?.lastReading, "zentai")
+        XCTAssertNil(store.inheritableEntry(bundle: "app", now: t0.addingTimeInterval(400), carryOverSeconds: 300))
+    }
+
     func testCarryOverSecondsDefaultAndClamp() {
         XCTAssertEqual(CommittedContextStore.carryOverSeconds(configured: nil), 300)
         XCTAssertEqual(CommittedContextStore.carryOverSeconds(configured: -1), 0)

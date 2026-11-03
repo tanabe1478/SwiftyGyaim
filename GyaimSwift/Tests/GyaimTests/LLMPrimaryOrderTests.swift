@@ -5,9 +5,9 @@ import XCTest
 final class LLMPrimaryOrderTests: XCTestCase {
     private func candidate(_ index: Int, _ text: String, reading: String = "kimi", source: String = "study",
                            kind: String = "exact", frequency: Int? = nil,
-                           affinity: Double? = nil) -> AIRerankCandidate {
+                           affinity: Double? = nil, compound: Bool? = nil) -> AIRerankCandidate {
         AIRerankCandidate(index: index, text: text, reading: reading, source: source, kind: kind,
-                          contextAffinity: affinity, studyFrequency: frequency)
+                          contextAffinity: affinity, studyFrequency: frequency, compoundCompletion: compound)
     }
 
     private func request(_ candidates: [AIRerankCandidate], input: String = "kimi") -> AIRerankRequest {
@@ -20,6 +20,22 @@ final class LLMPrimaryOrderTests: XCTestCase {
         BundledZenzRuntime.llmPrimaryOrder(request: request, heuristicOrder: heuristic ?? request.candidates.map(\.index),
                                            llmScores: scores, studyWeight: 2.0, contextWeight: 2.0,
                                            rawHiraganaPenalty: hiraganaPenalty).order
+    }
+
+    /// ADR-040: 全体 + zou. The model preferred 増 (−0.33) to 像 (−1.55) behind
+    /// a noisy context; 全体像 is one dictionary entry, so 像 gets +2.0. The
+    /// bonus does not beat a study-backed candidate that leads by more.
+    func testCompoundCompletionBonusLiftsTheDictionaryCompound() {
+        let req = request([candidate(0, "増", reading: "zou", source: "connection"),
+                           candidate(1, "像", reading: "zou", source: "connection", compound: true)], input: "zou")
+        XCTAssertEqual(order(req, [0: -0.33, 1: -1.55]), [1, 0])
+        XCTAssertEqual(BundledZenzRuntime.llmPrimaryOrder(
+            request: req, heuristicOrder: [0, 1], llmScores: [0: -0.33, 1: -1.55],
+            studyWeight: 2.0, contextWeight: 2.0, compoundWeight: 0).order, [0, 1], "weight 0 disables it")
+        let learned = request([candidate(0, "件", reading: "kenn", frequency: 7),
+                               candidate(1, "圏", reading: "kenn", source: "connection", compound: true)], input: "kenn")
+        XCTAssertEqual(order(learned, [0: -1.0, 1: -1.5]), [0, 1], "2 × log2(8) = 6 outweighs the bonus")
+        XCTAssertEqual(BundledZenzRuntime.llmRankDefaultCompoundWeight, 2.0)
     }
 
     func testModelScoreDecidesAmongUnlearnedCandidates() {
