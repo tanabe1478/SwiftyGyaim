@@ -44,19 +44,26 @@ python3 -m py_compile \
   Tools/ai-rerank/train-fast-context-weights.py \
   Tools/eval/extract-context-cases.py \
   Tools/model-training/compare-hf-gguf.py \
+  Tools/model-training/prepare_context_training.py \
+  Tools/model-training/build_context_contrasts.py \
+  Tools/model-training/evaluate_context_cases.py \
+  Tools/model-training/compare_context_runs.py \
+  Tools/model-training/train_context_preference.py \
+  Tools/model-training/context_distillation.py \
+  Tools/model-training/cache_context_teacher.py \
   Tools/model-training/push_domain_data.py \
   Tools/dict/suggest-connection-entries.py \
   Tools/ai-rerank/extract-preference-pairs.py \
   Tools/dict/find-suspect-study-entries.py
 # Python unit tests. test_compare_hf_gguf.py is stdlib-only and always runs.
-# test_train_zenz.py imports torch/transformers, so it runs only when the
+# Training-objective tests import torch/transformers, so they run only when the
 # model-training venv (see Tools/model-training/README.md) provides them.
-python3 -m unittest Tools/model-training/test_compare_hf_gguf.py Tools/model-training/test_build_sft_dataset.py Tools/ai-rerank/test_aggregate_fast_context_log.py
+python3 -m unittest Tools/model-training/test_compare_hf_gguf.py Tools/model-training/test_build_sft_dataset.py Tools/model-training/test_context_training.py Tools/ai-rerank/test_aggregate_fast_context_log.py
 TRAIN_PY="Tools/model-training/.venv/bin/python"
 if [ -x "$TRAIN_PY" ] && "$TRAIN_PY" -c "import torch, transformers" 2>/dev/null; then
-  (cd Tools/model-training && ./.venv/bin/python -m unittest test_train_zenz.py)
+  (cd Tools/model-training && ./.venv/bin/python -m unittest test_train_zenz.py test_context_preference.py test_context_prior.py)
 else
-  echo "skip: test_train_zenz.py (torch/transformers not available in Tools/model-training/.venv)"
+  echo "skip: training-objective tests (torch/transformers not available in Tools/model-training/.venv)"
 fi
 python3 Tools/ai-rerank/validate-fast-context-eval-cases.py >/dev/null
 python3 Tools/ai-rerank/evaluate-fast-context-rerank.py --json >/dev/null

@@ -1,5 +1,9 @@
 # model-training: gyaim-lm の学習
 
+Issue #125の次期学習は[ISSUE-125.md](ISSUE-125.md)を参照。
+文脈変種のあるdomainデータには、固定評価を除外しペア単位で分割する
+`prepare_context_training.py`を使う。
+
 SwiftyGyaim専用のかな漢字変換モデル **gyaim-lm** を学習するためのツール群。
 
 - gyaim-lm は zenz ではない: 元モデル `ku-nlp/gpt2-small-japanese-char` から学習する自前モデル
@@ -158,6 +162,24 @@ nohup ./.venv/bin/python3 train_zenz.py --train data/train.jsonl --valid data/va
 - スリープ抑止: macOSは `caffeinate -s`、WSL2はWindows側の電源設定で
 
 ## 評価（学習後）
+
+### 実験用の文脈候補蒸留
+
+`cache_context_teacher.py` は固定評価・従来holdoutを除外し、読み単位で分割した
+候補ペアに対して、教師モデルの文脈あり平均logprob差をFP32で保存する。
+`train_context_preference.py --objective context_distill --teacher-scores <cache>` は
+その差から得た2候補間の確率を学習し、文脈なしのスコアは学習前の生徒モデルへ
+MSEで固定する（`--anchor 0 --prior-preservation 10`、学習は`--precision fp32`）。
+キャッシュの元データSHA256・全ペアの対応・有限値を検証する。教師の文脈なし分布は
+転写しない。全語彙のtoken KL蒸留ではなく、候補ペアの蒸留である。
+通常のpair学習が既定のまま。蒸留と`--prior-replay`は併用不可。
+`--dropout 0`を指定するとGPT2の学習時dropoutを無効にできる。
+省略時は元モデルの設定を維持する。値は0以上1未満で、manifestとモデルconfigに保存する。
+`--deterministic-prior`は`context_distill`専用の比較設定で、文脈ありのdropoutは残し、
+文脈なしの保持計算だけevalモードで行う。勾配は保持し、forward後に各moduleの状態を復元する。
+既定は無効。manifestの`deterministicPrior`に記録し、gradient checkpointingとは併用不可。
+これはeval参照スコアに対する保持損失への確率的変動を除く比較実験用の設定である。
+このモードの追加自体は精度改善の証拠ではない。独立評価・native評価は別途必要。
 
 ```bash
 # 公開可能な一般fixtureだけでスコアリング品質を測る

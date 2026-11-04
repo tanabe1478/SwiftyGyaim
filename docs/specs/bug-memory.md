@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-11-03 (BUG-044: 引き継ぎ文脈の保管庫が失効した本文を捨てずに追記していた)
+> Last updated: 2026-11-04 (BUG-045/046: HF空白前処理・候補学習の正規化)
 
 ## 概要
 
@@ -34,6 +34,8 @@
 
 | ID | タイトル | 発見日 | ファイル |
 |---|---|---|---|
+| BUG-046 | 候補学習の読み正規化とsplitの不一致 | 2026-11-04 | [BUG-046-preference-reading-normalization.md](bugs/BUG-046-preference-reading-normalization.md) |
+| BUG-045 | HF文脈評価とnative採点の空白前処理の差 | 2026-11-04 | [BUG-045-hf-context-whitespace.md](bugs/BUG-045-hf-context-whitespace.md) |
 | BUG-001 | deactivation時に未確定テキストが消える | 2026-03-17 | [BUG-001-input-loss-on-deactivation.md](bugs/BUG-001-input-loss-on-deactivation.md) |
 | BUG-002 | deactivation確定でstudyDictに意図しない登録 | 2026-03-17 | [BUG-002-unintended-study-on-deactivation.md](bugs/BUG-002-unintended-study-on-deactivation.md) |
 | BUG-003 | study辞書がファイルに保存されず学習が失われる | 2026-04-15 | [BUG-003-study-dict-not-persisted.md](bugs/BUG-003-study-dict-not-persisted.md) |
