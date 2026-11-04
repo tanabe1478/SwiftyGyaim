@@ -172,7 +172,19 @@ production値が全件揃わない場合は本番Top-1をnullにし、近似値�
 
 `runs/issue-125/v-mac-handoff-v1/issue-125-v-mac-eval.zip`（147,763,087 bytes）に
 公開baseとVのQ5、元モデルカード、hash、実行手順と比較スクリプトを同梱した。
-学習文・固定評価ケースは含めない。アップロードは行っていない。
+学習文・固定評価ケースは含めない。
+2026-11-04、ユーザーの依頼でモデルとZIPを専用のprivateモデルrepo
+[tanabe1478/gyaim-lm-small-context-v1](https://huggingface.co/tanabe1478/gyaim-lm-small-context-v1)
+へアップロードした。revisionは`2476e1f9e9b290e43769eb9ecf1cccbbdb3ad2c1`。
+HF形式の重み・tokenizer、Q5、Mac比較ZIP、出典とmanifestの15ファイルについて、
+remoteのサイズとSHA256を照合済み。private設定と匿名アクセス拒否も確認した。
+ZIP自体は作成時のスナップショットを維持しているため、内部READMEの未アップロード表記は当時の記録。
+
+アクセスできるHFアカウントでMacにログインし、次で取得できる:
+
+```bash
+hf download tanabe1478/gyaim-lm-small-context-v1 mac-eval/issue-125-v-mac-eval.zip --revision 2476e1f9e9b290e43769eb9ecf1cccbbdb3ad2c1 --local-dir ./gyaim-context-v1
+```
 
 展開後、既存の10月ケースがあるMacで実行する:
 
