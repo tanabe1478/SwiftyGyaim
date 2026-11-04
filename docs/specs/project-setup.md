@@ -1,7 +1,7 @@
 # Spec: Project Setup
 
 > Trigger: project.yml, Package.swift, run-unit-tests.sh, build-pkg.sh, test.yml, release.yml, Makefile
-> Last updated: 2026-11-04 (issue #125 の文脈学習・蒸留テストを追加)
+> Last updated: 2026-11-04 (issue #125 のnative traceとPython解析の接続テストを追加)
 
 ## Overview
 
@@ -23,6 +23,9 @@ xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Release -derive
 `test_context_training.py` で検証する（標準ライブラリのみ、合成データのみ）。
 学習用venvにtorch/transformersがある場合は、既存の`test_train_zenz.py`に加えて
 `test_context_preference.py`と`test_context_prior.py`で候補損失・教師cache・勾配とmode復元を検証する。
+`ContextCaseTraceTests`で合成native traceを`.build`配下の一時directoryへ出力し、
+`test_analyze_native_context.py`が同じbytesを解析する。場所はrunnerが
+`GYAIM_NATIVE_TRACE_TEST_DIR`で渡す。モデル実行・個人データ・追加学習を要しない接続テスト。
 
 ```bash
 ./Scripts/run-unit-tests.sh   # xctest + swiftlint --strict --baseline + Python ツール検証

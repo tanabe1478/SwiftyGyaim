@@ -6,8 +6,8 @@ Last updated: 2026-11-04
 
 既存データと公開データで学習・評価を実施した。追加のMac選択ログは要求しない。
 候補Vは公開baseを初期値に再学習し、固定評価の文脈5/10/20文字すべてで改善した。
-ただし公開評価は増減が混在し、実運用の候補順位とMacの速度は未検証である。
-Vはnative検証候補として保管し、アプリのモデル置換・公開は行っていない。
+ただし公開評価は増減が混在する。Mac native比較が完了し、20文字の本番式は11件退行したためVは採用見送り。
+全件p50/p95は11.26/15.65msで速度ゲートは満たす。モデルはprivate HFに保管し、アプリへ適用していない。
 全学習・評価プロセスは終了している。
 候補学習の読み正規化も統一した（BUG-046）。Vの全11,865行は既に正規化済みで、
 この修正後もtrain/validation件数と教師cacheの全ペア対応が変わらないことを確認した。
@@ -36,8 +36,11 @@ reading-cluster bootstrapの95%区間（差のpercentage points）は5/10/20文�
 [-0.0571,0.5738] / [0.0611,0.5176] / [0.1634,0.5601]。
 これは過去の実験選択や時系列依存を補正せず、一般的な優位性の証明ではない。
 
-次にMacの既存Releaseハーネスでモデル単体・本番式・gap30・p50/p95を確認する。
-Issueの速度目標はp50 <25ms、p95 <60ms。native未検証のまま採用しない。
+Mac報告では全件の本番式は文脈0/5/10/20で+9/+1/+5/-11、gap30では+3/+1/+3/-1。
+モデル単体の改善が本番式にどう反映されたか、ケース別traceで原因を調べる段階。
+ユーザーの現時点の許可範囲は分析器・設計までで、追加学習とモデル適用は行わない。
+[NATIVE-ANALYSIS.md](NATIVE-ANALYSIS.md)に分析器の使い方と次の学習設計をまとめた。
+Mac報告: https://github.com/tanabe1478/SwiftyGyaim/issues/125#issuecomment-6629234575
 参照: https://github.com/tanabe1478/SwiftyGyaim/issues/125#issuecomment-6604482373
 
 ## データから分かったこと
@@ -146,7 +149,8 @@ gradient checkpointingとの併用は拒否する。この比較条件Tは固定
 `allContextLengthsImproved`は点推定の判定だけで、採用フラグではない。
 
 nativeケース別scoreを集計する場合は`--score-export`で以下の形式を渡す。
-既存Macハーネスの集計reportとは別形式で、ケース別export生成器は本PRには含まない。
+既存Macハーネスの集計reportとは別形式。今回追加したnative traceも別schemaであり、
+上記の旧HF互換exportには変換しない。native traceは`analyze_native_context.py`で分析する。
 
 ```json
 {
@@ -197,7 +201,8 @@ bash /path/to/extracted/run-mac-eval.sh /path/to/SwiftyGyaim/GyaimSwift
 件数・重み・heuristicが同じことを確認して`results.*/comparison.json`へ集計する。
 nativeは候補外truth6件を除く11,066件で、gap条件は>30秒。HFの>=30秒と区別する。
 ZIPの各ファイルhash/CRC、Bash構文、Python構文、合成reportでの比較は確認済み。
-Mac実行は未検証であり、Windowsのテスト成功をMacの精度・速度確認とは呼ばない。
+このZIPのMac実行は2026-11-04のIssueコメントで完了を確認した（本番式20文字は退行）。
+追加したケース別trace機能は、この元ZIPには含まれない。更新したcloneで診断を実行する。
 
 ## 成果物のSHA256
 

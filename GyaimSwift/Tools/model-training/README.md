@@ -3,6 +3,7 @@
 Issue #125の次期学習は[ISSUE-125.md](ISSUE-125.md)を参照。
 文脈変種のあるdomainデータには、固定評価を除外しペア単位で分割する
 `prepare_context_training.py`を使う。
+native本番順位の退行分析器と次の学習設計は[NATIVE-ANALYSIS.md](NATIVE-ANALYSIS.md)を参照。
 
 SwiftyGyaim専用のかな漢字変換モデル **gyaim-lm** を学習するためのツール群。
 

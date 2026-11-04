@@ -1,7 +1,7 @@
 # Spec: Zenz / Zenzai model tuning for SwiftyGyaim
 
 > Status: Draft
-> Last updated: 2026-11-04 (issue #125: 文脈保持、候補間蒸留、学習dropoutの比較設定)
+> Last updated: 2026-11-04 (issue #125: nativeケース別trace・本番順位の退行分析)
 > Trigger: Zenzai / zenz model investigation, GGUF model replacement, AIReranker / ZenzRuntime training workflow, pi-tinker suitability review
 
 ## 目的
@@ -303,6 +303,21 @@ native export生成とmacOS latency検証は別途必要で、Windows/HF結果�
 入出力仕様と残作業は`Tools/model-training/ISSUE-125.md`に記載する。
 
 最初の成果物はモデルではなく eval dataset である。
+
+#### native本番順位の退行診断
+
+`ContextCasesEvaluationTests`は`GYAIM_CONTEXT_EVAL_TRACE`指定時だけprivate JSONL traceを出す。
+同じscoreBatchから得たモデル点数と`llmPrimaryOrder`の本番点数・全順位、heuristic順位、
+加減点成分を保存し、点数の再合成一致を確認する。追加のモデル採点とランキング規則変更はない。
+元JSONLの物理行番号とLFを除いた行bytesのSHA256で対応し、入力文や候補の生文字列は含めない。
+完了summaryを持つファイルだけを正式名にし、既存ファイルの上書きを拒否する。
+
+`analyze_native_context.py`は元ケースhash、モデルhashの存在、辞書・関連source・OS・設定の一致、
+全件coverage、点数・順列・tie・集計値を検証してから本番式の良化/悪化を分解する。
+旧HF用exportとは別schema（`gyaim-native-context-trace` version1）。Release/既定重み/limitなしに限定する。
+出力はignored `runs/`配下。生文字列は`--include-text`の明示時だけ確認用出力に含める。
+固定ケースを学習データへ変換しない。traceありの時間は診断値とし、正式速度はtraceなしで測る。
+手順と学習設計の分岐は`Tools/model-training/NATIVE-ANALYSIS.md`を参照する。
 
 #### 文脈限定の候補間蒸留（実験用・未採用）
 
