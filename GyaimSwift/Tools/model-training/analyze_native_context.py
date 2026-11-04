@@ -157,7 +157,8 @@ def validate_trace(raw, trace):
     require(header['casesSha256'] == digest(raw), 'case file SHA256 mismatch')
     require(isinstance(header.get('modelSha256'), str) and SHA.fullmatch(header['modelSha256']), 'model SHA256 required')
     require(header.get('limit') is None, 'limited traces cannot establish full coverage')
-    require(header['weights'] == WEIGHTS, 'unexpected production weights')
+    require(header['weights'] == WEIGHTS and all(finite(v) for v in header['weights'].values()),
+            'unexpected production weights')
     require(header['subset'] in ('all', 'gap30'), 'unsupported subset')
     lengths = header['lengths']
     require(isinstance(lengths, list) and lengths and all(type(v) is int and v in (0, 5, 10, 20) for v in lengths)
@@ -206,7 +207,7 @@ def outcome(before, after):
 def pair_category(case, indices, converter):
     candidates = [case['candidates'][i] for i in indices]
     texts = [c['text'] for c in candidates]
-    kana = lambda text: bool(text) and all('\u3041' <= c <= '\u30ff' for c in text)
+    kana = lambda text: bool(re.fullmatch(r'[\u3041-\u3096\u3099-\u309f\u30a1-\u30fa\u30fc-\u30ff\uff66-\uff9f]+', text))
     kanji = lambda text: any('\u3400' <= c <= '\u9fff' or '\U00020000' <= c <= '\U0002ffff' for c in text)
     if (kana(texts[0]) and kanji(texts[1])) or (kana(texts[1]) and kanji(texts[0])):
         return 'kana-vs-kanji'
@@ -246,6 +247,10 @@ def analyze(raw, baseline, trial, include_text=False):
         for subset in subsets:
             tally = tallies[subset, length]
             tally['count'] += 1
+            for name, record in [('base', before), ('trial', after)]:
+                missing = sum(score is None for score in record['modelScores'])
+                tally[name + 'UnavailableCandidates'] += missing
+                tally[name + 'CasesWithUnavailable'] += missing > 0
             for prefix in ('model', 'production'):
                 tally[prefix + ':' + statuses[prefix]] += 1
         if statuses['production'] not in ('improved', 'worsened'):
@@ -272,6 +277,8 @@ def analyze(raw, baseline, trial, include_text=False):
                       gap30=is_gap30(case), outcome=statuses['production'], modelOutcome=statuses['model'],
                       category=category, truthIndex=truth, rivalIndex=rival, comparisons=comparisons,
                       adjustmentMargin=adjustment_margin, requiredModelMargin=-offsets,
+                      unavailableIndices={name: [i for i, score in enumerate(record['modelScores']) if score is None]
+                                          for name, record in [('base', before), ('trial', after)]},
                       tieFavoursTruth=before['heuristicOrder'].index(truth) < before['heuristicOrder'].index(rival),
                       activeAdjustmentDifferences=[k for k, v in adjustment_margin.items() if abs(v) > 1e-12])
         if include_text:
@@ -281,6 +288,8 @@ def analyze(raw, baseline, trial, include_text=False):
     metrics = []
     for (subset, length), tally in sorted(tallies.items()):
         row = dict(subset=subset, contextLength=length, count=tally['count'])
+        row['scoreAvailability'] = {name + metric: tally[name + metric] for name in ('base', 'trial')
+                                    for metric in ('UnavailableCandidates', 'CasesWithUnavailable')}
         for prefix in ('model', 'production'):
             counts = {name: tally[prefix + ':' + name] for name in ('improved', 'worsened', 'bothCorrect', 'bothWrong')}
             counts['baseHits'] = counts['bothCorrect'] + counts['worsened']

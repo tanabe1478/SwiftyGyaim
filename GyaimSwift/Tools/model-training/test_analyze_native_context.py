@@ -108,6 +108,18 @@ class NativeContextAnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'plus adjustments'):
             analyzer.analyze(raw, base, damaged)
 
+    def test_unavailable_scores_are_visible_and_never_become_zero_margins(self):
+        raw, base, trial = fixture()
+        trial[1][0]['modelScores'][0] = None
+        trial[1][0]['productionScores'][0] = None
+        report, changes = analyzer.analyze(raw, base, trial)
+        row = next(r for r in report['metrics'] if r['subset'] == 'all')
+        self.assertEqual(row['scoreAvailability']['trialUnavailableCandidates'], 1)
+        self.assertEqual(row['scoreAvailability']['trialCasesWithUnavailable'], 1)
+        self.assertIsNone(changes[0]['comparisons']['trial']['modelMargin'])
+        self.assertIsNone(changes[0]['comparisons']['trial']['productionMargin'])
+        self.assertEqual(changes[0]['unavailableIndices']['trial'], [0])
+
     def test_mismatched_environment_and_limited_runs_are_rejected(self):
         raw, base, trial = fixture()
         for field, value in [('dictionarySha256', {'dict.txt': 'f'*64, 'mozc-dict.txt': 'e'*64}),
@@ -142,6 +154,8 @@ class NativeContextAnalysisTests(unittest.TestCase):
             def convert(self, value): return value
         case = dict(input='kana', candidates=[dict(text='かな'), dict(text='仮名')])
         self.assertEqual(analyzer.pair_category(case, (0, 1), Converter()), 'kana-vs-kanji')
+        case['candidates'][0]['text'] = '・'
+        self.assertEqual(analyzer.pair_category(case, (0, 1), Converter()), 'other')
         case['candidates'] = [dict(text='仕様', kind='exact', reading='kana'), dict(text='使用', kind='exact', reading='kana')]
         self.assertEqual(analyzer.pair_category(case, (0, 1), Converter()), 'same-reading-dictionary')
         case['candidates'][1]['kind'] = 'prefix'

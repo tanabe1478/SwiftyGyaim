@@ -90,6 +90,7 @@ Release・既定重みの完全評価だけを対象にし、limit付き、欠�
 
 `summary.json`には全件/gap30ごとのモデル単体と本番式の良化・悪化・正解数差、
 本番順位が変わった例のカテゴリと相互作用を出す。
+`scoreAvailability`にはbase/Vごとの未採点候補数と、その候補を含むケース数も出す。
 
 - `kana-vs-kanji`: かなのみの表記と漢字を含む表記の対比。
 - `same-reading-dictionary`: exact/compound辞書候補で読みが入力と等価。同品詞・同義の保証ではない。

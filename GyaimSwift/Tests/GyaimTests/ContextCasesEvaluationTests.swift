@@ -85,8 +85,8 @@ final class ContextCasesEvaluationTests: XCTestCase {
         let romaKana = RomaKana()
         let decoder = JSONDecoder()
         let source = try String(contentsOfFile: casesPath, encoding: .utf8)
-        let lines = source.utf8.split(separator: 0x0A, omittingEmptySubsequences: false)
-            .map { String(decoding: $0, as: UTF8.self) }
+        let lines = try source.utf8.split(separator: 0x0A, omittingEmptySubsequences: false)
+            .map { try XCTUnwrap(String(bytes: $0, encoding: .utf8)) }
         #if DEBUG
         let configuration = "Debug"
         #else
