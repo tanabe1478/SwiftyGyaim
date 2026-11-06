@@ -82,7 +82,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 | File | Purpose |
 |------|---------|
 | CandidateWindow.swift | 候補ウィンドウ。リスト表示（縦、番号1-9、1ページ9候補）とクラシック表示（横並び、candwin.png背景、1ページ11候補）の2モード対応。候補数は無制限でスペースキー順送りによるページ送り。続きがある場合は末尾に▼インジケータを表示。`CandidateDisplayMode` enumで切り替え |
-| PreferencesWindow.swift | キーボードショートカット設定、候補表示スタイル切り替え（NSSegmentedControl）、候補トグル（クリップボード/選択テキスト）、Google変換設定（トリガー文字・ショートカット）、ログ管理UI。動的ウィンドウリサイズ対応 |
+| PreferencesWindow.swift / PreferencesSection.swift / PreferencesSections+*.swift / ShortcutRecorderRow.swift | 設定画面。`PreferencesSection` の派生（キー操作・候補・学習辞書・候補の並べ替え・接続辞書・ログ）を NSScrollView に縦に積む。全項目が変更時に即保存、「初期値に戻す」は `resettableKeys` 全部。単独キー（`;` / `q` / `X`）とショートカットの設定、Google トリガー文字、表示スタイル、接続辞書インポート、ログ管理 |
 | DictEditorWindow.swift | User dictionary editor (NSTableView), add/delete/save/reload |
 | KeyBindings.swift | Configurable shortcuts (hiragana/katakana/Google Transliterate), settings.json persistence (`GyaimKeyBindings`), single-key kana confirm |
 
@@ -100,7 +100,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（368テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、ContextCasesEvaluationTests は GYAIM_CONTEXT_EVAL=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（378テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、ContextCasesEvaluationTests は GYAIM_CONTEXT_EVAL=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -117,8 +117,8 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | SecureInputDiagnosticsTests | Tests/GyaimTests/ | 2 | Secure Input残留診断（メッセージ組立・再ログ判定） |
 | GoogleTransliterateTests | Tests/GyaimTests/ | 12 | フィルタ・候補ビルド・セグメント結合・トリガー設定 |
 | ExternalCandidateTests / ExternalCandidatePlacementTests | Tests/GyaimTests/ | 25 | `isValidExternalCandidate` + `buildPrefixCandidates`（外部候補は辞書の先頭候補の後ろ、登録は短い一行だけ。ADR-036） |
-| PreferencesWindowTests | Tests/GyaimTests/ | 22 | 設定画面UIテスト（初期状態・クリック操作・表示モード切替・淘汰方式・Cmd+W/Cmd+V） |
-| CandidateWindowTests | Tests/GyaimTests/ | 13 | 表示モード（リスト/クラシック）の切替・描画・最大候補数・ページ指標・位置計算 |
+| PreferencesWindowTests / PreferencesWindowBehaviorTests | Tests/GyaimTests/ | 30 | 設定画面UIテスト（初期状態・クリック即保存・表示モード/淘汰方式・単独キーの検証と保存・ショートカットの即保存・全項目リセット・画面に収まる高さ・ヒントの折り返し・Cmd+W/Cmd+V）。探索は `PreferencesWindowProbe` |
+| CandidateWindowTests / CandidateWindowDisplayModeTests | Tests/GyaimTests/ | 15 | 表示モード（リスト/クラシック）の切替・描画・最大候補数・ページ指標・位置計算、後から変わった表示モードへの追従（BUG-047） |
 | CandidateWindowBubbleTailTests | Tests/GyaimTests/ | 3 | 吹き出しのトンガリの向き（フリップ時に下向き・先端をキャレットに合わせる x オフセット・上下インセットの入れ替え・反転描画のピクセル検証） |
 | CopyTextTests | Tests/GyaimTests/ | 1 | CopyText ファイルI/Oとタイムスタンプ更新条件 |
 | RomaKanaTests | Tests/GyaimTests/ | 8 | ローマ字⇔かな変換の双方向テスト |
@@ -274,7 +274,7 @@ pi エージェントには同じワークフローが pi-context-workflow 拡�
 |------|-------------------|------|
 | [input-flow.md](docs/specs/input-flow.md) | GyaimController.swift, GyaimController+FastContextRerank.swift | キー入力→変換→確定フロー、routeEvent設計 |
 | [dictionary-system.md](docs/specs/dictionary-system.md) | WordSearch.swift, ConnectionDict.swift, RomaKana+KanaKey.swift | 3階層辞書、学習、ホットリロード |
-| [candidate-window.md](docs/specs/candidate-window.md) | CandidateWindow.swift, PreferencesWindow.swift | 候補表示モード、NSPanel制約 |
+| [candidate-window.md](docs/specs/candidate-window.md) | CandidateWindow.swift, CandidateWindowPositioner.swift, PreferencesWindow.swift, PreferencesSection*.swift, ShortcutRecorderRow.swift | 候補表示モード、NSPanel制約、設定画面の構成 |
 | [google-transliterate.md](docs/specs/google-transliterate.md) | GoogleTransliterate.swift | Google API連携、非同期処理、stale guard |
 | [imk-constraints.md](docs/specs/imk-constraints.md) | GyaimController.swift, AppDelegate.swift, main.swift | InputMethodKit固有の制約と回避策 |
 | [settings.md](docs/specs/settings.md) | GyaimSettings.swift（設定キーを追加・変更する全ファイル） | 設定ストア、全キー一覧と既定値、移行方針（ADR-027） |
