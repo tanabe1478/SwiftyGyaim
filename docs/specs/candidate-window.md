@@ -1,7 +1,7 @@
 # Spec: 候補ウィンドウ
 
-> Trigger: CandidateWindow.swift, ClassicBubbleBackground.swift, PreferencesWindow.swift
-> Last updated: 2026-11-03 (吹き出しのトンガリをキャレット側に向ける BubbleTailDirection、背景描画を ClassicBubbleBackground.swift へ。同日: 固定矩形の検出 — ADR-038)
+> Trigger: CandidateWindow.swift, CandidateWindowPositioner.swift, ClassicBubbleBackground.swift, PreferencesWindow.swift, PreferencesSection.swift, PreferencesSections+Input.swift, PreferencesSections+Ranking.swift, ShortcutRecorderRow.swift
+> Last updated: 2026-11-06 (表示モードの切替を全ウィンドウに届かせる appliedDisplayMode — BUG-047、設定画面をセクション型 + スクロールに作り直し、即時保存・全項目リセット・単独キーの設定 UI)
 
 ## 概要
 
@@ -62,50 +62,59 @@ Chrome の Google Docs は、実キャレットの矩形と、ウィンドウ左
 
 NSLayoutConstraintのactivation/deactivationで切り替え。list用のNSStackViewとclassic用のClassicBackgroundViewを両方保持し、表示時に切り替える。
 
-## PreferencesWindow: 接続辞書セクション
+候補ウィンドウはコントローラごとに 1 枚あり（`GyaimController.init` で生成）、設定画面から届くのは `CandidateWindow.shared`（最後に作られた 1 枚）だけ。そこで `applyDisplayMode()` が組み立てたモードを `appliedDisplayMode` に覚え、`updateCandidates` は設定の `CandidateDisplayMode.current` と違っていればその場で `applyDisplayMode()` を呼んでから文字を流し込む。以前は設定画面で切り替えた直後、別コントローラのウィンドウが旧モードの制約と表示 / 非表示のまま新モードで文字を流し込まれ、空の吹き出し（または空の灰色の箱）になっていた（BUG-047）。設定画面側は `CandidateDisplayMode.setCurrent` を呼ぶだけでよい。位置計算 `CandidateWindowPositioner` は `CandidateWindowPositioner.swift`。
 
-設定画面に「接続辞書」セクションを追加。
+## PreferencesWindow: 構成
 
-- URL入力欄: GictionaryリポジトリURLまたは `dict2.txt` raw URLを指定。空欄の場合は推奨raw URLを使う
-- 「インポート」ボタン: URLからダウンロードし、`~/.gyaim/connectiondict.txt` に変換・保存する
-- ステータス表示: 内蔵辞書/インポート辞書の利用状態、インポート件数、エラーを表示
-- 「内蔵辞書に戻す」ボタン: インポート済みファイルとURL設定を削除し、bundle内 `Resources/dict.txt` を再ロードする
+`PreferencesWindow`（PreferencesWindow.swift）は `NSScrollView` の中に `PreferencesSection` の派生クラスを縦に積む。ウィンドウは内容がすべて収まる高さで開き、収まらなければ画面の `visibleFrame` の 85% を上限にしてスクロールする（以前は固定座標の手書きレイアウトで高さ 1,434 pt、MacBook 単体では下のボタンに届かなかった）。幅は `contentWidth`（540）固定。下部のバーは「初期値に戻す」と「閉じる」（Return）だけ。
 
-詳細なフォーマットと読み込み優先順位は `dictionary-system.md` を参照。
+- `PreferencesSection`（PreferencesSection.swift）: 見出し + 縦の `NSStackView`。`addRow` / `addLabeledRow` / `addControlsRow` / `addIndentedRow` / `addHint`（11 pt の説明。`wrappingLabelWithString` + `preferredMaxLayoutWidth` で折り返す。以前は右端で切れていた）。派生クラスはコントロールを `let` で作ってから `super.init(title:)` し、行を追加する。`reload()` で設定を読み直す
+- `ClosureButton` / `ClosureSegmentedControl`: target/action を自分に向けてクロージャへ流す。テストは従来どおり `sendAction(_:to:)` / `performClick` で叩ける
+- 保存はすべて即時。チェックボックス・セグメント・単独キー・ショートカット行のどれも、変更した瞬間に `GyaimSettings` / `KeyBindings.save()` へ書く。「保存」ボタンは廃止（以前はショートカットとトリガー文字だけが「保存」待ちで、Cmd+W で閉じると黙って捨てられた）
+- 「初期値に戻す」は `KeyBindings.reset()` と `PreferencesWindow.resettableKeys` の全キー削除、その後 `sections.forEach { $0.reload() }`。`resettableKeys` は画面に出ている設定キーの一覧で、`GyaimSettings.knownKeys` に含まれることをテストが検査する（以前はショートカットと rerank 系 3 キーだけが戻った）
+- セクション順: キー操作 → 候補 → 学習辞書 → 候補の並べ替え → 接続辞書 → ログ
 
-## PreferencesWindow: 学習辞書セクション
+### キー操作（KeyOperationSection）
 
-候補セクションの下に「学習辞書」セクションを追加（ADR-014）。
+- ひらがな確定 / カタカナ確定 / 候補削除: `SingleKeyField`（ShortcutRecorderRow.swift）で単独キー（ASCII 1 文字、空欄で無効 = 0）を編集。編集終了時に `validateSingleKey` を通し、不正なら beep して元に戻す。`KeyBindings.hiraganaChar` / `katakanaChar` / `deleteCandidateChar` に保存。これまで単独キー（`;` / `q` / `X`）を変える UI はなかった
+- 各操作の `ShortcutListView`: 修飾キー付きショートカットの行（`ShortcutRecorderRow`、「記録」で次のキーを取る）と「+ 追加」。記録・追加・削除のたびに `onChange` で `KeyBindings` に保存。ひらがな / カタカナは最低 1 行を残す
+- Google 変換: トリガー文字（`validateTrigger`: 英数字以外の ASCII 記号 1 文字。以前は不正値を黙って無視した）と、起動ショートカットの一覧
 
-- **淘汰方式**: NSSegmentedControl（3セグメント: MRU / 淘汰なし / スコアベース）
-- 設定キー: `studyDictEvictionMode` (Int, 0=mru, 1=none, 2=scoreBased, デフォルト0)
-- `changeEvictionMode(_:)` アクションで即座に `~/.gyaim/settings.json` に保存
-- レイアウトは `layoutContent()` の 1 箇所に集約。`buildUI()` は KeyBindings から recorder 行を作ってから、`rebuildLayout()` は既存行を保ったまま subview を全消去してから、同じ `layoutContent()` を呼ぶ
-- **平仮名学習**: チェックボックス「平仮名の確定を学習する」（デフォルトON）
-- 設定キー: `studyHiraganaEnabled` (Bool, デフォルトtrue)
-- `toggleStudyHiragana(_:)` アクションで即座に設定ファイルに保存
-- **完全一致reading優先**: チェックボックス「完全一致の読みを優先する」（デフォルトOFF、ADR-016/017）
-- 設定キー: `exactReadingMatchPriority` (Bool, デフォルトfalse)
-- `toggleExactReadingMatchPriority(_:)` アクションで即座に設定ファイルに保存
-- ON時は前方一致検索 (searchMode==0) で4バケット順序 (study-exact → local-exact → study-prefix → local-prefix → connection) で候補を並べる（詳細は dictionary-system.md）
-- **疑わしい学習エントリを確認...** ボタン: `StudySuspectsWindow.show()` で typo確定・長期未使用の学習語を一覧し、選択削除できる（dictionary-system.md「StudySuspects」）
-- **通常入力で軽量rerankを使う**: チェックボックス（デフォルトON）
-- 設定キー: `aiRerankFastContextEnabled` (Bool, デフォルトtrue)
-- `toggleFastContextRerank(_:)` アクションで即座に設定ファイルに保存
-- **軽量rerankでモデルbackendを使う（実験的）**: チェックボックス（デフォルトOFF）
-- 設定キー: `aiRerankUseModelForFastContext` (Bool, デフォルトfalse)
-- **軽量rerankのレイテンシをログに出す**: チェックボックス（デフォルトOFF）
-- 設定キー: `aiRerankFastContextLoggingEnabled` (Bool, デフォルトfalse)
-- ログ出力は入力ごとに発生するため既定OFF。dogfoodや性能確認時だけONにする
+### 候補（CandidateSection）
 
-## PreferencesWindow: AI・文脈学習セクション（issue #61）
+- 表示スタイル: NSSegmentedControl（リスト表示 / クラシック表示）。設定キー `candidateDisplayMode`。候補ウィンドウ側の追従は「モード切替の実装」
+- クリップボード候補 / 選択テキスト候補のチェックボックス
 
-学習辞書セクションの下に「AI・文脈学習」セクションを追加。
+### 学習辞書（StudySection）
 
-- **AIモデル（同梱Zenz）で候補を評価する**: チェックボックス（デフォルトON）。設定キー `aiRerankUseBundledZenz`。OFFでTab・同音異義語レビューがheuristicのみになる
-- **文脈学習を使う**: チェックボックス（デフォルトON）。設定キー `contextLearningEnabled`。OFFで ContextDict の記録・affinity参照を停止（既存エントリは保持され、再ONで復活）
-- **学習済みの文脈: N件** ラベル + **文脈学習をクリア** ボタン: `ContextDict.shared.clear()` で全エントリ削除
-- 実験的パラメータ（margin・閾値・候補数上限）は設定ファイルのみで、UIには露出しない
+- 淘汰方式: NSSegmentedControl（MRU / 淘汰なし / スコアベース）。設定キー `studyDictEvictionMode`（ADR-014 / 025）
+- 平仮名の確定を学習する（`studyHiraganaEnabled`、既定 ON）
+- 完全一致の読みを優先する（`exactReadingMatchPriority`、既定 OFF、ADR-016/017。ON で study-exact → local-exact → study-prefix → local-prefix → connection の 4 バケット順）
+- 「疑わしい学習エントリを確認...」（`StudySuspectsWindow.show()`）と「ユーザー辞書を編集...」（`DictEditorWindow.show()`）
+
+### 候補の並べ替え（RankingSection）
+
+旧「AI・文脈学習」セクション（issue #61）と学習辞書セクションの rerank 項目を 1 つにまとめ、文言を ADR-032 以降の実態に合わせた。
+
+- 通常入力で候補を並べ替える（`aiRerankFastContextEnabled`、既定 ON）
+- 並べ替えに同梱モデルを使う（`aiRerankUseModelForFastContext`、既定 OFF）。ON で辞書候補を一括採点し、学習頻度・文脈学習・複合語の加点と合わせて並べる（ADR-032）
+- 同梱モデルを読み込む（`aiRerankUseBundledZenz`、既定 ON）。OFF でモデル経路を止める。旧文言「AIモデル（同梱Zenz）で候補を評価する」は gyaim-lm への置き換え後に実態と合わなくなっていた
+- 並べ替えのレイテンシと順序をログに出す（`aiRerankFastContextLoggingEnabled`、既定 OFF。入力ごとに出るため）
+- 文脈学習を使う（`contextLearningEnabled`、既定 ON、ADR-020）。OFF で ContextDict の記録・affinity 参照を停止（既存エントリは保持）。「学習済みの文脈: N件」と「文脈学習をクリア」（`ContextDict.shared.clear()`）
+- 実験的パラメータ（margin・閾値・候補数上限・重み）は設定ファイルのみで、UI には出さない
+
+### 接続辞書（ConnectionDictSection）
+
+- URL 入力欄: Gictionary リポジトリ URL または `dict2.txt` raw URL。空欄なら推奨 raw URL
+- 「インポート」: ダウンロードして `~/.gyaim/connectiondict.txt` に変換・保存し、`GyaimController.reloadConnectionDictionary()` で即反映
+- ステータス: 内蔵辞書 / インポート辞書（サイズ）、インポート件数、エラー
+- 「内蔵辞書に戻す」: インポート済みファイルと URL 設定を削除し、bundle の辞書を再ロード
+
+フォーマットと読み込み順は `dictionary-system.md`。
+
+### ログ（LogSection）
+
+- ロギングを有効にする（`loggingEnabled`）、gyaim.log のサイズ、「ログを削除」「Finder で表示」
 
 ## PreferencesWindow: 標準Commandショートカット
 

@@ -1,57 +1,44 @@
 @testable import Gyaim
 import XCTest
 
+/// Toggles and selectors: default state, reflecting a pre-set value, and
+/// saving on click. Key operations, reset and layout are in
+/// PreferencesWindowBehaviorTests.
 final class PreferencesWindowTests: XCTestCase {
 
-    private var window: PreferencesWindow!
+    private lazy var window = PreferencesWindow()
+    private var probe: PreferencesWindowProbe { PreferencesWindowProbe(window: window) }
+    private let keys = PreferencesWindow.resettableKeys
 
     override func setUp() {
         super.setUp()
-        // Reset UserDefaults to ensure clean state
-        UserDefaults.standard.removeObject(forKey: "clipboardCandidateEnabled")
-        UserDefaults.standard.removeObject(forKey: "selectedTextCandidateEnabled")
-        UserDefaults.standard.removeObject(forKey: "candidateDisplayMode")
-        UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
-        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled")
-        UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
-        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
-        UserDefaults.standard.removeObject(forKey: "aiRerankUseBundledZenz")
-        UserDefaults.standard.removeObject(forKey: "contextLearningEnabled")
-        window = PreferencesWindow()
+        keys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
     }
 
     override func tearDown() {
         window.close()
         PreferencesWindow.shared = nil
-        window = nil
-        UserDefaults.standard.removeObject(forKey: "clipboardCandidateEnabled")
-        UserDefaults.standard.removeObject(forKey: "selectedTextCandidateEnabled")
-        UserDefaults.standard.removeObject(forKey: "candidateDisplayMode")
-        UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
-        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextEnabled")
-        UserDefaults.standard.removeObject(forKey: "aiRerankUseModelForFastContext")
-        UserDefaults.standard.removeObject(forKey: "aiRerankFastContextLoggingEnabled")
-        UserDefaults.standard.removeObject(forKey: "aiRerankUseBundledZenz")
-        UserDefaults.standard.removeObject(forKey: "contextLearningEnabled")
+        keys.forEach { UserDefaults.standard.removeObject(forKey: $0) }
         super.tearDown()
     }
 
-    // MARK: - AI section (issue #61)
-
-    func testAIModelTogglesExistWithDefaults() {
-        let zenz = findCheckbox(titled: "AIモデル（同梱Zenz）で候補を評価する")
-        let learning = findCheckbox(titled: "文脈学習を使う（確定した文脈で同音異義語を選ぶ）")
-
-        XCTAssertEqual(zenz?.state, .on, "bundled Zenz defaults to on")
-        XCTAssertNil(findCheckbox(titled: "Tabで辞書から追加候補を選ぶ（辞書制約付き生成）"),
-                     "generation toggle was removed with the Tab pipeline (ADR-024)")
-        XCTAssertEqual(learning?.state, .on, "context learning defaults to on")
-        XCTAssertNotNil(findLabel(containing: "学習済みの文脈"))
+    private func reopen() {
+        window.close()
+        window = PreferencesWindow()
     }
 
-    func testBundledZenzToggleRoundTrips() throws {
-        let toggle = try XCTUnwrap(findCheckbox(titled: "AIモデル（同梱Zenz）で候補を評価する"))
+    // MARK: - Ranking section
 
+    func testRankingTogglesExistWithDefaults() {
+        XCTAssertEqual(probe.checkbox(titled: "同梱モデルを読み込む")?.state, .on, "bundled model defaults to on")
+        XCTAssertEqual(probe.checkbox(titled: "文脈学習を使う")?.state, .on, "context learning defaults to on")
+        XCTAssertNil(probe.checkbox(titled: "Tabで辞書から追加候補を選ぶ（辞書制約付き生成）"),
+                     "generation toggle was removed with the Tab pipeline (ADR-024)")
+        XCTAssertNotNil(probe.label(containing: "学習済みの文脈"))
+    }
+
+    func testBundledModelToggleRoundTrips() throws {
+        let toggle = try XCTUnwrap(probe.checkbox(titled: "同梱モデルを読み込む"))
         toggle.performClick(nil)
         XCTAssertFalse(GyaimController.isBundledZenzEnabled)
         toggle.performClick(nil)
@@ -59,282 +46,128 @@ final class PreferencesWindowTests: XCTestCase {
     }
 
     func testContextLearningToggleRoundTrips() throws {
-        let toggle = try XCTUnwrap(findCheckbox(titled: "文脈学習を使う（確定した文脈で同音異義語を選ぶ）"))
-
+        let toggle = try XCTUnwrap(probe.checkbox(titled: "文脈学習を使う"))
         toggle.performClick(nil)
         XCTAssertFalse(ContextDict.isEnabled)
         toggle.performClick(nil)
         XCTAssertTrue(ContextDict.isEnabled)
     }
 
-    // MARK: - Helpers
-
-    /// Find a checkbox (NSButton) by its title in the window's content view hierarchy.
-    private func findCheckbox(titled title: String) -> NSButton? {
-        guard let contentView = window.contentView else { return nil }
-        return findButton(in: contentView, titled: title)
-    }
-
-    private func findSegmentedControl() -> NSSegmentedControl? {
-        guard let contentView = window.contentView else { return nil }
-        return findSegmented(in: contentView)
-    }
-
-    private func findSegmented(in view: NSView) -> NSSegmentedControl? {
-        for subview in view.subviews {
-            if let sc = subview as? NSSegmentedControl {
-                return sc
-            }
-            if let found = findSegmented(in: subview) {
-                return found
-            }
-        }
-        return nil
-    }
-
-    private func findLabel(containing text: String) -> NSTextField? {
-        guard let contentView = window.contentView else { return nil }
-        return findTextField(in: contentView) { $0.stringValue.contains(text) }
-    }
-
-    private func findTextField(in view: NSView, matching predicate: (NSTextField) -> Bool) -> NSTextField? {
-        for subview in view.subviews {
-            if let textField = subview as? NSTextField, predicate(textField) {
-                return textField
-            }
-            if let found = findTextField(in: subview, matching: predicate) {
-                return found
-            }
-        }
-        return nil
-    }
-
-    private func findButton(in view: NSView, titled title: String) -> NSButton? {
-        for subview in view.subviews {
-            if let button = subview as? NSButton, button.title == title {
-                return button
-            }
-            if let found = findButton(in: subview, titled: title) {
-                return found
-            }
-        }
-        return nil
-    }
-
-    private func commandKeyEvent(_ key: String,
-                                 modifiers: NSEvent.ModifierFlags = .command,
-                                 keyCode: UInt16 = 0) -> NSEvent {
-        NSEvent.keyEvent(with: .keyDown,
-                         location: .zero,
-                         modifierFlags: modifiers,
-                         timestamp: 0,
-                         windowNumber: window.windowNumber,
-                         context: nil,
-                         characters: key,
-                         charactersIgnoringModifiers: key.lowercased(),
-                         isARepeat: false,
-                         keyCode: keyCode)!
-    }
-
-    // MARK: - Default state (both ON when UserDefaults unset)
+    // MARK: - Default state
 
     func testClipboardToggleDefaultOn() {
-        let toggle = findCheckbox(titled: "クリップボードの内容を候補に表示する")!
-        XCTAssertEqual(toggle.state, .on, "デフォルトでONであるべき")
+        XCTAssertEqual(probe.checkbox(titled: "クリップボードの内容を候補に表示する")?.state, .on)
     }
 
     func testSelectedTextToggleDefaultOn() {
-        let toggle = findCheckbox(titled: "選択テキストを候補に表示する")!
-        XCTAssertEqual(toggle.state, .on, "デフォルトでONであるべき")
+        XCTAssertEqual(probe.checkbox(titled: "選択テキストを候補に表示する")?.state, .on)
     }
 
     func testFastContextRerankToggleDefaultOn() {
-        let toggle = findCheckbox(titled: "通常入力で軽量rerankを使う")!
-        XCTAssertEqual(toggle.state, .on, "軽量rerankはデフォルトでONであるべき")
+        XCTAssertEqual(probe.checkbox(titled: "通常入力で候補を並べ替える")?.state, .on)
     }
 
     func testFastContextRerankModelToggleDefaultOff() {
-        let toggle = findCheckbox(titled: "軽量rerankでモデルbackendを使う（実験的）")!
-        XCTAssertEqual(toggle.state, .off, "モデルbackendはデフォルトでOFFであるべき")
+        XCTAssertEqual(probe.checkbox(titled: "並べ替えに同梱モデルを使う")?.state, .off)
     }
 
     func testFastContextRerankLoggingToggleDefaultOff() {
-        let toggle = findCheckbox(titled: "軽量rerankのレイテンシをログに出す")!
-        XCTAssertEqual(toggle.state, .off, "軽量rerankログはデフォルトでOFFであるべき")
+        XCTAssertEqual(probe.checkbox(titled: "並べ替えのレイテンシと順序をログに出す")?.state, .off)
     }
 
-    // MARK: - Toggle reflects pre-set UserDefaults
+    func testStudyHiraganaToggleDefaultOn() {
+        XCTAssertEqual(probe.checkbox(titled: "平仮名の確定を学習する")?.state, .on)
+    }
+
+    func testDisplayModeControlDefaultIsClassic() throws {
+        XCTAssertEqual(try XCTUnwrap(probe.displayModeControl).selectedSegment, 1,
+                       "デフォルトはクラシック表示（セグメント1）であるべき")
+    }
+
+    func testEvictionModeControlDefaultValue() throws {
+        XCTAssertEqual(try XCTUnwrap(probe.evictionModeControl).selectedSegment, EvictionMode.mru.rawValue,
+                       "デフォルトはMRU（セグメント0）であるべき")
+    }
+
+    // MARK: - Toggle reflects pre-set settings
 
     func testClipboardToggleReflectsDisabledSetting() {
-        window.close()
         GyaimController.setClipboardCandidateEnabled(false)
-        window = PreferencesWindow()
-
-        let toggle = findCheckbox(titled: "クリップボードの内容を候補に表示する")!
-        XCTAssertEqual(toggle.state, .off, "UserDefaultsがfalseならOFFであるべき")
+        reopen()
+        XCTAssertEqual(probe.checkbox(titled: "クリップボードの内容を候補に表示する")?.state, .off)
     }
 
     func testSelectedTextToggleReflectsDisabledSetting() {
-        window.close()
         GyaimController.setSelectedTextCandidateEnabled(false)
-        window = PreferencesWindow()
-
-        let toggle = findCheckbox(titled: "選択テキストを候補に表示する")!
-        XCTAssertEqual(toggle.state, .off, "UserDefaultsがfalseならOFFであるべき")
+        reopen()
+        XCTAssertEqual(probe.checkbox(titled: "選択テキストを候補に表示する")?.state, .off)
     }
 
-    // MARK: - Click toggle updates UserDefaults
+    // MARK: - Clicking a control saves immediately
 
-    func testClickClipboardToggleUpdatesUserDefaults() {
-        let toggle = findCheckbox(titled: "クリップボードの内容を候補に表示する")!
-        // Simulate click: toggle OFF
-        toggle.state = .off
-        toggle.sendAction(toggle.action, to: toggle.target)
+    func testClickClipboardToggleUpdatesSettings() throws {
+        let toggle = try XCTUnwrap(probe.checkbox(titled: "クリップボードの内容を候補に表示する"))
+        click(toggle, to: .off)
         XCTAssertFalse(GyaimController.isClipboardCandidateEnabled)
-
-        // Simulate click: toggle ON
-        toggle.state = .on
-        toggle.sendAction(toggle.action, to: toggle.target)
+        click(toggle, to: .on)
         XCTAssertTrue(GyaimController.isClipboardCandidateEnabled)
     }
 
-    func testClickSelectedTextToggleUpdatesUserDefaults() {
-        let toggle = findCheckbox(titled: "選択テキストを候補に表示する")!
-        toggle.state = .off
-        toggle.sendAction(toggle.action, to: toggle.target)
+    func testClickSelectedTextToggleUpdatesSettings() throws {
+        let toggle = try XCTUnwrap(probe.checkbox(titled: "選択テキストを候補に表示する"))
+        click(toggle, to: .off)
         XCTAssertFalse(GyaimController.isSelectedTextCandidateEnabled)
-
-        toggle.state = .on
-        toggle.sendAction(toggle.action, to: toggle.target)
+        click(toggle, to: .on)
         XCTAssertTrue(GyaimController.isSelectedTextCandidateEnabled)
     }
 
-    func testClickFastContextRerankToggleUpdatesUserDefaults() {
-        let toggle = findCheckbox(titled: "通常入力で軽量rerankを使う")!
-        toggle.state = .off
-        toggle.sendAction(toggle.action, to: toggle.target)
+    func testClickFastContextRerankToggleUpdatesSettings() throws {
+        let toggle = try XCTUnwrap(probe.checkbox(titled: "通常入力で候補を並べ替える"))
+        click(toggle, to: .off)
         XCTAssertFalse(GyaimController.isFastContextRerankEnabled)
-
-        toggle.state = .on
-        toggle.sendAction(toggle.action, to: toggle.target)
+        click(toggle, to: .on)
         XCTAssertTrue(GyaimController.isFastContextRerankEnabled)
     }
 
-    func testClickFastContextRerankModelToggleUpdatesUserDefaults() {
-        let toggle = findCheckbox(titled: "軽量rerankでモデルbackendを使う（実験的）")!
-        toggle.state = .on
-        toggle.sendAction(toggle.action, to: toggle.target)
+    func testClickFastContextRerankModelToggleUpdatesSettings() throws {
+        let toggle = try XCTUnwrap(probe.checkbox(titled: "並べ替えに同梱モデルを使う"))
+        click(toggle, to: .on)
         XCTAssertTrue(GyaimController.isFastContextRerankModelEnabled)
-
-        toggle.state = .off
-        toggle.sendAction(toggle.action, to: toggle.target)
+        click(toggle, to: .off)
         XCTAssertFalse(GyaimController.isFastContextRerankModelEnabled)
     }
 
-    func testClickFastContextRerankLoggingToggleUpdatesUserDefaults() {
-        let toggle = findCheckbox(titled: "軽量rerankのレイテンシをログに出す")!
-        toggle.state = .on
-        toggle.sendAction(toggle.action, to: toggle.target)
+    func testClickFastContextRerankLoggingToggleUpdatesSettings() throws {
+        let toggle = try XCTUnwrap(probe.checkbox(titled: "並べ替えのレイテンシと順序をログに出す"))
+        click(toggle, to: .on)
         XCTAssertTrue(GyaimController.isFastContextRerankLoggingEnabled)
-
-        toggle.state = .off
-        toggle.sendAction(toggle.action, to: toggle.target)
+        click(toggle, to: .off)
         XCTAssertFalse(GyaimController.isFastContextRerankLoggingEnabled)
     }
 
-    // MARK: - Display mode control
-
-    func testDisplayModeControlDefaultIsClassic() {
-        let control = findSegmentedControl()!
-        XCTAssertEqual(control.selectedSegment, 1, "デフォルトはクラシック表示（セグメント1）であるべき")
+    func testClickStudyHiraganaToggleUpdatesSettings() throws {
+        let toggle = try XCTUnwrap(probe.checkbox(titled: "平仮名の確定を学習する"))
+        click(toggle, to: .off)
+        XCTAssertFalse(WordSearch.isStudyHiraganaEnabled)
+        click(toggle, to: .on)
+        XCTAssertTrue(WordSearch.isStudyHiraganaEnabled)
     }
 
-    func testClickDisplayModeControlUpdatesUserDefaults() {
-        let control = findSegmentedControl()!
-        // Select classic
+    func testClickDisplayModeControlUpdatesSettings() throws {
+        let control = try XCTUnwrap(probe.displayModeControl)
         control.selectedSegment = 1
         control.sendAction(control.action, to: control.target)
         XCTAssertEqual(CandidateDisplayMode.current, .classic)
 
-        // Select list
         control.selectedSegment = 0
         control.sendAction(control.action, to: control.target)
         XCTAssertEqual(CandidateDisplayMode.current, .list)
     }
 
-    // MARK: - Eviction mode control
-
-    private func findAllSegmentedControls(in view: NSView) -> [NSSegmentedControl] {
-        var results: [NSSegmentedControl] = []
-        for subview in view.subviews {
-            if let sc = subview as? NSSegmentedControl {
-                results.append(sc)
-            }
-            results.append(contentsOf: findAllSegmentedControls(in: subview))
-        }
-        return results
-    }
-
-    private func findEvictionModeControl() -> NSSegmentedControl? {
-        guard let contentView = window.contentView else { return nil }
-        let all = findAllSegmentedControls(in: contentView)
-        // The eviction mode control has 3 segments (MRU, 淘汰なし, スコアベース)
-        return all.first { $0.segmentCount == 3 }
-    }
-
-    func testEvictionModeControlDefaultValue() {
-        UserDefaults.standard.removeObject(forKey: "studyDictEvictionMode")
-        window.close()
-        window = PreferencesWindow()
-        let control = findEvictionModeControl()!
-        XCTAssertEqual(control.selectedSegment, EvictionMode.mru.rawValue,
-                       "デフォルトはMRU（セグメント0）であるべき")
-    }
-
-    // MARK: - Study Hiragana Toggle
-
-    func testStudyHiraganaToggleDefaultOn() {
-        UserDefaults.standard.removeObject(forKey: "studyHiraganaEnabled")
-        window.close()
-        window = PreferencesWindow()
-        let toggle = findCheckbox(titled: "平仮名の確定を学習する")!
-        XCTAssertEqual(toggle.state, .on, "デフォルトでONであるべき")
-    }
-
-    func testClickStudyHiraganaToggleUpdatesUserDefaults() {
-        let toggle = findCheckbox(titled: "平仮名の確定を学習する")!
-        toggle.state = .off
-        toggle.sendAction(toggle.action, to: toggle.target)
-        XCTAssertFalse(WordSearch.isStudyHiraganaEnabled)
-
-        toggle.state = .on
-        toggle.sendAction(toggle.action, to: toggle.target)
-        XCTAssertTrue(WordSearch.isStudyHiraganaEnabled)
-    }
-
-    // MARK: - Standard command shortcuts
-
-    func testCommandWClosesPreferencesWindowViaKeyEquivalent() {
-        window.makeKeyAndOrderFront(nil)
-        XCTAssertTrue(window.isVisible)
-
-        XCTAssertTrue(window.performKeyEquivalent(with: commandKeyEvent("w")))
-
-        XCTAssertFalse(window.isVisible)
-    }
-
-    func testCommandVDispatchesStandardPasteActionToFirstResponder() {
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 160, height: 24))
-        window.contentView?.addSubview(textField)
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        XCTAssertTrue(window.makeFirstResponder(textField))
-
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString("貼り付け", forType: .string)
-
-        XCTAssertTrue(window.performKeyEquivalent(with: commandKeyEvent("v")))
-
-        XCTAssertEqual(textField.stringValue, "貼り付け")
+    func testClickEvictionModeControlUpdatesSettings() throws {
+        let control = try XCTUnwrap(probe.evictionModeControl)
+        control.selectedSegment = EvictionMode.scoreBased.rawValue
+        control.sendAction(control.action, to: control.target)
+        XCTAssertEqual(EvictionMode.current, .scoreBased)
     }
 }

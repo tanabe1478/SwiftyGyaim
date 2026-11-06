@@ -283,7 +283,7 @@ override func close() {
 }
 ```
 
-UIはコードで組み立てています。各設定は対応する型のstatic setterに流れます。
+UIはコードで組み立てています。`PreferencesSection` の派生クラス（PreferencesSections+Input.swift / +Ranking.swift）が 1 セクションずつ行を積み、`PreferencesWindow` がそれを `NSScrollView` に縦に並べます。各設定は変更された瞬間に対応する型のstatic setterに流れます（保存ボタンはありません）。
 
 例:
 

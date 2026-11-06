@@ -42,7 +42,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 - `Sources/Gyaim/GyaimController.swift`: IME入力処理の中心
 - `Sources/Gyaim/WordSearch.swift` + `ConnectionDict.swift`: 3層辞書
 - `Sources/Gyaim/CandidateWindow.swift`: 候補UI
-- `Sources/Gyaim/PreferencesWindow.swift`: 設定UI
+- `Sources/Gyaim/PreferencesWindow.swift` + `PreferencesSection*.swift`: 設定UI（セクション型をスクロールに積む）
 - `Sources/Gyaim/GoogleTransliterate.swift`: Google候補補完
 
 辞書優先度:
@@ -66,7 +66,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 |------|---------|
 | `docs/specs/input-flow.md` | `GyaimController.swift` |
 | `docs/specs/dictionary-system.md` | `WordSearch.swift`, `ConnectionDict.swift` |
-| `docs/specs/candidate-window.md` | `CandidateWindow.swift`, `PreferencesWindow.swift` |
+| `docs/specs/candidate-window.md` | `CandidateWindow.swift`, `CandidateWindowPositioner.swift`, `PreferencesWindow.swift`, `PreferencesSection*.swift` |
 | `docs/specs/google-transliterate.md` | `GoogleTransliterate.swift` |
 | `docs/specs/imk-constraints.md` | `GyaimController.swift`, `AppDelegate.swift`, `main.swift` |
 | `docs/specs/settings.md` | `GyaimSettings.swift`、設定キー変更時 |
