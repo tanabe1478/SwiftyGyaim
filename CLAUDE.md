@@ -100,7 +100,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（378テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、ContextCasesEvaluationTests は GYAIM_CONTEXT_EVAL=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（379テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、ContextCasesEvaluationTests は GYAIM_CONTEXT_EVAL=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -125,7 +125,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | WordSearchTests / WordSearchCorrectionTests | Tests/GyaimTests/ | 50 | 辞書検索（前方一致・完全一致・登録・トリガーサフィックス・study・eviction・削除・ソースタグ）、`unstudy`（ADR-037） |
 | ContextDictTests | Tests/GyaimTests/ | 10 | 文脈条件付き学習（contextKey・affinity・永続化・削除・減衰・上限・`unrecord`） |
 | StudyEntryTests | Tests/GyaimTests/ | 6 | StudyEntryスコア計算・EvictionMode既定値・ファイルI/O |
-| ConnectionDictTests | Tests/GyaimTests/ | 10 | 連接辞書の検索・同梱辞書の語彙回帰・制約付き合成・サ変名詞+する（ADR-030） |
+| ConnectionDictTests | Tests/GyaimTests/ | 11 | 連接辞書の検索・同梱辞書の語彙回帰・制約付き合成・サ変名詞+する（ADR-030）・連用形+なる（ADR-041） |
 | KanaKeyConversionTests / ConnectionDictKanaKeyTests | Tests/GyaimTests/ | 10 | ローマ字→かなキー変換（末尾文字の扱い）、綴りの揺れが同じエントリに届くこと、複数ファイルの読み込み順（ADR-033 / 034） |
 | DictionarySearchGoldenTests | Tests/GyaimTests/ | 1 | 変更前の検索結果（268クエリ×上位150件）が同じ相対順で含まれること |
 | DictionarySearchBenchmarkTests | Tests/GyaimTests/ | 1 | 辞書検索の内訳ベンチマーク（`GYAIM_DICT_BENCH=1` のときだけ実行） |
@@ -210,7 +210,8 @@ docs/adr/
 ├── 037-undo-learning-on-retype.md
 ├── 038-stale-caret-rect-detection.md
 ├── 039-raw-hiragana-penalty.md
-└── 040-compound-completion-bonus.md
+├── 040-compound-completion-bonus.md
+└── 041-renyokei-naru-connection.md
 ```
 
 ## Logging & Monitoring
@@ -286,7 +287,7 @@ pi エージェントには同じワークフローが pi-context-workflow 拡�
 
 ### Tier 3: オンデマンド検索 → `docs/adr/`
 
-- `docs/adr/` — 設計判断の経緯（000-040）。目次と運用ルールは `docs/adr/README.md`
+- `docs/adr/` — 設計判断の経緯（000-041）。目次と運用ルールは `docs/adr/README.md`
 
 ### 自動チェック（hooks — `.claude/settings.json`）
 
