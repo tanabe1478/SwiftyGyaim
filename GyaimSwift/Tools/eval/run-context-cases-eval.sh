@@ -5,6 +5,8 @@
 #
 #   Tools/eval/run-context-cases-eval.sh [report.json]
 #   GYAIM_CONTEXT_EVAL_MODEL=/path/model.gguf GYAIM_CONTEXT_EVAL_SUBSET=gap30 Tools/eval/run-context-cases-eval.sh
+# Optional private case diagnostics: GYAIM_CONTEXT_EVAL_TRACE=/new/path/trace.jsonl
+# See Tools/model-training/NATIVE-ANALYSIS.md. Trace timing is diagnostic only.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 

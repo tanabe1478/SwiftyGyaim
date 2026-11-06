@@ -1,7 +1,7 @@
 # Spec: Zenz / Zenzai model tuning for SwiftyGyaim
 
 > Status: Draft
-> Last updated: 2026-11-03 (ドメイン SFT データの作り方、固定評価と選好ペアの抽出、GGUF の本番式評価ハーネス — issue #125)
+> Last updated: 2026-11-04 (issue #125: nativeケース別trace・本番順位の退行分析)
 > Trigger: Zenzai / zenz model investigation, GGUF model replacement, AIReranker / ZenzRuntime training workflow, pi-tinker suitability review
 
 ## 目的
@@ -17,6 +17,27 @@ SwiftyGyaim で使うモデル（2026-09-05以降は同梱を廃止し、`custom
 5. pi-tinker が使える範囲・使わない範囲を明確にする
 
 ## 用語
+
+Issue #125のHF文脈評価は、既定の`--text-preprocessing hf`と、Swiftの空白/LF処理を
+再現する`native-whitespace`を明示的に区別する。後者は文脈短縮後にpromptと候補の
+双方を変換する。exportにモードを記録し、異なるモード・計算精度の結果を直接比較しない。
+どちらもHF-proxyであり、Macのnative採点・本番順位・速度の確認は別途必要（BUG-045）。
+
+選好学習の`--trainable attention`はGPT2の各block内Attention projectionだけを更新する。
+既定`all`は従来どおり全parameterを更新する。更新範囲をmanifestへ保存し、
+埋め込み・MLP等を固定する実験と通常学習を区別する。推論時の採点式は共通。
+
+選好・蒸留学習の`--dropout`はGPT2のattention/embedding/residual dropoutを
+モデル構築前に一括設定する。省略時は初期モデルの設定を維持する。
+有限値の0以上1未満だけを受け付け、元設定・指定値・有効設定をmanifestへ記録する。
+checkpoint/finalのconfigにも保存し、再読み込み時に反映する。
+`--dropout 0`は保持損失に入る確率的変動を除く比較実験用であり、
+推論精度の改善を保証しない。eval時の採点式・モデル重みの初期値は変えない。
+
+`--deterministic-prior`は候補蒸留専用で、文脈ありforwardは学習モードを保ち、
+文脈なし保持forwardだけevalモードで計算する。勾配は無効化せず、例外時も各moduleの
+元の状態を復元する。評価時は従来の一括forwardを使う。既定は無効でmanifestへ記録する。
+再計算時のモード不一致を避けるためgradient checkpointingとの併用を拒否する。
 
 | 用語 | 意味 |
 | --- | --- |
@@ -253,7 +274,68 @@ RL は最後に検討する。
 
 ## 評価データ仕様
 
+### Issue #125 の固定評価と学習分割
+
+候補学習の読み・chosen/rejectedは`pair_key`のNFCとカタカナ正規化を適用してから
+holdout照合・分割hash・重複除外・モデル入力に使う。正規化後に等価な候補のペアは除外する（BUG-046）。
+
+`--context-policy long-context`は元文脈11文字以上の行を選び、末尾20文字だけを
+保持する追加学習の比較用レシピ。元モデルから再開して短文脈中心のSFTとの得失を調べる。
+固定benchmarkを反復使用して得た改善を独立確認済みとは扱わない。
+
+`prepare_context_training.py` は固定context-casesを必須入力とし、補正後truthと
+補正前chosenの両方の（読み, 表記）を学習・validationから全て除く。読みは
+RomaKanaで変換し、ひらがなをカタカナに揃え、NFCで比較する。
+これは同一確定イベントだけの除外より保守的で、残るデータ量をmanifestで確認する。
+
+文脈0/5/10/20文字の変種は（読み, 正解）単位のseed付きhashでtrain/validationに
+振り分ける。公開リプレイも同じ分割・除外を適用し、domain oversamplingは分割後に行う。
+従来の`prepare_dataset.py`の行単位分割は、この実験のドメインデータには使わない。
+
+`evaluate_context_cases.py` は固定ファイルとcaseごとのhashを照合し、候補集合を
+変更しない。候補ありの全例と文脈内30秒以上の空きのある例で文脈長別に集計する。
+候補外のtruth・採点不能も失敗として母数に残す。欠落したケースや長さのscore exportは拒否する。
+
+HFはモデル点数のproxy評価のみ。本番式は`LlamaZenzContext.scoreBatch`による
+score exportのproductionScores/productionOrderが全件ある場合のみ表示する。
+Swiftの安全規則・heuristic tie-break・複合語加点を省略した近似値で代用しない。
+native export生成とmacOS latency検証は別途必要で、Windows/HF結果で採用判定しない。
+入出力仕様と残作業は`Tools/model-training/ISSUE-125.md`に記載する。
+
 最初の成果物はモデルではなく eval dataset である。
+
+#### native本番順位の退行診断
+
+`ContextCasesEvaluationTests`は`GYAIM_CONTEXT_EVAL_TRACE`指定時だけprivate JSONL traceを出す。
+同じscoreBatchから得たモデル点数と`llmPrimaryOrder`の本番点数・全順位、heuristic順位、
+加減点成分を保存し、点数の再合成一致を確認する。追加のモデル採点とランキング規則変更はない。
+元JSONLの物理行番号とLFを除いた行bytesのSHA256で対応し、入力文や候補の生文字列は含めない。
+完了summaryを持つファイルだけを正式名にし、既存ファイルの上書きを拒否する。
+
+`analyze_native_context.py`は元ケースhash、モデルhashの存在、辞書・関連source・OS・設定の一致、
+全件coverage、点数・順列・tie・集計値を検証してから本番式の良化/悪化を分解する。
+旧HF用exportとは別schema（`gyaim-native-context-trace` version1）。Release/既定重み/limitなしに限定する。
+出力はignored `runs/`配下。生文字列は`--include-text`の明示時だけ確認用出力に含める。
+固定ケースを学習データへ変換しない。traceありの時間は診断値とし、正式速度はtraceなしで測る。
+手順と学習設計の分岐は`Tools/model-training/NATIVE-ANALYSIS.md`を参照する。
+
+#### 文脈限定の候補間蒸留（実験用・未採用）
+
+`cache_context_teacher.py` は同じ固定評価・legacy holdout除外と読み単位分割の後、
+teacherの文脈ありchosen/rejectedの平均logprob差をFP32で保存する。学習・validationの
+両方に完全な対応が必要。cacheは元pairsのSHA256、正規化後の各pairのhash、teacher重みの
+SHA256、precisionと前処理を記録する。欠落・重複・余分なpair・非有限値・条件不一致を拒否する。
+生成途中の`.partial`は学習へ渡さず、検証後に正式なcache名へ変更する。
+
+`train_context_preference.py --objective context_distill --teacher-scores <cache>`は、
+文脈ありのstudent平均logprob差とteacher差のsigmoidによるsoft targetとのBCEを最小化する
+（温度1、2候補の確率。全語彙のtoken KLではない）。同時に、文脈なしの両候補のスコアを
+学習開始時のstudentに近づけるMSEを加える。teacherの文脈なしの分布はコピーしない。
+teacher targetとstudent referenceはいずれも固定し、勾配を流さない。
+`anchor=0`と正の有限な`prior-preservation`が必須で、replayとの併用は現時点では拒否する。
+既定のpair/context_gainモードと実行時のランキング式は変えない。
+manifestに目的関数・teacherとcacheのhashを保存する。データ準備やlossテストの成功は
+精度改善を意味せず、固定評価・独立確認・量子化・native速度の検証が別途必要。
 
 ### ファイル配置
 

@@ -14,6 +14,7 @@ import XCTest
 /// - GYAIM_CONTEXT_EVAL_LENGTHS: context tails to score (default "20,10,5,0")
 /// - GYAIM_CONTEXT_EVAL_SUBSET: "gap30" keeps only cases with a >30 s gap inside the context
 /// - GYAIM_CONTEXT_EVAL_LIMIT: first N scorable cases
+/// - GYAIM_CONTEXT_EVAL_TRACE: optional private JSONL diagnostics (new path; no raw text)
 final class ContextCasesEvaluationTests: XCTestCase {
     struct Candidate: Decodable {
         let text: String
@@ -83,14 +84,38 @@ final class ContextCasesEvaluationTests: XCTestCase {
                                     studyDictFile: tempDir.appendingPathComponent("study.txt").path)
         let romaKana = RomaKana()
         let decoder = JSONDecoder()
-        let lines = try String(contentsOfFile: casesPath, encoding: .utf8).split(separator: "\n")
+        let source = try String(contentsOfFile: casesPath, encoding: .utf8)
+        let lines = try source.utf8.split(separator: 0x0A, omittingEmptySubsequences: false)
+            .map { try XCTUnwrap(String(bytes: $0, encoding: .utf8)) }
+        #if DEBUG
+        let configuration = "Debug"
+        #else
+        let configuration = "Release"
+        #endif
+        var trace: ContextCaseTraceWriter?
+        if let path = env["GYAIM_CONTEXT_EVAL_TRACE"] {
+            let dictionaries = try Dictionary(uniqueKeysWithValues: dictFiles.map {
+                (URL(fileURLWithPath: $0).lastPathComponent, try ContextCaseTrace.fileDigest(URL(fileURLWithPath: $0)))
+            })
+            trace = try ContextCaseTraceWriter(path: path, metadata: [
+                "type": "header", "format": "gyaim-native-context-trace", "version": 1,
+                "backend": "LlamaZenzContext.scoreBatch", "configuration": configuration,
+                "casesSha256": try ContextCaseTrace.fileDigest(URL(fileURLWithPath: casesPath)),
+                "modelSha256": try ContextCaseTrace.fileDigest(modelURL), "model": modelURL.lastPathComponent,
+                "dictionarySha256": dictionaries, "sourceFilesSha256": try ContextCaseTrace.sourceHashes(project: projectDir),
+                "platform": ProcessInfo.processInfo.operatingSystemVersionString,
+                "weights": ContextCaseTrace.weights, "lengths": lengths, "subset": subset,
+                "limit": limit == .max ? NSNull() : limit as Any,
+            ])
+        }
 
         var counts: [Int: Tally] = [:]
         var latencies: [Double] = []
         var seenPrompts = Set<String>()
         var scored = 0
         var skipped = 0
-        for line in lines {
+        for (lineIndex, line) in lines.enumerated() {
+            if line.isEmpty { continue }
             guard let item = try? decoder.decode(Case.self, from: Data(line.utf8)) else { skipped += 1; continue }
             let truth = item.truth ?? item.chosen
             guard let truth, !item.candidates.isEmpty,
@@ -139,11 +164,17 @@ final class ContextCasesEvaluationTests: XCTestCase {
                     studyWeight: BundledZenzRuntime.llmRankStudyWeight(),
                     contextWeight: BundledZenzRuntime.llmRankContextWeight(),
                     rawHiraganaPenalty: BundledZenzRuntime.llmRankRawHiraganaPenalty(),
-                    compoundWeight: BundledZenzRuntime.llmRankCompoundWeight()).order
+                    compoundWeight: BundledZenzRuntime.llmRankCompoundWeight())
+                if let trace {
+                    try trace.append(ContextCaseTrace.record(.init(
+                        lineNumber: lineIndex + 1, sourceLine: String(line), length: length, truthIndex: truthIndex,
+                        request: request, modelScores: llmScores, modelOrder: modelOrder,
+                        production: production, heuristicOrder: heuristicOrder)))
+                }
                 var entry = counts[length] ?? Tally()
                 entry.n += 1
                 entry.model += modelOrder.first == truthIndex ? 1 : 0
-                entry.production += production.first == truthIndex ? 1 : 0
+                entry.production += production.order.first == truthIndex ? 1 : 0
                 entry.heuristic += heuristicOrder.first == truthIndex ? 1 : 0
                 counts[length] = entry
             }
@@ -162,11 +193,6 @@ final class ContextCasesEvaluationTests: XCTestCase {
                                         "productionTop1Rate": Double(entry.production) / Double(max(entry.n, 1)),
                                         "heuristicTop1Rate": Double(entry.heuristic) / Double(max(entry.n, 1))]
         }
-        #if DEBUG
-        let configuration = "Debug"
-        #else
-        let configuration = "Release"
-        #endif
         let report: [String: Any] = [
             "cases": casesPath, "model": modelURL.lastPathComponent, "subset": subset, "configuration": configuration,
             "scored": scored, "skipped": skipped, "lengths": lengths, "byLength": byLength,
@@ -180,6 +206,7 @@ final class ContextCasesEvaluationTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
         let outputPath = env["GYAIM_CONTEXT_EVAL_OUT"] ?? tempDir.appendingPathComponent("report.json").path
         try data.write(to: URL(fileURLWithPath: outputPath))
+        try trace?.finish(summary: report)
         print("context-eval report: \(outputPath)")
         print(String(data: data, encoding: .utf8) ?? "")
     }
