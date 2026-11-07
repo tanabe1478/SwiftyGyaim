@@ -172,6 +172,28 @@ final class ConnectionDictTests: XCTestCase {
         }
     }
 
+    func testRenyokeiConnectsToNaru() throws {
+        // 形容詞 *く / 形容動詞 *に / 否定 *なく → 224 → な の五段活用 (ADR-041)
+        assertExactMatches([
+            ("nemukunaru", "眠くなる"),
+            ("nemukunaranai", "眠くならない"),
+            ("nemukunarazu", "眠くならず"),
+            ("nemukunatta", "眠くなった"),
+            ("nemukunarimasita", "眠くなりました"),
+            ("turakunaru", "辛くなる"),
+            ("sizukaninaru", "静かになる"),
+            ("sukininatta", "好きになった"),
+            ("dekinakunaru", "できなくなる"),
+            ("mienakunatta", "見えなくなった"),
+        ])
+        var incomplete: [String] = []
+        dict.search(pat: "nemukuna", searchMode: 1) { word, _, _ in incomplete.append(word) }
+        XCTAssertFalse(incomplete.contains("眠くな"), "な alone is not a word: \(incomplete)")
+        var prefix: [String] = []
+        dict.search(pat: "nemukunar", searchMode: 0) { word, _, _ in prefix.append(word) }
+        XCTAssertTrue(prefix.contains("眠くなる"), "prefix search while typing: \(prefix)")
+    }
+
     private func assertExactMatches(_ expectations: [(String, String)], file: StaticString = #filePath, line: UInt = #line) {
         for (pat, expectedWord) in expectations {
             var words: [String] = []
