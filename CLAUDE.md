@@ -100,7 +100,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（379テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、ContextCasesEvaluationTests は GYAIM_CONTEXT_EVAL=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（380テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、ContextCasesEvaluationTests は GYAIM_CONTEXT_EVAL=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -146,6 +146,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | StudySuspectsTests | Tests/GyaimTests/ | 3 | 疑わしい学習エントリ検出（typo完成形・長期未使用・false positive 抑止） |
 | FileLoggerRotationTests | Tests/GyaimTests/ | 1 | ログ7世代ローテーションのシフト |
 | プロパティテスト（3スイート） | Tests/GyaimTests/ | 5 | PropertyTesting.swiftハーネスによる不変条件検査（validatedOrderの順列性・学習マージの頻度保存と冪等性・combineScoresのzero-sum性）。seed再現可能 |
+| KanaConfirmMarkedTextTests | Tests/GyaimTests/ | 1 | 実コントローラをモッククライアントで動かし、子音だけのかな確定でマーク済みテキストが空になること（BUG-048） |
 | GyaimE2ETests | Tests/E2ETests/ | 3 | CGEventによるIME統合テスト（TextEdit上で実操作） |
 
 ### テストインフラ

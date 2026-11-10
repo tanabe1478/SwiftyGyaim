@@ -1151,6 +1151,10 @@ class GyaimController: IMKInputController {
 
         let resolvedClient = (sender as? IMKTextInput) ?? (self.client() as? IMKTextInput)
         guard !word.isEmpty, let client = resolvedClient else {
+            // Consonants alone (`k`, `kljf`) convert to nothing. The client still
+            // shows them underlined, so clear the composition or the user ends
+            // up with marked text that Backspace cannot reach (BUG-048).
+            clearMarkedText(client: resolvedClient)
             resetState()
             hideWindow()
             return
@@ -1178,6 +1182,15 @@ class GyaimController: IMKInputController {
         hideWindow()
     }
 
+    /// Empty the client's marked text when a composition ends without an
+    /// `insertText` (which would have cleared it for us).
+    private func clearMarkedText(client: IMKTextInput?) {
+        guard let client else { return }
+        client.setMarkedText(NSAttributedString(string: ""),
+                             selectionRange: NSRange(location: 0, length: 0),
+                             replacementRange: NSRange(location: NSNotFound, length: NSNotFound))
+    }
+
     /// Hiragana kana-confirm output is always the raw kana spelling of the
     /// input — regenerable on every keystroke — so learning it only adds
     /// ranking noise (and captures typos verbatim). Katakana confirms stay
@@ -1192,7 +1205,9 @@ class GyaimController: IMKInputController {
 
     private func fix(client sender: Any? = nil, skipStudy: Bool = false) {
         guard nthCand < candidates.count else {
+            clearMarkedText(client: (sender as? IMKTextInput) ?? (self.client() as? IMKTextInput))
             resetState()
+            hideWindow()
             return
         }
         let candidate = candidates[nthCand]

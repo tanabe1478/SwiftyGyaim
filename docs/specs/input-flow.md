@@ -1,7 +1,7 @@
 # Spec: キー入力フロー
 
 > Trigger: GyaimController.swift, GyaimController+FastContextRerank.swift
-> Last updated: 2026-11-03 (保管庫の失効 — BUG-044、直前の語と読みの保持と複合語加点 — ADR-040、左文脈診断 Left context probe)
+> Last updated: 2026-11-07 (空のかな確定でマーク済みテキストを消す — BUG-048)
 
 ## 概要
 
@@ -42,7 +42,7 @@ handle(_:client:) → routeEvent() → HandleResult
 | パス | メソッド | 学習 | 用途 |
 |------|---------|------|------|
 | Enter/数字キー | `fix(client:)` | あり | 通常確定（prefix mode の先頭候補が raw `inputPat` の場合のみ Enter は完全一致検索へ遷移）。study と同時に ContextDict へ `(文脈末尾, reading, word)` を記録。`aiRerankFastContextLoggingEnabled=true` かつ prefix mode の意図的確定では `Fast context accepted: ... rank=N` と、preference抽出用の `Fast context accepted detail: ... payload={...}`（表示上位8件+確定候補のメタデータJSON。加えて `controller` / `composition` / `generation` / `modelState` / `heuristicRank` / `proposedRank` を持ち、heuristic 単独順に対する確定順位の改善・悪化を集計できる — ai-rerank.md 評価ループ）を出力する。同じ設定では、完全一致モード・Google・かな確定・deactivation を含む全確定で `Commit outcome: ... payload={...}`（確定経路、直前 prefix list 上の順位、モデル採点集合に含まれたか）も出す。完全一致モード・Google へ移る直前の prefix trace と候補語は退避し、確定時の照合に使う |
-| F6/`;` | `fixAsKana(hiragana: true)` | **なし**（`kanaConfirmStudyEnabled=true` で従来どおり学習） | ひらがな確定。出力は常に再生成可能な素のかな表記のため、学習はランキングノイズとtypoの温床にしかならない。学習はしないが、直前の確定の取り消し（下記）は行う |
+| F6/`;` | `fixAsKana(hiragana: true)` | **なし**（`kanaConfirmStudyEnabled=true` で従来どおり学習） | ひらがな確定。出力は常に再生成可能な素のかな表記のため、学習はランキングノイズとtypoの温床にしかならない。学習はしないが、直前の確定の取り消し（下記）は行う。入力がまだかなにならない（`kljf`）ときは何も挿入せず、クライアントのマーク済みテキストを空にして終える（BUG-048） |
 | F7/`q` | `fixAsKana(hiragana: false)` | あり | カタカナ確定。表記選択として価値がある（辞書提案workflowの源泉） |
 | IME切替 | `fix(client:sender, skipStudy: true)` | **なし** | deactivation確定。打ち直し判定の対象にも記録にもならない |
 | Shift+X | `deleteCurrentCandidate(client:)` | - | 候補削除（ADR-015） |
