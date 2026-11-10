@@ -76,7 +76,8 @@ final class ContextCasesEvaluationTests: XCTestCase {
         let subset = env["GYAIM_CONTEXT_EVAL_SUBSET"] ?? "all"
 
         let llama = try LlamaZenzContext(modelURL: modelURL)
-        let dictFiles = ["dict.txt", "mozc-dict.txt"].map { projectDir.appendingPathComponent("Resources/\($0)").path }
+        let dictFiles = ["dict.txt", "grammar-dict.txt", "mozc-dict.txt"]
+            .map { projectDir.appendingPathComponent("Resources/\($0)").path }
             .filter { FileManager.default.fileExists(atPath: $0) }
         let wordSearch = WordSearch(connectionDictFiles: dictFiles,
                                     localDictFile: tempDir.appendingPathComponent("local.txt").path,

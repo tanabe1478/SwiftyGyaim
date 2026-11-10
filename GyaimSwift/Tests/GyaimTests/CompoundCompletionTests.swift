@@ -24,7 +24,7 @@ final class CompoundCompletionTests: XCTestCase {
     private func resourcePaths() throws -> [String] {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
-        let paths = ["dict.txt", "mozc-dict.txt"].map { root.appendingPathComponent("Resources/\($0)").path }
+        let paths = ["dict.txt", "grammar-dict.txt", "mozc-dict.txt"].map { root.appendingPathComponent("Resources/\($0)").path }
         for path in paths where !FileManager.default.fileExists(atPath: path) { throw XCTSkip("\(path) missing") }
         return paths
     }

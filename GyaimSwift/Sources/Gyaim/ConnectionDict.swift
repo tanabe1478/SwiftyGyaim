@@ -11,8 +11,11 @@ struct DictEntry {
     let canStart: Bool
     let canTerminate: Bool
     let contributesSurface: Bool
+    /// From a tail grammar file (ADR-042): results that pass through this
+    /// entry are emitted after every dictionary-only result.
+    let isTail: Bool
 
-    init(kana: String, word: String, inConnection: Int, outConnection: Int) {
+    init(kana: String, word: String, inConnection: Int, outConnection: Int, isTail: Bool = false) {
         self.kana = kana
         self.word = word.utf8.contains(UInt8(ascii: "*")) ? word.replacingOccurrences(of: "*", with: "") : word
         self.inConnection = inConnection
@@ -21,6 +24,7 @@ struct DictEntry {
         self.canStart = !word.hasPrefix("*") && !internalLabel
         self.canTerminate = !word.hasSuffix("*") && !internalLabel
         self.contributesSurface = !internalLabel
+        self.isTail = isTail
     }
 
     private static func isInternalConnectionLabel(_ word: String) -> Bool {
@@ -85,7 +89,22 @@ class ConnectionDict {
         let offset: Int
         let foundWord: String
         let depth: Int
+        var usedTail = false
     }
+
+    /// Result budgets of one search. Compositions through a tail grammar entry
+    /// are held back and emitted after the dictionary-only results, so adding
+    /// tails never displaces or reorders what the dictionaries alone produce.
+    private struct Emission {
+        var budget: Int
+        var tailBudget: Int
+        var deferred: [ConnectionSearchResult] = []
+    }
+
+    /// A dictionary file that contains this line is a tail grammar (ADR-042).
+    static let tailDirective = "# @tail"
+    /// Tail compositions kept per search; they only matter once the reading is specific.
+    static let maxTailResults = 200
 
     private enum MatchKind {
         case exact
@@ -131,6 +150,7 @@ class ConnectionDict {
         // Byte-level splitting: Character iteration over a 12 MB file costs
         // hundreds of milliseconds at IME start-up.
         let newline = UInt8(ascii: "\n"), tab = UInt8(ascii: "\t"), hash = UInt8(ascii: "#")
+        let isTail = content.hasPrefix(Self.tailDirective + "\n") || content.contains("\n" + Self.tailDirective + "\n")
         for line in content.utf8.split(separator: newline, omittingEmptySubsequences: true) {
             guard line.first != hash, line.contains(where: { $0 != 32 && $0 != 9 && $0 != 13 }) else { continue }
             let fields = line.split(separator: tab, omittingEmptySubsequences: false)
@@ -142,7 +162,7 @@ class ConnectionDict {
             guard !kana.isEmpty,
                   seen.insert(EntryKey(kana: kana, word: word, inConnection: inConn, outConnection: outConn)).inserted
             else { continue }
-            dict.append(DictEntry(kana: kana, word: word, inConnection: inConn, outConnection: outConn))
+            dict.append(DictEntry(kana: kana, word: word, inConnection: inConn, outConnection: outConn, isTail: isTail))
         }
     }
 
@@ -289,8 +309,9 @@ class ConnectionDict {
         guard !conversion.kana.isEmpty || !conversion.tail.isEmpty else { return }
         let query = Query(romaji: pat, scalars: conversion.kana.unicodeScalars.map(\.value), tail: conversion.tail,
                           romajiEnds: conversion.romajiEnds, predictions: searchMode == 0)
-        var budget = maxResults
-        generate(startIndex, query, Step(offset: 0, foundWord: "", depth: 0), budget: &budget, callback: callback)
+        var emission = Emission(budget: maxResults, tailBudget: min(maxResults, Self.maxTailResults))
+        generate(startIndex, query, Step(offset: 0, foundWord: "", depth: 0), emission: &emission, callback: callback)
+        emission.deferred.prefix(max(0, emission.budget)).forEach(callback)
     }
 
     private func matches(in index: KanaIndex, _ query: Query, offset: Int,
@@ -318,45 +339,37 @@ class ConnectionDict {
         return found.sorted { $0.entry < $1.entry }
     }
 
-    private func generate(_ index: KanaIndex, _ query: Query, _ step: Step, budget: inout Int,
+    private func generate(_ index: KanaIndex, _ query: Query, _ step: Step, emission: inout Emission,
                           callback: (_ result: ConnectionSearchResult) -> Void) {
-        for match in matches(in: index, query, offset: step.offset, limit: budget) {
-            guard budget > 0 else { return }
+        for match in matches(in: index, query, offset: step.offset, limit: emission.budget) {
+            guard emission.budget > 0 else { return }
             let entry = dict[match.entry]
+            let usesTail = step.usedTail || entry.isTail
+            if usesTail, emission.tailBudget <= 0 { continue }
             let nextWord = entry.contributesSurface ? step.foundWord + entry.word : step.foundWord
+            let pat: String
             switch match.kind {
-            case .exact:
-                guard entry.canTerminate else { continue }
-                budget -= 1
-                callback(ConnectionSearchResult(word: nextWord, pat: query.romaji,
-                                                outConnection: entry.outConnection, depth: step.depth + 1))
-            case .prediction:
-                guard entry.canTerminate else { continue }
-                budget -= 1
-                let pat = query.typedRomaji(upToKana: step.offset) + romaKana.canonicalRomaji(ofKana: entry.kana)
-                callback(ConnectionSearchResult(word: nextWord, pat: pat,
-                                                outConnection: entry.outConnection, depth: step.depth + 1))
             case .compound(let length):
                 guard let next = connectionIndex[entry.outConnection] else { continue }
-                generate(next, query, Step(offset: step.offset + length, foundWord: nextWord, depth: step.depth + 1),
-                         budget: &budget, callback: callback)
+                generate(next, query, Step(offset: step.offset + length, foundWord: nextWord, depth: step.depth + 1,
+                                           usedTail: usesTail),
+                         emission: &emission, callback: callback)
+                continue
+            case .exact:
+                pat = query.romaji
+            case .prediction:
+                pat = query.typedRomaji(upToKana: step.offset) + romaKana.canonicalRomaji(ofKana: entry.kana)
+            }
+            guard entry.canTerminate else { continue }
+            let result = ConnectionSearchResult(word: nextWord, pat: pat, outConnection: entry.outConnection,
+                                                depth: step.depth + 1)
+            if usesTail {
+                emission.tailBudget -= 1
+                emission.deferred.append(result)
+            } else {
+                emission.budget -= 1
+                callback(result)
             }
         }
-    }
-
-    /// Surfaces of single dictionary entries read as `kana` that start with
-    /// `previousWord`, minus that prefix (ADR-040): 全体 + ぞう → 全体像 → 像.
-    /// Compositions through connections (分析 + できます → 分析出来ます) are
-    /// not counted: they would promote kanji spellings of conjugations the user
-    /// writes in kana.
-    func compoundCompletions(previousWord: String, kana: String, maxResults: Int = 200) -> [String] {
-        guard !previousWord.isEmpty, !kana.isEmpty else { return [] }
-        var completions: [String] = []
-        searchDetailed(pat: kana, searchMode: 1, maxResults: maxResults) { result in
-            guard result.depth == 1, result.word.hasPrefix(previousWord) else { return }
-            let rest = String(result.word.dropFirst(previousWord.count))
-            if !rest.isEmpty, !completions.contains(rest) { completions.append(rest) }
-        }
-        return completions
     }
 }

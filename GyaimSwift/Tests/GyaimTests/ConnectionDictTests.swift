@@ -6,8 +6,10 @@ final class ConnectionDictTests: XCTestCase {
 
     override func setUpWithError() throws {
         // Try test bundle first
-        if let path = Bundle(for: type(of: self)).path(forResource: "dict", ofType: "txt") {
-            dict = ConnectionDict(dictFile: path)
+        let bundle = Bundle(for: type(of: self))
+        if let path = bundle.path(forResource: "dict", ofType: "txt"),
+           let grammarPath = bundle.path(forResource: "grammar-dict", ofType: "txt") {
+            dict = ConnectionDict(dictFiles: [path, grammarPath])
             return
         }
         // Fall back to source tree path
@@ -18,7 +20,7 @@ final class ConnectionDictTests: XCTestCase {
             .deletingLastPathComponent() // GyaimSwift
         let dictPath = projectDir.appendingPathComponent("Resources/dict.txt").path
         if FileManager.default.fileExists(atPath: dictPath) {
-            dict = ConnectionDict(dictFile: dictPath)
+            dict = ConnectionDict(dictFiles: [dictPath, projectDir.appendingPathComponent("Resources/grammar-dict.txt").path])
             return
         }
         throw XCTSkip("dict.txt not found")

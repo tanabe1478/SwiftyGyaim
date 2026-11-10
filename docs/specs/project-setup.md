@@ -1,7 +1,7 @@
 # Spec: Project Setup
 
 > Trigger: project.yml, Package.swift, run-unit-tests.sh, build-pkg.sh, test.yml, release.yml, Makefile
-> Last updated: 2026-11-03 (postinstall で lsregister と起動)
+> Last updated: 2026-11-11 (run-unit-tests.sh が grammar-dict.txt の鮮度を確認 — ADR-042)
 
 ## Overview
 
@@ -20,7 +20,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme Gyaim -configuration Release -derive
 ## Test
 
 ```bash
-./Scripts/run-unit-tests.sh   # xctest + swiftlint --strict --baseline + Python ツール検証
+./Scripts/run-unit-tests.sh   # xctest + swiftlint --strict --baseline + Python ツール検証（grammar-dict.txt が生成結果と一致することの確認を含む、ADR-042）
 xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .build test  # E2E（要アクセシビリティ権限）
 ```
 

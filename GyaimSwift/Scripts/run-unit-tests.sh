@@ -34,7 +34,9 @@ else
   echo "skip: swiftlint not installed"
 fi
 
+python3 Tools/dict/build-grammar-dict.py --check
 python3 -m py_compile \
+  Tools/dict/build-grammar-dict.py \
   Tools/ai-rerank/validate-fast-context-eval-cases.py \
   Tools/ai-rerank/evaluate-fast-context-rerank.py \
   Tools/ai-rerank/extract-fast-context-review-cases.py \
