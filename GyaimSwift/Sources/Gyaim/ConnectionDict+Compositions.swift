@@ -50,4 +50,20 @@ extension ConnectionDict {
             }
         }
     }
+
+    /// Surfaces of single dictionary entries read as `kana` that start with
+    /// `previousWord`, minus that prefix (ADR-040): 全体 + ぞう → 全体像 → 像.
+    /// Compositions through connections (分析 + できます → 分析出来ます) are
+    /// not counted: they would promote kanji spellings of conjugations the user
+    /// writes in kana.
+    func compoundCompletions(previousWord: String, kana: String, maxResults: Int = 200) -> [String] {
+        guard !previousWord.isEmpty, !kana.isEmpty else { return [] }
+        var completions: [String] = []
+        searchDetailed(pat: kana, searchMode: 1, maxResults: maxResults) { result in
+            guard result.depth == 1, result.word.hasPrefix(previousWord) else { return }
+            let rest = String(result.word.dropFirst(previousWord.count))
+            if !rest.isEmpty, !completions.contains(rest) { completions.append(rest) }
+        }
+        return completions
+    }
 }

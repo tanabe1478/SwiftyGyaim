@@ -92,7 +92,13 @@ final class DictionarySearchBenchmarkTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: mozcPath) else { return }
         let before = residentMegabytes()
         let bothStart = CFAbsoluteTimeGetCurrent()
-        let both = ConnectionDict(dictFiles: [dictPath, mozcPath])
+        let grammarPath = URL(fileURLWithPath: dictPath).deletingLastPathComponent()
+            .appendingPathComponent("grammar-dict.txt").path
+        // The production load order (ADR-042); GYAIM_DICT_BENCH_NO_GRAMMAR=1 leaves the tail grammar out.
+        let withGrammar = FileManager.default.fileExists(atPath: grammarPath)
+            && ProcessInfo.processInfo.environment["GYAIM_DICT_BENCH_NO_GRAMMAR"] != "1"
+        let files = withGrammar ? [dictPath, grammarPath, mozcPath] : [dictPath, mozcPath]
+        let both = ConnectionDict(dictFiles: files)
         print(String(format: "bench dict.txt + mozc-dict.txt load %.0fms entries=%d resident %.0fMB -> %.0fMB",
                      (CFAbsoluteTimeGetCurrent() - bothStart) * 1000, both.entryCount, before, residentMegabytes()))
         measure("dict.txt + mozc prefix (cap \(WordSearch.maxConnectionCandidates))") { query in
@@ -113,7 +119,7 @@ final class DictionarySearchBenchmarkTests: XCTestCase {
         let localPath = tempDir.appendingPathComponent("localdict.txt").path
         try? "".write(toFile: localPath, atomically: true, encoding: .utf8)
         WordSearch.resetConnectionDict()
-        let search = WordSearch(connectionDictFiles: [dictPath, mozcPath], localDictFile: localPath, studyDictFile: studyPath)
+        let search = WordSearch(connectionDictFiles: files, localDictFile: localPath, studyDictFile: studyPath)
         measure("WordSearch prefix, dict.txt + mozc, 5k study") { search.search(query: $0, searchMode: 0).count }
         search.finish()
         WordSearch.resetConnectionDict()

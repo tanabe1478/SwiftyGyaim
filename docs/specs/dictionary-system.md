@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift, RomaKana+KanaKey.swift
-> Last updated: 2026-11-07 (連用形 + なる の接続 — ADR-041)
+> Last updated: 2026-11-11 (用言の後続の文法 grammar-dict.txt — ADR-042)
 
 ## 概要
 
@@ -13,7 +13,7 @@
 |--------|------|---------|---------|------|
 | 1 (最高) | Study | ~/.gyaim/studydict.txt | 10,000 (設定可能) | MRU淘汰（デフォルト） |
 | 2 | Local | ~/.gyaim/localdict.txt | 無制限 | ユーザー手動登録 |
-| 3 | Connection | Resources/dict.txt（または ~/.gyaim/connectiondict.txt）+ Resources/mozc-dict.txt | 約 34 万エントリ | 形態素接続辞書。Gictionary 由来の辞書（インポート済みがあればそれ）に続けて Mozc 由来の語彙を読む（ADR-034） |
+| 3 | Connection | Resources/dict.txt（または ~/.gyaim/connectiondict.txt）+ Resources/grammar-dict.txt + Resources/mozc-dict.txt | 約 34 万エントリ | 形態素接続辞書。Gictionary 由来の辞書（インポート済みがあればそれ）、用言の後続の文法（ADR-042）、Mozc 由来の語彙（ADR-034）の順に読む |
 
 ## ファイル形式
 
@@ -47,24 +47,38 @@ romaji surface inConnection outConnection
 
 一般名詞（`3 4`）は助詞類にしか接続しない。する の活用形（し / して / します / した …、入力接続 51）へつなぐにはサ変クラスの行（`50 51`）が要る。同梱辞書では、UniDic が `サ変可能` / `サ変形状詞可能` とする一般名詞に `Tools/dict/add-sahen-connection.py` で `50 51` 行を追加している（ADR-030。例: `jissousimasu` → `実装します`）。UniDic は生成時だけ使い、実行時には依存しない。辞書を Gictionary から取り込み直した場合は、このスクリプトを再実行する。名詞+名詞の複合語（`要件定義`）は、名詞を受ける入力接続がないため合成しない。
 
-連用形 + なる（`眠くなる` / `静かになる` / `できなくなる`）は、接続クラス 224 を経由して な の五段活用（クラス 16）へつなぐ（ADR-041）。`dict.txt` 末尾の 4 行がそのつながりで、形容詞の `*く`（40）、形容動詞の `*に`（19）、否定 ない の `*く`（54）から 224 へ出し、`*な*`（224 → 16）が語幹になる。なる の活用形（ならない / ならず / なった / なります / なれば / なって / なりそう …）はクラス 16 の既存行をそのまま使うので、個別には書かない。Gictionary から取り込み直すとこの 4 行も消えるので、サ変の行と同じく足し直す。
+### 用言の後続の文法（ADR-042）
 
-```text
-ku	*く	40	224
-ni	*に	19	224
-ku	*く	54	224
-na	*な*	224	16
-```
+1 回の変換で組み上げる単位は「内容語 1 つ + ひらがなで書く後続の連なり」。後続がすべてひらがなで決まっていれば、選ぶのは内容語の表記 1 か所だけで、文節の区切り直しがなくても 1 回で変換できる。対象は用言（動詞・形容詞・形容動詞・サ変名詞 + する）の活用形に続く助動詞・接続助詞・終助詞・補助用言（ている / てみる / てもらう …）・形式名詞（こと / とき / ため / はず …）。`眠くなる`、`補完されるべき`、`使うべきではない`、`書くために`、`高いです`、`使ってみる` が入る。
 
-前方一致では `nemukunar` / `nemukunat` のように な の次の 1 文字まで打った時点で候補が出る（前方一致は最後の 1 エントリしか先読みしないため、`nemukuna` では出ない）。名詞 + になる（`医者になる`）は、名詞から助詞へ続く行がないため対象外。
+対象外は次の 2 つ。
 
-`constrainedCompositions(pat:maxResults:maxDepth:)`（ADR-022）は同じ遷移探索の**有界版**で、完全変換の表層のみを重複なく列挙し、結果上限（既定12）と深さ上限（既定8）で再帰を打ち切る。`searchDetailed` は `maxResults`（`WordSearch` からは 1,000）で打ち切る。1〜2 文字入力で数千件出る接続候補の末尾は辞書順のノイズで、表示（9 件 × ページ送り、モデルが見るのは上位 24 件）には届かない。2,000 では 2 文字入力が dogfood で 20〜50 ms かかった。
+- 内容語が 2 つ以上の連なり（`補完されるべきだと思います`、`書き始める`、`使う人`）。複合名詞は Mozc 由来の 1 語エントリに任せる
+- 名詞 + 助詞（`会議が`）。名詞の読みを打っている途中に候補を汚す。助詞 40 行を名詞の後ろに足す試作では、`kaig` の先頭が 会議 ではなく 回が / 会が になり、`hasin` の候補が 12 件から 110 件に増えた
+
+仕様そのものは `Tests/GyaimTests/GrammarCoverageMatrix*.swift` の表（活用の種類を網羅する動詞 17 語・形容詞 5 語・形容動詞 4 語 × 後続、5,264 セル、読みはかな）で、`GrammarCoverageTests.testEveryPredicateTailComposes` が全セルの合成を検査する。後続を足すときは表に書いてから行を足す。
+
+行は `Resources/grammar-dict.txt` に置く。`Tools/dict/build-grammar-dict.py` が生成し（369 行）、`run-unit-tests.sh` が `--check` で生成結果との一致を確かめる。`dict.txt` と分けてあるので、同梱の `dict.txt` を新しい Gictionary に置き換えても行は消えない。クラス番号がずれた場合は `GrammarCoverageTests` が落ちるので、生成スクリプトの番号を直す（サ変の `50 51` 行は語彙ごとの行なので `dict.txt` に残る）。Gictionary 由来の文法は活用までは組むが後続が書き漏らしだらけで、`grammar-dict.txt` は既存クラスの穴を埋める行と、独自クラスの後続を持つ。
+
+| クラス | 役割 | 入口 |
+|---|---|---|
+| 41（既存） | 終止形・連体形・た形の後ろ | 全活用クラスの終止形。促音便の `*った`（2 / 16 / 23 / 87 / 123）と形容詞の `*い` / `*かった`、形容動詞の `*な*` / `*だった` をここへつないだ |
+| 230 | て形の後ろ（補助用言と助詞） | 既存の て / で と同じ読みの行を 230 行きで足す（促音便の `*って`、一段、サ変、音便の中間クラス 31 / 33 / 193 / 194 など） |
+| 231 | 形式名詞・べき の後ろ（助詞と断定） | 41 の `*こと` / `*とき` / `*ため` / `*はず` / `*べき` … |
+| 232 | 仮定形 ば の後ろ（いい / よかった） | 既存の ば と同じ読みの行を 232 行きで足す |
+| 224 | 連用形 + なる（ADR-041） | 形容詞の `*く`（40）、形容動詞の `*に`（19）、否定 ない の `*く`（54）。`*な*`（224 → 16）が語幹で、活用は ら行五段（16）の既存行 |
+
+既存クラスへの追加は、35（連用形の後ろ）の `*やす*` / `*にく*` / `*づら*` → 40（`dict.txt` の出力先 83 は空で 書きやすい が出なかった）、72（ま(す) の後ろ）、92（意向形・です の後ろの終助詞）、162（そう の後ろ）、40 / 54 の `いです` / `くない` / `くする`、19 の `だった` / `ではない` / `なので`、6（一段）の `*ず` / `*れば`（`dict.txt` は終われない `*ず*` / `*れば*` しか持たない）。行は読みを最後まで打ったときだけ一致するので、文法的に誤った形（`静かならしい`）が組めても、その読みを打たない限り現れない。
+
+`# @tail` の行を持つ辞書ファイルは「後続の文法」として読まれる（`ConnectionDict.tailDirective`、`DictEntry.isTail`）。`searchDetailed` は、この種のエントリを 1 つでも通った結果をためておき、辞書だけで組めた結果をすべて出した後に出す（上限 `maxTailResults` = 200、全体の `maxResults` の残り枠まで）。そのため後続を足しても、辞書だけの結果は順序も件数も変わらない。`settei` は 競って + い… とも読め、`naiyou` は ない + よう… とも読めるが、設定 / 内容 の順位は動かない（`testGrammarNeverDisplacesDictionaryResults`）。この後回しを入れる前は、タイピングシミュレーションで 設定 が 28 位、内容 が 34 位に落ちた。
+
+前方一致では後続も先読みする（`tukattem` → 使ってみる / 使ってもらう …）。名詞 + になる（`医者になる`）と 副詞 + 動詞（`どうすれば`）は、名詞・副詞から先へ続く行がないため対象外。
 
 ### Mozc 由来の語彙（ADR-034）
 
 `Resources/mozc-dict.txt` は Mozc の公開辞書（`src/data/dictionary_oss`）から `Tools/dict/build-mozc-connection-dict.py` で生成した名詞類の一覧（約 28 万語、かなキー、コスト順）。Mozc の右接続 ID で接続クラスを付ける: 名詞,サ変接続 → `3 4` + `50 51`、名詞,形容動詞語幹 → `3 4` + `18 19`、その他の名詞 → `3 4`、副詞 → `24 0`。左 ID が名詞 / 接頭詞（再+起動 の複合語）/ 副詞 / 感動詞の行だけを対象にし、動詞・形容詞は Gictionary の活用行に任せる。コストは 7,500 以下（地名・人名は 6,000 以下）、読みと同じひらがな表記の行は除く。
 
-`Config.activeConnectionDictFiles` が読み込み順を決める: Gictionary 由来の辞書（取り込んだ `~/.gyaim/connectiondict.txt` があればそれ、なければ `dict.txt`）、続けて `mozc-dict.txt`。`ConnectionDict(dictFiles:)` は 1 つの辞書として索引し、同じ (かな, 表記, クラス) の行は先のファイルが勝つ。共有キャッシュ（`WordSearch.sharedConnectionDict(for:)`）はファイル一覧で判定し、ロックで直列化する。`AppDelegate` が起動時にバックグラウンドで同じ関数を呼んで先読みするため、最初のコントローラは読み込み（Release で約 0.6 秒）を待たずに済むことが多い。ライセンス表示（Mozc BSD-3、IPAdic、ICOT、沖縄辞書）は `Resources/DICTIONARY_THIRD_PARTY_NOTICES.txt`。再生成の手順はスクリプトの docstring にある（Mozc の commit を `--commit` で記録する）。
+`Config.activeConnectionDictFiles` が読み込み順を決める: Gictionary 由来の辞書（取り込んだ `~/.gyaim/connectiondict.txt` があればそれ、なければ `dict.txt`）、`grammar-dict.txt`（ADR-042）、`mozc-dict.txt`。`grammar-dict.txt` のクラス番号は同梱の `dict.txt` の番号を前提にしている。取り込んだ辞書はクラス番号を出現順に振り直すので、`~/.gyaim/connectiondict.txt` が有効な間は `grammar-dict.txt` を読まない（`Config.connectionDictFiles`）。`ConnectionDict(dictFiles:)` は 1 つの辞書として索引し、同じ (かな, 表記, クラス) の行は先のファイルが勝つ。共有キャッシュ（`WordSearch.sharedConnectionDict(for:)`）はファイル一覧で判定し、ロックで直列化する。`AppDelegate` が起動時にバックグラウンドで同じ関数を呼んで先読みするため、最初のコントローラは読み込み（Release で約 0.6 秒）を待たずに済むことが多い。ライセンス表示（Mozc BSD-3、IPAdic、ICOT、沖縄辞書）は `Resources/DICTIONARY_THIRD_PARTY_NOTICES.txt`。再生成の手順はスクリプトの docstring にある（Mozc の commit を `--commit` で記録する）。
 
 ### かなキー索引（ADR-033）
 

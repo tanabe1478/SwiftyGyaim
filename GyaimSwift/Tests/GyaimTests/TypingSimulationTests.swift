@@ -55,9 +55,16 @@ final class TypingSimulationTests: XCTestCase {
         let outputPath = env["GYAIM_TYPING_SIM_OUTPUT"] ?? tempDir.appendingPathComponent("report.json").path
         let dictPath = projectDir.appendingPathComponent("Resources/dict.txt").path
         let mozcPath = projectDir.appendingPathComponent("Resources/mozc-dict.txt").path
-        // GYAIM_TYPING_SIM_NO_MOZC=1 measures the Gictionary dictionary alone.
-        let dictFiles = FileManager.default.fileExists(atPath: mozcPath) && env["GYAIM_TYPING_SIM_NO_MOZC"] != "1"
-            ? [dictPath, mozcPath] : [dictPath]
+        let grammarPath = projectDir.appendingPathComponent("Resources/grammar-dict.txt").path
+        // GYAIM_TYPING_SIM_NO_MOZC=1 / GYAIM_TYPING_SIM_NO_GRAMMAR=1 leave a
+        // dictionary out to measure what it contributes.
+        var dictFiles = [dictPath]
+        if FileManager.default.fileExists(atPath: grammarPath), env["GYAIM_TYPING_SIM_NO_GRAMMAR"] != "1" {
+            dictFiles.append(grammarPath)
+        }
+        if FileManager.default.fileExists(atPath: mozcPath), env["GYAIM_TYPING_SIM_NO_MOZC"] != "1" {
+            dictFiles.append(mozcPath)
+        }
         let epochs = max(1, Int(env["GYAIM_TYPING_SIM_EPOCHS"] ?? "") ?? 1)
 
         let modelReady = BundledAIRerankModel.shared.loadIfAvailable(bundle: Bundle(for: Self.self))

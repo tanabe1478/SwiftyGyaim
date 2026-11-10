@@ -43,11 +43,23 @@ enum Config {
         return bundleDictPath
     }
 
-    /// Connection dictionaries in load order (ADR-034): the Gictionary-derived
-    /// file (an imported ~/.gyaim/connectiondict.txt replaces the bundled
-    /// dict.txt), then the Mozc-derived vocabulary when the bundle has it.
-    static func activeConnectionDictFiles(bundleDictPath: String, mozcDictPath: String?) -> [String] {
-        var files = [activeConnectionDictFile(bundleDictPath: bundleDictPath)]
+    /// Connection dictionaries in load order (ADR-034 / 042): the Gictionary-
+    /// derived file (an imported ~/.gyaim/connectiondict.txt replaces the
+    /// bundled dict.txt), then our tail grammar, then the Mozc-derived
+    /// vocabulary, each when the bundle has it.
+    static func activeConnectionDictFiles(bundleDictPath: String, grammarDictPath: String? = nil,
+                                          mozcDictPath: String?) -> [String] {
+        connectionDictFiles(gictionaryPath: activeConnectionDictFile(bundleDictPath: bundleDictPath),
+                            bundleDictPath: bundleDictPath, grammarDictPath: grammarDictPath, mozcDictPath: mozcDictPath)
+    }
+
+    /// The tail grammar is written against the connection class numbers of the
+    /// bundled dict.txt. An imported dictionary numbers its classes by order
+    /// of appearance, so the grammar is left out when one is active.
+    static func connectionDictFiles(gictionaryPath: String, bundleDictPath: String, grammarDictPath: String?,
+                                    mozcDictPath: String?) -> [String] {
+        var files = [gictionaryPath]
+        if let grammarDictPath, gictionaryPath == bundleDictPath { files.append(grammarDictPath) }
         if let mozcDictPath { files.append(mozcDictPath) }
         return files
     }
@@ -57,6 +69,7 @@ enum Config {
     static func bundledConnectionDictFiles(bundle: Bundle = .main) -> [String]? {
         guard let dictPath = bundle.path(forResource: "dict", ofType: "txt") else { return nil }
         return activeConnectionDictFiles(bundleDictPath: dictPath,
+                                         grammarDictPath: bundle.path(forResource: "grammar-dict", ofType: "txt"),
                                          mozcDictPath: bundle.path(forResource: "mozc-dict", ofType: "txt"))
     }
 

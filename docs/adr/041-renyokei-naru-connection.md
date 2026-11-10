@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-11-07)
+Superseded by ADR-042（行の置き場所を `grammar-dict.txt` に移した。接続クラス 224 の設計は ADR-042 に引き継ぐ）
 
 ## Decision
 
