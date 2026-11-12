@@ -1,7 +1,7 @@
 # Spec: 辞書システム
 
 > Trigger: WordSearch.swift, ConnectionDict.swift, RomaKana+KanaKey.swift
-> Last updated: 2026-11-11 (用言の後続の文法 grammar-dict.txt — ADR-042)
+> Last updated: 2026-11-12 (grammar-dict.txt の `# @stem-classes` — BUG-049)
 
 ## 概要
 
@@ -71,6 +71,8 @@ romaji surface inConnection outConnection
 既存クラスへの追加は、35（連用形の後ろ）の `*やす*` / `*にく*` / `*づら*` → 40（`dict.txt` の出力先 83 は空で 書きやすい が出なかった）、72（ま(す) の後ろ）、92（意向形・です の後ろの終助詞）、162（そう の後ろ）、40 / 54 の `いです` / `くない` / `くする`、19 の `だった` / `ではない` / `なので`、6（一段）の `*ず` / `*れば`（`dict.txt` は終われない `*ず*` / `*れば*` しか持たない）。行は読みを最後まで打ったときだけ一致するので、文法的に誤った形（`静かならしい`）が組めても、その読みを打たない限り現れない。
 
 `# @tail` の行を持つ辞書ファイルは「後続の文法」として読まれる（`ConnectionDict.tailDirective`、`DictEntry.isTail`）。`searchDetailed` は、この種のエントリを 1 つでも通った結果をためておき、辞書だけで組めた結果をすべて出した後に出す（上限 `maxTailResults` = 200、全体の `maxResults` の残り枠まで）。そのため後続を足しても、辞書だけの結果は順序も件数も変わらない。`settei` は 競って + い… とも読め、`naiyou` は ない + よう… とも読めるが、設定 / 内容 の順位は動かない（`testGrammarNeverDisplacesDictionaryResults`）。この後回しを入れる前は、タイピングシミュレーションで 設定 が 28 位、内容 が 34 位に落ちた。
+
+`# @stem-classes 2 8 16 …` の行は、活用語幹の接続クラス（そこで語が終われないクラス）を宣言する（`ConnectionDict.stemClasses`、BUG-049）。同梱の `dict.txt` の番号なので `grammar-dict.txt` に置き、`build-grammar-dict.py` の `STEM_CLASSES` から生成する。五段語幹（2 / 8 / 16 / 23 / 26 / 28 / 43 / 46 / 87 / 123 / 137）、未然形（34 / 36 / 144 / 180）、形容詞語幹（40）、ない / たい の な / た（54）。一段の語幹（6）と形容動詞の語幹（19）は単独で語になるので含めない。`ConnectionDict.isCompleteWord(_:reading:)` は、読みの導出のうち語幹クラス以外で終わるものがその表記にあれば true を返す。並べ替えの未完成語幹の判定（ai-rerank.md）だけが使い、検索結果の内容や順序には影響しない。
 
 前方一致では後続も先読みする（`tukattem` → 使ってみる / 使ってもらう …）。名詞 + になる（`医者になる`）と 副詞 + 動詞（`どうすれば`）は、名詞・副詞から先へ続く行がないため対象外。
 

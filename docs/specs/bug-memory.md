@@ -1,7 +1,7 @@
 # Spec: バグメモリ
 
 > Trigger: 全ファイル（デバッグ時に参照）
-> Last updated: 2026-11-07 (BUG-048: 子音だけの状態でかな確定すると下線付きの文字が残る)
+> Last updated: 2026-11-12 (BUG-049: 名詞「気持ち」が「気持ちい」の存在で未完成語幹として沈む)
 
 ## 概要
 
@@ -80,3 +80,4 @@
 | BUG-044 | 引き継ぎ文脈の保管庫が失効した本文を捨てずに追記していた | 2026-11-03 | [BUG-044-committed-context-store-never-expired.md](bugs/BUG-044-committed-context-store-never-expired.md) |
 | BUG-047 | 設定画面で表示スタイルを切り替えると、別コントローラの候補ウィンドウが空の吹き出し / 空の箱になる | 2026-11-06 | [BUG-047-display-mode-switch-blanks-other-windows.md](bugs/BUG-047-display-mode-switch-blanks-other-windows.md) |
 | BUG-048 | 子音だけ（`kljf`）の状態でかな確定すると、下線付きの文字が残って Backspace で消せない | 2026-11-07 | [BUG-048-empty-kana-commit-leaves-marked-text.md](bugs/BUG-048-empty-kana-commit-leaves-marked-text.md) |
+| BUG-049 | `kimoti` で名詞「気持ち」が「気持ちい」の書きかけと判定され、「気持」より下に出る | 2026-11-12 | [BUG-049-noun-sunk-as-incomplete-stem.md](bugs/BUG-049-noun-sunk-as-incomplete-stem.md) |

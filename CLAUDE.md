@@ -100,7 +100,7 @@ Bidirectional romaji-kana conversion with 350+ rules in `rklist`. Includes full-
 ### テスト実行
 
 ```bash
-# ユニットテスト（384テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、ContextCasesEvaluationTests は GYAIM_CONTEXT_EVAL=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
+# ユニットテスト（388テスト。うち TypingSimulationTests は GYAIM_TYPING_SIM=1、ContextCasesEvaluationTests は GYAIM_CONTEXT_EVAL=1、採点時間のベンチマークは GYAIM_LLAMA_BENCH=1 のときだけ実行）+ SwiftLint（baseline 差分のみ fail）+ Python ツールのテスト
 ./Scripts/run-unit-tests.sh
 
 # E2Eテスト（アクセシビリティ権限必要、Gyaimインストール済みの状態で実行）
@@ -136,6 +136,7 @@ xcodebuild -project Gyaim.xcodeproj -scheme GyaimE2ETests -derivedDataPath .buil
 | CompoundCompletionTests | Tests/GyaimTests/ | 4 | 直前の確定語と辞書の 1 エントリを成す候補の抽出（深さ 1 のみ・前後とも漢字・ローマ字/かな読み・同梱辞書での 全体像/回避策/徒歩圏 と 分析できますか の除外）、左文脈診断の末尾一致長（ADR-040） |
 | StaleCaretRectDetectorTests | Tests/GyaimTests/ | 5 | Google Docs の固定矩形の検出（遠くの別位置から同じ矩形に戻る・近い/同じ高さは除外・60 秒で失効・bundle ごとの共有・resolveLineRect の repeatedStale。ADR-038） |
 | StudyCorrectionTrackerTests | Tests/GyaimTests/ | 5 | 打ち直し判定（同じ読み・別の語・窓・bundle・かな等価・未学習の除外・設定のクランプ・payload の correctedWord。ADR-037） |
+| IncompleteStemClassTests | Tests/GyaimTests/ | 4 | 未完成語幹の判定が辞書の語幹クラスを見ること（名詞 気持ち / なら / しま は対象外、くださ / 向か / つまらな は減点のまま）、実ログ数値での `kimoti` の並び順、取り込み辞書では文字規則のまま、語幹クラスに語頭の行が後続しないこと（BUG-049） |
 | AIRerankerTests / ZenzRuntimeTests / AIRerankBackendTests / IncompleteStemPastTenseTests | Tests/GyaimTests/ | 42 | ヒューリスティックrerankの順序・同音異義語レビューの選別・backend選択・過去形を未完成語幹とみなさない（BUG-043） |
 | HomophoneFrequencyGuardTests | Tests/GyaimTests/ | 4 | 同音異義語上書きの頻度ガード（BUG-036、実ログ数値で固定） |
 | FastContextReviewSchedulingTests | Tests/GyaimTests/ | 8 | 背景モデルレビューの予約判定・スロットル/合流待ちのクランプ・同期パスがモデルを呼ばないこと・ticket の待機/一回適用（ADR-029） |
