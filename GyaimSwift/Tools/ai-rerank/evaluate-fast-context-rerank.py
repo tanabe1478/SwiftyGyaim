@@ -400,6 +400,9 @@ def incomplete_stem_penalty(candidate: dict[str, Any], request: dict[str, Any]) 
     text = candidate["text"]
     if not is_potential_incomplete_stem(text):
         return 0.0
+    # A word the dictionary derives as finished is not missing its い (BUG-049).
+    if candidate.get("completeWord") is True and not text.endswith("っ"):
+        return 0.0
     for other in request["candidates"]:
         if other["index"] != candidate["index"] and is_incomplete_stem_completion(text, other["text"]):
             return 4.0

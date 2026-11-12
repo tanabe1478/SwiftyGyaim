@@ -1,7 +1,7 @@
 # Spec: AI Rerank
 
 > Trigger: AIReranker.swift, ZenzRuntime.swift, ZenzRuntime+Scoring.swift, InProcessAIReranker.swift, AIRerankBackend.swift, GyaimController+FastContextRerank.swift, FastContextTrace.swift
-> Last updated: 2026-11-11 (タイピングシミュレーションが grammar-dict.txt を読む — ADR-042)
+> Last updated: 2026-11-12 (未完成語幹の判定は辞書の語幹クラスを見る — BUG-049)
 
 ## 概要
 
@@ -95,6 +95,8 @@ Swift runtime 側でも `AIReranker.localScoreBreakdown(candidate:request:)` が
 ## LLM 主体の並べ替え（ADR-032、現行）
 
 モデル経路（入力3文字以上）では `BundledZenzRuntime.llmPrimaryRerank` が辞書候補すべてを `scoreBatch` で採点し、`llmPrimaryOrder` が次の合計で並べる。平均logprob + `aiRerankLLMStudyWeight`（既定2.0）× log2(1+学習頻度)（study 候補のみ）+ `aiRerankLLMContextWeight`（既定2.0）× ContextDict affinity + heuristic の安全策の減点（`incompleteStemPenalty` / `politeNegativePredictionPenalty` / `punctuatedInputMismatchPenalty` / `rawAsciiPenalty`）− `aiRerankLLMRawHiraganaPenalty`（既定 1.0、ADR-039。候補が入力のひらがなそのもの。かなキーで常に確定できるので、モデルがはっきり選んだときだけ先頭に出す。ADR-032 の 3.0 は ください/下さい、それぞれ/夫々 でモデルの判断を覆していた）+ `aiRerankLLMCompoundWeight`（既定 2.0、ADR-040。候補の `compoundCompletion` が true、つまり直前に確定した語の読み + 今の入力が接続辞書の 1 エントリで、その表記が直前の語で始まり前後とも漢字を含むとき。全体 + ぞう → 全体像 の 像。先頭固定ではなく加点なので、学習頻度 7 の 件 は 圏 に負けない）。同点・未採点は heuristic 順。ログ outcome は `llm-ranked`（採点できなければ `llm-rank-unavailable`）、`review.topDecision` は先頭が heuristic と変わったら `fixed`、同じなら `passed`。
+
+`incompleteStemPenalty`（4.0）と同音異義語レビューの除外は `AIReranker.isIncompleteStem` を共有する。候補に ひらがなが含まれ、同じ一覧に「1 文字足して い で終わる候補」があるか、候補が っ で終わっていて 1 文字長い候補があるときに書きかけとみなす（少な → 少ない、くださ → ください、使っ → 使った）。い / た / だ で終わる語は対象外（BUG-025 / BUG-043）。さらに、候補の `completeWord` が true のとき い の規則は当てない（BUG-049）。`completeWord` は `ConnectionDict.completeWords(among:)` が付ける。文字規則に当たった候補だけについて、その読みの導出に活用語幹クラス（`grammar-dict.txt` の `# @stem-classes`）以外で終わるものがあるかを調べるので、名詞 気持ち は 気持ちい（気持ちいい の語幹）が並んでいても減点されない。取り込み辞書では語幹クラスがないので文字規則だけになる。Python の評価ツール（`evaluate-fast-context-rerank.py`）も候補の `completeWord` を同じように扱う。
 
 学習頻度の重み2.0は BUG-036（君31 / キミ7、LLM差 約3.4）で頻出語を守る値。以下の「Zenz candidate evaluation」「同音異義語レビュー」「通常review」は ADR-032 以前の経路で、コードは残置しているがこの経路からは呼ばれない。
 

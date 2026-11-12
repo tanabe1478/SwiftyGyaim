@@ -146,11 +146,7 @@ extension BundledZenzRuntime {
 
     static func isIncompleteStemCandidate(_ candidate: AIRerankCandidate,
                                                   in request: AIRerankRequest) -> Bool {
-        guard AIReranker.isPotentialIncompleteStem(candidate.text) else { return false }
-        return request.candidates.contains { other in
-            other.index != candidate.index
-                && AIReranker.isIncompleteStemCompletion(stem: candidate.text, completed: other.text)
-        }
+        AIReranker.isIncompleteStem(candidate, in: request)
     }
 
     /// Sort only the already-scored alternative slots. The top selected by the

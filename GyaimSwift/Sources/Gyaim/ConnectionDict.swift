@@ -120,6 +120,9 @@ class ConnectionDict {
     }
 
     private(set) var dict: [DictEntry] = []
+    /// Out-connection classes a word cannot end in (少な → 40, くださ → 16). Empty
+    /// when no loaded file declares them, e.g. with an imported dictionary.
+    var stemClasses: Set<Int> = []
     private(set) var startIndex = KanaIndex()
     private(set) var connectionIndex: [Int: KanaIndex] = [:]
     let romaKana = RomaKana()
@@ -152,6 +155,7 @@ class ConnectionDict {
         let newline = UInt8(ascii: "\n"), tab = UInt8(ascii: "\t"), hash = UInt8(ascii: "#")
         let isTail = content.hasPrefix(Self.tailDirective + "\n") || content.contains("\n" + Self.tailDirective + "\n")
         for line in content.utf8.split(separator: newline, omittingEmptySubsequences: true) {
+            if line.first == hash { readStemClasses(line) }
             guard line.first != hash, line.contains(where: { $0 != 32 && $0 != 9 && $0 != 13 }) else { continue }
             let fields = line.split(separator: tab, omittingEmptySubsequences: false)
             guard fields.count >= 2 else { continue }

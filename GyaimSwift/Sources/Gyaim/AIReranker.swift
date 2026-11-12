@@ -15,6 +15,10 @@ struct AIRerankCandidate: Codable, Equatable {
     /// entry (全体 + 像 = 全体像, ADR-040). Nil otherwise so older payloads and
     /// requests stay identical.
     let compoundCompletion: Bool?
+    /// True when the dictionary knows this text as a finished word (ends in a
+    /// class that is not a conjugation stem). Nil when unknown, so older
+    /// payloads and requests stay identical.
+    let completeWord: Bool?
 
     init(index: Int,
          text: String,
@@ -23,7 +27,8 @@ struct AIRerankCandidate: Codable, Equatable {
          kind: String,
          contextAffinity: Double? = nil,
          studyFrequency: Int? = nil,
-         compoundCompletion: Bool? = nil) {
+         compoundCompletion: Bool? = nil,
+         completeWord: Bool? = nil) {
         self.index = index
         self.text = text
         self.reading = reading
@@ -32,6 +37,7 @@ struct AIRerankCandidate: Codable, Equatable {
         self.contextAffinity = contextAffinity
         self.studyFrequency = studyFrequency
         self.compoundCompletion = compoundCompletion
+        self.completeWord = completeWord
     }
 }
 
@@ -276,11 +282,20 @@ enum AIReranker {
 
     private static func incompleteStemPenalty(candidate: AIRerankCandidate,
                                               request: AIRerankRequest) -> Double {
-        guard isPotentialIncompleteStem(candidate.text) else { return 0 }
-        let longerCompletedCandidateExists = request.candidates.contains { other in
+        isIncompleteStem(candidate, in: request) ? 4.00 : 0
+    }
+
+    /// A candidate is an unfinished stem when a one-character-longer candidate
+    /// completes it (少な → 少ない, 使っ → 使った). A word the dictionary derives
+    /// as finished is not missing its い: 気持ち is a noun although 気持ちい, the
+    /// stem of 気持ちいい, sits in the same list (BUG-049). Nothing ends in っ,
+    /// so that half of the rule ignores the dictionary.
+    static func isIncompleteStem(_ candidate: AIRerankCandidate, in request: AIRerankRequest) -> Bool {
+        guard isPotentialIncompleteStem(candidate.text) else { return false }
+        if candidate.completeWord == true, candidate.text.last != "っ" { return false }
+        return request.candidates.contains { other in
             other.index != candidate.index && isIncompleteStemCompletion(stem: candidate.text, completed: other.text)
         }
-        return longerCompletedCandidateExists ? 4.00 : 0
     }
 
     static func isPotentialIncompleteStem(_ text: String) -> Bool {

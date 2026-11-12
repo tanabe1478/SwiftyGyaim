@@ -180,15 +180,17 @@ extension GyaimController {
     private static func fastContextRequest(head: [SearchCandidate], inputPat: String,
                                            hiragana: String, context: String,
                                            compoundCompletions: Set<String> = []) -> AIRerankRequest {
-        AIRerankRequest(version: 1, mode: "fast-context-rerank", inputPat: inputPat, hiragana: hiragana,
-                       context: context.isEmpty ? nil : context,
-                       candidates: head.enumerated().map { index, candidate in
+        let completeWords = WordSearch.sharedConnectionDict?.completeWords(among: head) ?? []
+        return AIRerankRequest(version: 1, mode: "fast-context-rerank", inputPat: inputPat, hiragana: hiragana,
+                              context: context.isEmpty ? nil : context,
+                              candidates: head.enumerated().map { index, candidate in
             AIRerankCandidate(index: index, text: candidate.word, reading: candidate.reading,
                               source: String(describing: candidate.source), kind: candidate.kind.rawValue,
                               contextAffinity: ContextDict.shared.affinity(context: context,
                                                                            reading: candidate.reading, word: candidate.word),
                               studyFrequency: candidate.studyFrequency,
-                              compoundCompletion: compoundCompletions.contains(candidate.word) ? true : nil)
+                              compoundCompletion: compoundCompletions.contains(candidate.word) ? true : nil,
+                              completeWord: completeWords.contains(candidate.word) ? true : nil)
         })
     }
 
